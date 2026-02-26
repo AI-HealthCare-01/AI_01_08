@@ -62,7 +62,6 @@ class AuthService:
         return user
 
     async def login(self, user: User) -> dict[str, AccessToken | RefreshToken]:
-        await self.user_repo.update_last_login(user.id)
         return self.jwt_service.issue_jwt_pair(user)
 
     async def check_email_exists(self, email: str | EmailStr) -> None:

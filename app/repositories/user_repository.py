@@ -30,7 +30,6 @@ class UserRepository:
         birthday: date,
         *,
         is_active: bool = True,
-        is_admin: bool = False,
     ) -> User:
         return await self._model.create(
             email=email,
@@ -40,7 +39,6 @@ class UserRepository:
             gender=gender,
             birthday=birthday,
             is_active=is_active,
-            is_admin=is_admin,
         )
 
     async def get_user_by_email(self, email: str) -> User | None:
@@ -51,9 +49,6 @@ class UserRepository:
 
     async def exists_by_phone_number(self, phone_number: str) -> bool:
         return await self._model.filter(phone_number=phone_number).exists()
-
-    async def update_last_login(self, user_id: int) -> None:
-        await self._model.filter(id=user_id).update(last_login=datetime.now(config.TIMEZONE))
 
     async def update_instance(self, user: User, data: dict[str, Any]) -> None:
         update_fields = []
