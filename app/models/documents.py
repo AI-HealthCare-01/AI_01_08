@@ -4,7 +4,9 @@ from tortoise import fields, models
 class Document(models.Model):
     id = fields.BigIntField(primary_key=True)
     patient = fields.ForeignKeyField("models.Patient", related_name="documents", on_delete=fields.CASCADE)
-    uploaded_by_user = fields.ForeignKeyField("models.User", related_name="uploaded_documents", on_delete=fields.CASCADE)
+    uploaded_by_user = fields.ForeignKeyField(
+        "models.User", related_name="uploaded_documents", on_delete=fields.CASCADE
+    )
     file_url = fields.CharField(max_length=500)
     original_filename = fields.CharField(max_length=255, null=True)
     file_type = fields.CharField(max_length=30, null=True)

@@ -4,7 +4,9 @@ from tortoise import fields, models
 class Guide(models.Model):
     id = fields.BigIntField(primary_key=True)
     patient = fields.ForeignKeyField("models.Patient", related_name="guides", on_delete=fields.CASCADE)
-    source_document = fields.ForeignKeyField("models.Document", related_name="guides", null=True, on_delete=fields.SET_NULL)
+    source_document = fields.ForeignKeyField(
+        "models.Document", related_name="guides", null=True, on_delete=fields.SET_NULL
+    )
     status = fields.CharField(max_length=30)
     content = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)

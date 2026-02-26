@@ -17,8 +17,12 @@ class UserDevice(models.Model):
 class Notification(models.Model):
     id = fields.BigIntField(primary_key=True)
     user = fields.ForeignKeyField("models.User", related_name="notifications", on_delete=fields.CASCADE)
-    patient = fields.ForeignKeyField("models.Patient", related_name="notifications", null=True, on_delete=fields.SET_NULL)
-    reminder = fields.ForeignKeyField("models.Reminder", related_name="notifications", null=True, on_delete=fields.SET_NULL)
+    patient = fields.ForeignKeyField(
+        "models.Patient", related_name="notifications", null=True, on_delete=fields.SET_NULL
+    )
+    reminder = fields.ForeignKeyField(
+        "models.Reminder", related_name="notifications", null=True, on_delete=fields.SET_NULL
+    )
     type = fields.CharField(max_length=50)
     title = fields.CharField(max_length=255, null=True)
     body = fields.TextField(null=True)

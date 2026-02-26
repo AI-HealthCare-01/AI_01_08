@@ -32,12 +32,16 @@ class MedScheduleTime(models.Model):
 class IntakeLog(models.Model):
     id = fields.BigIntField(primary_key=True)
     patient = fields.ForeignKeyField("models.Patient", related_name="intake_logs", on_delete=fields.CASCADE)
-    schedule = fields.ForeignKeyField("models.MedSchedule", related_name="intake_logs", null=True, on_delete=fields.SET_NULL)
+    schedule = fields.ForeignKeyField(
+        "models.MedSchedule", related_name="intake_logs", null=True, on_delete=fields.SET_NULL
+    )
     schedule_time = fields.ForeignKeyField(
         "models.MedScheduleTime", related_name="intake_logs", null=True, on_delete=fields.SET_NULL
     )
     patient_med = fields.ForeignKeyField("models.PatientMed", related_name="intake_logs", on_delete=fields.CASCADE)
-    recorded_by_user = fields.ForeignKeyField("models.User", related_name="recorded_intakes", null=True, on_delete=fields.SET_NULL)
+    recorded_by_user = fields.ForeignKeyField(
+        "models.User", related_name="recorded_intakes", null=True, on_delete=fields.SET_NULL
+    )
     scheduled_at = fields.DatetimeField(null=True)
     taken_at = fields.DatetimeField(null=True)
     status = fields.CharField(max_length=30)
@@ -52,7 +56,9 @@ class IntakeLog(models.Model):
 class Reminder(models.Model):
     id = fields.BigIntField(primary_key=True)
     patient = fields.ForeignKeyField("models.Patient", related_name="reminders", on_delete=fields.CASCADE)
-    schedule = fields.ForeignKeyField("models.MedSchedule", related_name="reminders", null=True, on_delete=fields.SET_NULL)
+    schedule = fields.ForeignKeyField(
+        "models.MedSchedule", related_name="reminders", null=True, on_delete=fields.SET_NULL
+    )
     schedule_time = fields.ForeignKeyField(
         "models.MedScheduleTime", related_name="reminders", null=True, on_delete=fields.SET_NULL
     )

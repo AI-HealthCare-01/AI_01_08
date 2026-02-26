@@ -42,7 +42,9 @@ class PatientMed(models.Model):
     source_document_id = fields.BigIntField(null=True)
     source_ocr_job_id = fields.BigIntField(null=True)
     source_extracted_med_id = fields.BigIntField(null=True)
-    drug_catalog = fields.ForeignKeyField("models.DrugCatalog", related_name="patient_meds", null=True, on_delete=fields.SET_NULL)
+    drug_catalog = fields.ForeignKeyField(
+        "models.DrugCatalog", related_name="patient_meds", null=True, on_delete=fields.SET_NULL
+    )
     drug_info_cache = fields.ForeignKeyField(
         "models.DrugInfoCache", related_name="patient_meds", null=True, on_delete=fields.SET_NULL
     )

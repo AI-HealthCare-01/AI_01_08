@@ -37,4 +37,9 @@ class DurAlert(models.Model):
 
     class Meta:
         table = "dur_alerts"
-        indexes = (("patient_id", "created_at"), ("patient_med_id", "created_at"), ("alert_type", "level"), ("dur_check_id",))
+        indexes = (
+            ("patient_id", "created_at"),
+            ("patient_med_id", "created_at"),
+            ("alert_type", "level"),
+            ("dur_check_id",),
+        )
