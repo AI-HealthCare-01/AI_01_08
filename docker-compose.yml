@@ -6,7 +6,7 @@ services:
     networks:
       - ws
     ports:
-      - "6379:6379"
+      - "63791:6379"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
@@ -104,6 +104,26 @@ services:
       - ws
     depends_on:
       - fastapi
+
+  # app_worker:
+  app-worker:
+    container_name: app-worker
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    env_file: .env
+    command: sh -c "uv run python -u -m app_worker.main"
+    restart: unless-stopped
+    networks:
+      - ws
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app_worker:/app/app_worker
+
 
 volumes:
   mysql_data:

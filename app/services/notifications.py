@@ -19,6 +19,8 @@ from app.models.notification_settings import NotificationSettings
 from app.models.patients import Patient
 
 
+from app.services.queue_service import enqueue_send_notification
+
 # -----------------------------------------------------------------------------
 # 시간 유틸
 # -----------------------------------------------------------------------------
@@ -238,9 +240,14 @@ class NotificationService:
                 title=title,
                 body=message,
                 payload_json=payload_json,
-                sent_at=now_utc_naive(),
+                sent_at=None,
+                # Notification 생성 시: sent_at = NULL (아직 발송 안 됨)
+                # worker가 job 처리 성공 시: sent_at = now()로 업데이트
+                # read 처리 시: read_at 업데이트
                 # read_at은 기본 None 유지
             )
+        print("[enqueue] pushing notification job:", notif.id)
+        await enqueue_send_notification(notif.id)
 
         return notif
 
