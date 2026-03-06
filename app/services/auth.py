@@ -1,9 +1,11 @@
 from fastapi.exceptions import HTTPException
 from pydantic import EmailStr
 from starlette import status
+from tortoise.expressions import Q
 from tortoise.transactions import in_transaction
 
-from app.dtos.auth import LoginRequest, SignUpRequest
+from app.dtos.auth import LoginRequest, LoginRole, SignUpRequest
+from app.models.healthcare import Role, UserRole
 from app.models.users import User
 from app.repositories.user_repository import UserRepository
 from app.services.jwt import JwtService
@@ -37,6 +39,10 @@ class AuthService:
                 gender=data.gender,
                 birthday=data.birth_date,
             )
+            default_role, _ = await Role.get_or_create(
+                code=LoginRole.PATIENT.value, defaults={"name": LoginRole.PATIENT.value}
+            )
+            await UserRole.get_or_create(user=user, role=default_role)
 
             return user
 
@@ -61,8 +67,19 @@ class AuthService:
 
         return user
 
-    async def login(self, user: User) -> dict[str, AccessToken | RefreshToken]:
-        return self.jwt_service.issue_jwt_pair(user)
+    async def login(self, user: User, *, role: LoginRole) -> dict[str, AccessToken | RefreshToken]:
+        if not user.is_active:
+            raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="비활성화된 계정입니다.")
+        requested_role = role.value
+        role_candidates = self._role_candidates(role)
+        role_assigned = (
+            await UserRole.filter(user_id=user.id)
+            .filter(Q(role__name__in=role_candidates) | Q(role__code__in=role_candidates))
+            .exists()
+        )
+        if not role_assigned:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="선택한 역할로 로그인할 수 없습니다.")
+        return self.jwt_service.issue_jwt_pair(user, extra_claims={"login_role": requested_role})
 
     async def check_email_exists(self, email: str | EmailStr) -> None:
         if await self.user_repo.exists_by_email(email):
@@ -71,3 +88,11 @@ class AuthService:
     async def check_phone_number_exists(self, phone_number: str) -> None:
         if await self.user_repo.exists_by_phone_number(phone_number):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용중인 휴대폰 번호입니다.")
+
+    @staticmethod
+    def _role_candidates(role: LoginRole) -> list[str]:
+        if role == LoginRole.GUARDIAN:
+            return [LoginRole.GUARDIAN.value, LoginRole.CAREGIVER.value]
+        if role == LoginRole.CAREGIVER:
+            return [LoginRole.CAREGIVER.value, LoginRole.GUARDIAN.value]
+        return [LoginRole.PATIENT.value]

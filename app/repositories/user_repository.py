@@ -23,7 +23,7 @@ class UserRepository:
     async def create_user(
         self,
         email: str | EmailStr,
-        hashed_password: str,
+        hashed_password: str | None,
         name: str,
         phone_number: str,
         gender: Gender,
