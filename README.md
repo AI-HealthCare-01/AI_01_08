@@ -95,6 +95,7 @@ docker-compose up -d --build
 
 실행 후 다음 주소로 접속 가능합니다:
 - **API 서버**: [http://localhost/api/docs](http://localhost/api/docs) (Swagger UI)
+- **프로젝트 문서**: [http://localhost/api/project-docs/](http://localhost/api/project-docs/)
 - **Nginx**: 80 포트를 통해 API 서버로 요청을 전달합니다.
 
 #### 로컬에서 개별 실행 (개발용)
@@ -166,6 +167,22 @@ chmod +x scripts/certbot.sh
 # 정적 타입 검사 (Mypy)
 ./scripts/ci/check_mypy.sh
 ```
+
+---
+
+## 📚 프로젝트 문서(MkDocs)
+
+- Docker 실행 시: [http://localhost/api/project-docs/](http://localhost/api/project-docs/)
+- 로컬 문서 개발 서버: [http://localhost:8001](http://localhost:8001)
+- 라우트 맵: `docs/route_map.md`
+- 서비스/모델 맵: `docs/service_model_map.md`
+
+```bash
+uv sync --group docs
+uv run mkdocs serve -a 0.0.0.0:8001
+```
+
+- 정적 빌드: `uv run mkdocs build`
 
 ---
 
