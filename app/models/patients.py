@@ -12,6 +12,7 @@ class Patient(models.Model):
     class Meta:
         table = "patients"
 
+
 # 수정 건강프로필
 class PatientProfile(models.Model):
     id = fields.BigIntField(pk=True)
