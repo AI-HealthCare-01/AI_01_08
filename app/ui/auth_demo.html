@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Health Auth Demo</title>
+    <style>
+      :root {
+        --bg: #f4f7fb;
+        --card: #ffffff;
+        --text: #17202a;
+        --muted: #566573;
+        --line: #d5dde5;
+        --accent: #0b7285;
+        --accent-2: #0f9d58;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Pretendard", "Noto Sans KR", sans-serif;
+        background: radial-gradient(circle at 10% 10%, #eaf7ff 0%, var(--bg) 45%);
+        color: var(--text);
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 32px auto;
+        padding: 0 16px 48px;
+      }
+      h1 { margin: 0 0 8px; font-size: 28px; }
+      p { margin: 0 0 20px; color: var(--muted); }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px;
+      }
+      .card h2 { margin: 0 0 12px; font-size: 18px; }
+      .row { margin-bottom: 10px; }
+      label { display: block; font-size: 13px; margin-bottom: 4px; color: var(--muted); }
+      input, select, button, textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 14px;
+        background: #fff;
+      }
+      button {
+        cursor: pointer;
+        border: none;
+        background: linear-gradient(120deg, var(--accent), #0a9396);
+        color: #fff;
+        font-weight: 600;
+      }
+      .btn-green { background: linear-gradient(120deg, var(--accent-2), #2a9d8f); }
+      .full { grid-column: 1 / -1; }
+      pre {
+        margin: 0;
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 12px;
+        padding: 12px;
+        max-height: 280px;
+        overflow: auto;
+        font-size: 12px;
+      }
+      @media (max-width: 860px) {
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>인증/권한 테스트 화면</h1>
+      <p>Swagger 대신 화면에서 회원가입/로그인/소셜 로그인 시작 URL을 테스트할 수 있습니다.</p>
+
+      <div class="grid">
+        <section class="card">
+          <h2>회원가입</h2>
+          <div class="row"><label>이메일</label><input id="su_email" value="user_demo@example.com" /></div>
+          <div class="row"><label>비밀번호</label><input id="su_password" value="User_123" /></div>
+          <div class="row"><label>이름</label><input id="su_name" value="kimuser" /></div>
+          <div class="row">
+            <label>성별</label>
+            <select id="su_gender"><option>FEMALE</option><option>MALE</option></select>
+          </div>
+          <div class="row"><label>생년월일</label><input id="su_birth" value="1996-03-04" /></div>
+          <div class="row"><label>휴대폰</label><input id="su_phone" value="010-1234-6789" /></div>
+          <button onclick="signup()">회원가입 요청</button>
+        </section>
+
+        <section class="card">
+          <h2>로그인</h2>
+          <div class="row"><label>이메일</label><input id="li_email" value="user_demo@example.com" /></div>
+          <div class="row"><label>비밀번호</label><input id="li_password" value="User_123" /></div>
+          <div class="row">
+            <label>Role</label>
+            <select id="li_role"><option>PATIENT</option><option>GUARDIAN</option></select>
+          </div>
+          <button onclick="login()">로그인 요청</button>
+        </section>
+
+        <section class="card">
+          <h2>소셜 로그인 시작 URL</h2>
+          <div class="row">
+            <label>Provider</label>
+            <select id="social_provider"><option value="kakao">kakao</option><option value="naver">naver</option></select>
+          </div>
+          <div class="row">
+            <label>Role</label>
+            <select id="social_role"><option>PATIENT</option><option>GUARDIAN</option></select>
+          </div>
+          <button class="btn-green" onclick="socialStart()">소셜 로그인 바로 이동</button>
+        </section>
+
+        <section class="card">
+          <h2>토큰 리프레시</h2>
+          <p style="font-size:12px;">로그인 성공 후 refresh_token 쿠키가 있으면 테스트됩니다.</p>
+          <button onclick="refreshToken()">토큰 갱신 요청</button>
+        </section>
+
+        <section class="card full">
+          <h2>응답</h2>
+          <pre id="out">결과가 여기에 표시됩니다.</pre>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      function setOut(payload) {
+        document.getElementById("out").textContent = JSON.stringify(payload, null, 2);
+      }
+
+      async function doFetch(url, method, body) {
+        return fetch(url, {
+          method,
+          credentials: "include",
+          headers: { "Content-Type": "application/json", accept: "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+      }
+
+      async function callApi(path, method, body) {
+        const primaryUrl = `${window.location.origin}${path}`;
+        const fallbackUrl = `http://localhost:8002${path}`;
+        setOut({ status: "loading", method, url: primaryUrl, request: body ?? null });
+        try {
+          let res;
+          try {
+            res = await doFetch(primaryUrl, method, body);
+          } catch (_) {
+            res = await doFetch(fallbackUrl, method, body);
+          }
+          const usedUrl = res.url || primaryUrl;
+          const text = await res.text();
+          let parsed = text;
+          try { parsed = JSON.parse(text); } catch (_) {}
+          setOut({
+            status: res.status,
+            ok: res.ok,
+            url: usedUrl,
+            body: parsed,
+          });
+        } catch (err) {
+          setOut({
+            status: "fetch_error",
+            url: primaryUrl,
+            fallback: fallbackUrl,
+            online: navigator.onLine,
+            origin: window.location.origin,
+            error: String(err),
+          });
+        }
+      }
+
+      function signup() {
+        return callApi("/api/v1/auth/signup", "POST", {
+          email: document.getElementById("su_email").value,
+          password: document.getElementById("su_password").value,
+          name: document.getElementById("su_name").value,
+          gender: document.getElementById("su_gender").value,
+          birth_date: document.getElementById("su_birth").value,
+          phone_number: document.getElementById("su_phone").value,
+        });
+      }
+
+      function login() {
+        return callApi("/api/v1/auth/login", "POST", {
+          email: document.getElementById("li_email").value,
+          password: document.getElementById("li_password").value,
+          role: document.getElementById("li_role").value,
+        });
+      }
+
+      async function socialStart() {
+        const provider = document.getElementById("social_provider").value;
+        const role = document.getElementById("social_role").value;
+        const path = `/api/v1/auth/social/${provider}/login?role=${role}`;
+        const primaryUrl = `${window.location.origin}${path}`;
+        const fallbackUrl = `http://localhost:8002${path}`;
+        setOut({ status: "loading", action: "social_redirect", url: primaryUrl });
+        try {
+          let res;
+          try {
+            res = await fetch(primaryUrl, { method: "GET", credentials: "include", headers: { accept: "application/json" } });
+          } catch (_) {
+            res = await fetch(fallbackUrl, { method: "GET", credentials: "include", headers: { accept: "application/json" } });
+          }
+          const data = await res.json();
+          if (!res.ok || !data.authorize_url) {
+            setOut({ status: res.status, ok: false, body: data });
+            return;
+          }
+          setOut({ status: res.status, ok: true, authorize_url: data.authorize_url, redirecting: true });
+          window.location.href = data.authorize_url;
+        } catch (err) {
+          setOut({ status: "fetch_error", url: primaryUrl, fallback: fallbackUrl, error: String(err) });
+        }
+      }
+
+      function refreshToken() {
+        return callApi("/api/v1/auth/token/refresh", "GET");
+      }
+    </script>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 from datetime import date
+from enum import StrEnum
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
@@ -19,13 +20,35 @@ class SignUpRequest(BaseModel):
     phone_number: Annotated[str, AfterValidator(validate_phone_number)]
 
 
+class LoginRole(StrEnum):
+    PATIENT = "PATIENT"
+    CAREGIVER = "CAREGIVER"
+    GUARDIAN = "GUARDIAN"
+
+
+class SocialProvider(StrEnum):
+    KAKAO = "kakao"
+    NAVER = "naver"
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: Annotated[str, Field(min_length=8)]
+    role: LoginRole = Field(
+        default=LoginRole.PATIENT,
+        description="로그인 역할 선택: PATIENT(복약자), CAREGIVER/GUARDIAN(보호자)",
+    )
 
 
 class LoginResponse(BaseModel):
     access_token: str
+    login_role: LoginRole
 
 
-class TokenRefreshResponse(LoginResponse): ...
+class TokenRefreshResponse(BaseModel):
+    access_token: str
+
+
+class SocialLoginStartResponse(BaseModel):
+    provider: SocialProvider
+    authorize_url: str
