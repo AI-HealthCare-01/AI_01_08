@@ -5,6 +5,7 @@ from app.models.documents import Document, ExtractedMed, OcrJob, OcrRawText
 from app.models.dur import DurAlert, DurCheck
 from app.models.guides import Guide, GuideFeedback, GuideSummary
 from app.models.medications import DrugCatalog, DrugInfoCache, PatientMed
+from app.models.notification_settings import NotificationSettings  # 20260303 알림설정 HYJ
 from app.models.notifications import Notification, UserDevice
 from app.models.patients import CaregiverPatientLink, InvitationCode, Patient, PatientProfile, PatientProfileHistory
 from app.models.schedules import IntakeLog, MedSchedule, MedScheduleTime, Reminder
@@ -45,4 +46,5 @@ __all__ = [
     "User",
     "UserDevice",
     "UserRole",
+    "NotificationSettings",  # 20260303 알림설정 HYJ
 ]
