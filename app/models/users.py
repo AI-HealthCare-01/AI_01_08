@@ -18,8 +18,6 @@ class User(models.Model):
     phone_number = fields.CharField(max_length=20, source_field="phone", unique=True)
     nickname = fields.CharField(max_length=50, null=True)
     is_active = fields.BooleanField(default=True)
-    is_admin = fields.BooleanField(default=False)
-    last_login = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

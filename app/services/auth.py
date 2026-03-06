@@ -68,7 +68,6 @@ class AuthService:
     async def login(self, user: User, *, role: LoginRole) -> dict[str, AccessToken | RefreshToken]:
         if not user.is_active:
             raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="비활성화된 계정입니다.")
-        await self.user_repo.update_last_login(user.id)
         role_name = self._normalize_role_name(role)
         role_assigned = await UserRole.filter(user_id=user.id).filter(
             Q(role__name=role_name) | Q(role__code=role_name)
