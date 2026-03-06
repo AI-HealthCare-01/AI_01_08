@@ -70,13 +70,16 @@ class AuthService:
     async def login(self, user: User, *, role: LoginRole) -> dict[str, AccessToken | RefreshToken]:
         if not user.is_active:
             raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="비활성화된 계정입니다.")
-        role_name = self._normalize_role_name(role)
+        requested_role = role.value
+        role_candidates = self._role_candidates(role)
         role_assigned = (
-            await UserRole.filter(user_id=user.id).filter(Q(role__name=role_name) | Q(role__code=role_name)).exists()
+            await UserRole.filter(user_id=user.id)
+            .filter(Q(role__name__in=role_candidates) | Q(role__code__in=role_candidates))
+            .exists()
         )
         if not role_assigned:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="선택한 역할로 로그인할 수 없습니다.")
-        return self.jwt_service.issue_jwt_pair(user, extra_claims={"login_role": role_name})
+        return self.jwt_service.issue_jwt_pair(user, extra_claims={"login_role": requested_role})
 
     async def check_email_exists(self, email: str | EmailStr) -> None:
         if await self.user_repo.exists_by_email(email):
@@ -87,7 +90,9 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용중인 휴대폰 번호입니다.")
 
     @staticmethod
-    def _normalize_role_name(role: LoginRole) -> str:
-        if role in (LoginRole.GUARDIAN, LoginRole.CAREGIVER):
-            return LoginRole.CAREGIVER.value
-        return LoginRole.PATIENT.value
+    def _role_candidates(role: LoginRole) -> list[str]:
+        if role == LoginRole.GUARDIAN:
+            return [LoginRole.GUARDIAN.value, LoginRole.CAREGIVER.value]
+        if role == LoginRole.CAREGIVER:
+            return [LoginRole.CAREGIVER.value, LoginRole.GUARDIAN.value]
+        return [LoginRole.PATIENT.value]
