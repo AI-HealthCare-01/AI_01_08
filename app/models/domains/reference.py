@@ -1,5 +1,7 @@
 """코드/권한 참조 데이터 관련 Healthcare 모델 파일."""
 
+from typing import Any
+
 from tortoise import fields, models
 
 
@@ -44,6 +46,12 @@ class Role(models.Model):
 
     class Meta:
         table = "roles"
+
+    async def save(self, *args: Any, **kwargs: Any) -> None:
+        # Tests may create Role(name=...) without passing code.
+        if not self.code and self.name:
+            self.code = self.name
+        await super().save(*args, **kwargs)
 
 
 class UserRole(models.Model):
