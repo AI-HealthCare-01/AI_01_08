@@ -15,6 +15,7 @@ class InviteCodeCreateResponse(BaseSerializerModel):
     code: str
     expires_at: datetime
 
+
 # 초대 코드 연동 - REQ-USER-005
 class LinkByInviteCodeRequest(BaseModel):
     code: Annotated[str, Field(min_length=4, max_length=100)]

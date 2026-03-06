@@ -67,18 +67,26 @@ class InvitationService:
             if invite_code.expires_at and invite_code.expires_at < now:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="UNPROCESSABLE")
 
-            existing_link = await CaregiverPatientLink.filter(
-                caregiver_user_id=user.id,
-                patient_id=invite_code.patient_id,
-            ).using_db(conn).first()
+            existing_link = (
+                await CaregiverPatientLink.filter(
+                    caregiver_user_id=user.id,
+                    patient_id=invite_code.patient_id,
+                )
+                .using_db(conn)
+                .first()
+            )
 
             if existing_link and existing_link.status == "active" and existing_link.revoked_at is None:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="CONFLICT")
 
             if existing_link:
-                await CaregiverPatientLink.filter(id=existing_link.id).using_db(conn).update(
-                    status="active",
-                    revoked_at=None,
+                await (
+                    CaregiverPatientLink.filter(id=existing_link.id)
+                    .using_db(conn)
+                    .update(
+                        status="active",
+                        revoked_at=None,
+                    )
                 )
                 link = await CaregiverPatientLink.get(id=existing_link.id).using_db(conn)
             else:
@@ -90,8 +98,8 @@ class InvitationService:
                     using_db=conn,
                 )
 
-            marked = await InvitationCode.filter(id=invite_code.id, used_at__isnull=True).using_db(conn).update(
-                used_at=now
+            marked = (
+                await InvitationCode.filter(id=invite_code.id, used_at__isnull=True).using_db(conn).update(used_at=now)
             )
             if marked != 1:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="CONFLICT")

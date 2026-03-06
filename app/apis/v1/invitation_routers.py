@@ -18,6 +18,7 @@ from app.services.invitation import InvitationService
 
 invitation_router = APIRouter(prefix="/users", tags=["users"])
 
+
 # 초대 코드 생성 - REQ-USER-004
 @invitation_router.post("/invite-code", response_model=InviteCodeCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_invite_code(
@@ -31,6 +32,7 @@ async def create_invite_code(
         status_code=status.HTTP_201_CREATED,
     )
 
+
 # 초대 코드 폐기 - REQ-USER-004
 @invitation_router.delete("/invite-code", status_code=status.HTTP_200_OK)
 async def delete_invite_code(
@@ -39,6 +41,7 @@ async def delete_invite_code(
 ) -> Response:
     await invitation_service.delete_invite_code(user=user)
     return Response({"detail": "초대코드가 폐기되었습니다."}, status_code=status.HTTP_200_OK)
+
 
 # 초대 코드 연동 - REQ-USER-005
 @invitation_router.post("/link", response_model=LinkByInviteCodeResponse, status_code=status.HTTP_201_CREATED)
