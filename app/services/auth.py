@@ -39,7 +39,9 @@ class AuthService:
                 gender=data.gender,
                 birthday=data.birth_date,
             )
-            default_role, _ = await Role.get_or_create(code=LoginRole.PATIENT.value, defaults={"name": LoginRole.PATIENT.value})
+            default_role, _ = await Role.get_or_create(
+                code=LoginRole.PATIENT.value, defaults={"name": LoginRole.PATIENT.value}
+            )
             await UserRole.get_or_create(user=user, role=default_role)
 
             return user
@@ -69,9 +71,9 @@ class AuthService:
         if not user.is_active:
             raise HTTPException(status_code=status.HTTP_423_LOCKED, detail="비활성화된 계정입니다.")
         role_name = self._normalize_role_name(role)
-        role_assigned = await UserRole.filter(user_id=user.id).filter(
-            Q(role__name=role_name) | Q(role__code=role_name)
-        ).exists()
+        role_assigned = (
+            await UserRole.filter(user_id=user.id).filter(Q(role__name=role_name) | Q(role__code=role_name)).exists()
+        )
         if not role_assigned:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="선택한 역할로 로그인할 수 없습니다.")
         return self.jwt_service.issue_jwt_pair(user, extra_claims={"login_role": role_name})

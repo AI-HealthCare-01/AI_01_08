@@ -50,7 +50,9 @@ class JwtService:
         verified_rt = self.verify_jwt(token=refresh_token, token_type="refresh")
         return verified_rt.access_token
 
-    def issue_jwt_pair(self, user: User, extra_claims: dict[str, Any] | None = None) -> dict[str, AccessToken | RefreshToken]:
+    def issue_jwt_pair(
+        self, user: User, extra_claims: dict[str, Any] | None = None
+    ) -> dict[str, AccessToken | RefreshToken]:
         rt = self.create_refresh_token(user, extra_claims=extra_claims)
         at = rt.access_token
         return {"access_token": at, "refresh_token": rt}

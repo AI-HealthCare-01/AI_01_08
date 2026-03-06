@@ -7,6 +7,9 @@ from app.core import config
 TORTOISE_APP_MODELS = [
     "aerich.models",
     "app.models",
+    # Auth 서비스는 Role/UserRole을 app.models.healthcare 경유로 import한다.
+    # 해당 모듈도 등록해 DB connection binding 누락을 방지한다.
+    "app.models.healthcare",
 ]
 
 TORTOISE_ORM = {

@@ -22,7 +22,9 @@ class SocialAuthService:
         state = f"{role.value}:{uuid4().hex}"
         if provider == SocialProvider.KAKAO:
             if not config.KAKAO_CLIENT_ID:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Kakao client is not configured.")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Kakao client is not configured."
+                )
             params = {
                 "response_type": "code",
                 "client_id": config.KAKAO_CLIENT_ID,
@@ -32,7 +34,9 @@ class SocialAuthService:
             return f"https://kauth.kakao.com/oauth/authorize?{urlencode(params)}"
 
         if not config.NAVER_CLIENT_ID:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Naver client is not configured.")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Naver client is not configured."
+            )
         params = {
             "response_type": "code",
             "client_id": config.NAVER_CLIENT_ID,
@@ -60,7 +64,9 @@ class SocialAuthService:
                 token_data = token_res.json()
                 access_token = token_data.get("access_token", "")
                 if not access_token:
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Kakao access token is missing.")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail="Kakao access token is missing."
+                    )
                 profile_res = await client.get(
                     "https://kapi.kakao.com/v2/user/me", headers={"Authorization": f"Bearer {access_token}"}
                 )
@@ -115,9 +121,11 @@ class SocialAuthService:
     async def get_or_create_user_by_social(
         self, *, provider: SocialProvider, provider_user_id: str, email: str | None, name: str
     ) -> User:
-        auth_account = await AuthAccount.filter(provider=provider.value, provider_user_id=provider_user_id).select_related(
-            "user"
-        ).first()
+        auth_account = (
+            await AuthAccount.filter(provider=provider.value, provider_user_id=provider_user_id)
+            .select_related("user")
+            .first()
+        )
         if auth_account:
             return auth_account.user
 
@@ -136,7 +144,9 @@ class SocialAuthService:
                 gender=Gender.MALE,
                 birthday=date(1970, 1, 1),
             )
-            default_role, _ = await Role.get_or_create(code=LoginRole.PATIENT.value, defaults={"name": LoginRole.PATIENT.value})
+            default_role, _ = await Role.get_or_create(
+                code=LoginRole.PATIENT.value, defaults={"name": LoginRole.PATIENT.value}
+            )
             await UserRole.get_or_create(user=user, role=default_role)
 
         await AuthAccount.get_or_create(user=user, provider=provider.value, provider_user_id=provider_user_id)
@@ -158,4 +168,6 @@ class SocialAuthService:
             phone = f"0{numeric[:10]}"
             if not await self.user_repo.exists_by_phone_number(phone):
                 return phone
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate phone number.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate phone number."
+        )
