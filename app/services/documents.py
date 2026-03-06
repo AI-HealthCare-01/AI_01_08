@@ -79,7 +79,9 @@ class DocumentService:
 
     # 문서 목록 조회 및 필터 - REQ-DOC-002
     async def list_documents(self, user: User, query: DocumentListQuery) -> DocumentListResponse:
-        accessible_patient_ids = await self._resolve_accessible_patient_ids(user=user, requested_patient_id=query.patient_id)
+        accessible_patient_ids = await self._resolve_accessible_patient_ids(
+            user=user, requested_patient_id=query.patient_id
+        )
         if not accessible_patient_ids:
             return DocumentListResponse(items=[], total=0)
 
