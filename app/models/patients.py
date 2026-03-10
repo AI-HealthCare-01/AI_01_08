@@ -13,7 +13,7 @@ class Patient(models.Model):
         table = "patients"
 
 
-# 수정 건강프로필
+# 건강 프로필
 class PatientProfile(models.Model):
     id = fields.BigIntField(pk=True)
 
@@ -28,21 +28,29 @@ class PatientProfile(models.Model):
     allergies = fields.TextField(null=True)
     notes = fields.TextField(null=True)
 
-    # [각주] 복용약 리스트(list[str])를 DB에는 JSON 문자열로 저장하기 위한 컬럼
+    # 복용약 리스트(list[str])를 DB에는 JSON 문자열로 저장
     meds_json = fields.TextField(null=True)
 
-    # [각주] 생활습관/입원 관련(요구사항 확장 필드)
+    # 생활습관 / 입원 관련
     is_smoker = fields.BooleanField(null=True)
     is_hospitalized = fields.BooleanField(null=True)
     discharge_date = fields.DateField(null=True)
 
-    # [각주] 평균 습관 값(소수 1자리 반올림 전제로 저장)
     avg_sleep_hours_per_day = fields.DecimalField(max_digits=3, decimal_places=1, null=True)
     avg_cig_packs_per_week = fields.DecimalField(max_digits=4, decimal_places=1, null=True)
     avg_alcohol_bottles_per_week = fields.DecimalField(max_digits=4, decimal_places=1, null=True)
-
-    # [각주] 운동은 분 단위 정수로 저장
     avg_exercise_minutes_per_day = fields.IntField(null=True)
+
+    # 🔴 CHANGED: soft delete 지원
+    is_deleted = fields.BooleanField(default=False)
+    deleted_at = fields.DatetimeField(null=True)
+    deleted_by_user = fields.ForeignKeyField(
+        "models.User",
+        related_name="deleted_patient_profiles",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    deleted_by_role = fields.CharField(max_length=20, null=True)
 
     created_at = fields.DatetimeField(auto_now_add=True)
     updated_at = fields.DatetimeField(auto_now=True)
@@ -56,6 +64,17 @@ class PatientProfile(models.Model):
 class PatientProfileHistory(models.Model):
     id = fields.BigIntField(primary_key=True)
     patient = fields.ForeignKeyField("models.Patient", related_name="profile_histories", on_delete=fields.CASCADE)
+
+    # 🔴 CHANGED: 누가 / 어떤 액션으로 바꿨는지 추적
+    actor_user = fields.ForeignKeyField(
+        "models.User",
+        related_name="patient_profile_histories",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    actor_role = fields.CharField(max_length=20, null=True)   # PATIENT / CAREGIVER / ADMIN
+    action = fields.CharField(max_length=20, null=True)       # CREATE / UPDATE / DELETE
+
     snapshot_json = fields.TextField()
     created_at = fields.DatetimeField(auto_now_add=True)
 
