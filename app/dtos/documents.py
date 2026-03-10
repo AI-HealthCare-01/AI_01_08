@@ -50,3 +50,117 @@ class DocumentDeleteResponse(BaseSerializerModel):
     document_id: int
     status: Literal["deleted"]
     deleted_at: datetime
+
+
+# OCR 처리 상태 조회 응답 - REQ-DOC-003
+class DocumentOcrStatusResponse(BaseSerializerModel):
+    document_id: int
+    patient_id: int
+    document_status: DocumentStatus
+    ocr_job_id: int | None
+    ocr_status: OcrStatus | None
+    retry_count: int | None
+    error_code: str | None
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime | None
+
+
+# OCR 재시도 요청 응답 - REQ-DOC-008
+class DocumentOcrRetryResponse(BaseSerializerModel):
+    document_id: int
+    ocr_job_id: int
+    status: Literal["queued"]
+    retry_count: int
+    queued_at: datetime
+
+
+# 추출 약 식약처 정보 응답 - REQ-DRUG-001, REQ-DRUG-002, REQ-DRUG-003
+class ExtractedDrugMfdsInfoResponse(BaseSerializerModel):
+    drug_info_cache_id: int
+    mfds_item_seq: str | None
+    drug_name_display: str | None
+    manufacturer: str | None
+    efficacy: str | None
+    dosage_info: str | None
+    precautions: str | None
+    storage_method: str | None
+    expires_at: datetime | None
+
+
+# 추출 약 자동 검증 상태 응답 - REQ-DRUG-001, REQ-DRUG-005
+class ExtractedDrugValidationResponse(BaseSerializerModel):
+    name_match_status: Literal["exact", "candidate", "unmatched"]
+    dosage_check_status: Literal["ok", "missing", "mismatch", "unknown"]
+    needs_review: bool
+    reason: str | None = None
+
+
+# 추출 약 목록 항목 응답 - REQ-DOC-006
+class ExtractedDrugItemResponse(BaseSerializerModel):
+    extracted_med_id: int
+    ocr_job_id: int
+    patient_id: int
+    name: str
+    dosage_text: str | None
+    frequency_text: str | None
+    duration_text: str | None
+    confidence: float | None
+    mfds_info: ExtractedDrugMfdsInfoResponse | None = None
+    validation: ExtractedDrugValidationResponse
+    created_at: datetime
+
+
+# 문서 추출 약 목록 조회 응답 - REQ-DOC-006
+class DocumentDrugsResponse(BaseSerializerModel):
+    document_id: int
+    patient_id: int
+    ocr_job_id: int | None
+    ocr_status: OcrStatus | None
+    items: list[ExtractedDrugItemResponse]
+    total: int
+
+
+# 추출 약 수정/확정 요청 항목 - REQ-DOC-007
+class DocumentDrugPatchItemRequest(BaseModel):
+    extracted_med_id: Annotated[int | None, Field(default=None, ge=1)]
+    name: Annotated[str, Field(min_length=1, max_length=255)]
+    dosage_text: Annotated[str | None, Field(default=None, max_length=255)]
+    frequency_text: Annotated[str | None, Field(default=None, max_length=255)]
+    duration_text: Annotated[str | None, Field(default=None, max_length=255)]
+    confidence: Annotated[float | None, Field(default=None, ge=0, le=1)]
+
+
+# 추출 약 수정/확정 요청 - REQ-DOC-007
+class DocumentDrugPatchRequest(BaseModel):
+    items: Annotated[list[DocumentDrugPatchItemRequest], Field(min_length=1)]
+    replace_all: bool = False
+    confirm: bool = True
+
+
+# 추출 약 수정/확정 응답 - REQ-DOC-007
+class DocumentDrugPatchResponse(BaseSerializerModel):
+    document_id: int
+    patient_id: int
+    ocr_job_id: int
+    confirmed: bool
+    updated_count: int
+    confirmed_patient_med_count: int
+    items: list[ExtractedDrugItemResponse]
+
+
+# 식약처 약 정보 검색 항목 응답 - REQ-DRUG-001, REQ-DRUG-002
+class MfdsDrugItemResponse(BaseSerializerModel):
+    item_seq: str
+    item_name: str
+    entp_name: str | None
+    efficacy: str | None
+    dosage_info: str | None
+    precautions: str | None
+
+
+# 식약처 약 정보 검색 응답 - REQ-DRUG-001, REQ-DRUG-002, REQ-DRUG-003
+class MfdsDrugSearchResponse(BaseSerializerModel):
+    query: str
+    total: int
+    items: list[MfdsDrugItemResponse]
