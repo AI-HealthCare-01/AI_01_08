@@ -21,6 +21,7 @@ from app.services.social_auth import SocialAuthService
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
+
 def _cookie_domain() -> str | None:
     domain = (config.COOKIE_DOMAIN or "").strip() or None
     if not domain:
