@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
@@ -24,11 +25,17 @@ def get_service() -> MedicationIntakeService:
     return MedicationIntakeService()
 
 
+MedicationServiceDep = Annotated[MedicationIntakeService, Depends(get_service)]
+PatientIdQuery = Annotated[int, Query(..., description="환자 ID")]
+DateFromQuery = Annotated[date, Query(..., alias="from", description="조회 시작일")]
+DateToQuery = Annotated[date, Query(..., alias="to", description="조회 종료일")]
+
+
 @router.post("/{schedule_id}/check", response_model=IntakeCheckResponse)
 async def check_medication(
     schedule_id: int,
     request: IntakeCheckRequest,
-    service: MedicationIntakeService = Depends(get_service),
+    service: MedicationServiceDep,
 ) -> IntakeCheckResponse:
     """
     복약 완료 체크
@@ -52,7 +59,7 @@ async def check_medication(
 async def undo_medication(
     schedule_id: int,
     request: IntakeUndoRequest,
-    service: MedicationIntakeService = Depends(get_service),
+    service: MedicationServiceDep,
 ) -> IntakeUndoResponse:
     """
     복약 체크 취소(undo)
@@ -65,10 +72,10 @@ async def undo_medication(
 
 @router.get("/status", response_model=IntakeStatusResponse)
 async def get_schedule_status(
-    patient_id: int = Query(..., description="환자 ID"),
-    date_from: date = Query(..., alias="from", description="조회 시작일"),
-    date_to: date = Query(..., alias="to", description="조회 종료일"),
-    service: MedicationIntakeService = Depends(get_service),
+    patient_id: PatientIdQuery,
+    date_from: DateFromQuery,
+    date_to: DateToQuery,
+    service: MedicationServiceDep,
 ) -> IntakeStatusResponse:
     """
     기간 내 복약 현황 조회
@@ -81,10 +88,10 @@ async def get_schedule_status(
 
 @router.get("/adherence", response_model=AdherenceResponse)
 async def get_schedule_adherence(
-    patient_id: int = Query(..., description="환자 ID"),
-    date_from: date = Query(..., alias="from", description="조회 시작일"),
-    date_to: date = Query(..., alias="to", description="조회 종료일"),
-    service: MedicationIntakeService = Depends(get_service),
+    patient_id: PatientIdQuery,
+    date_from: DateFromQuery,
+    date_to: DateToQuery,
+    service: MedicationServiceDep,
 ) -> AdherenceResponse:
     """
     기간 내 복약 이행률 조회

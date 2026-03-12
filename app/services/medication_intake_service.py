@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, status
 
@@ -37,7 +36,7 @@ DAY_NAME_TO_WEEKDAY = {
 }
 
 
-def _parse_days_of_week(days_str: Optional[str]) -> Optional[set[int]]:
+def _parse_days_of_week(days_str: str | None) -> set[int] | None:
     """
     days_of_week 예시:
     - "1,2,3,4,5,6,7"  (구버전 숫자 방식)
@@ -116,11 +115,11 @@ def _normalize_datetime_key(dt: datetime) -> datetime:
         dt = dt.replace(tzinfo=None)
     return dt.replace(microsecond=0)
 
-def _daterange(date_from: date, date_to: date) -> List[date]:
+def _daterange(date_from: date, date_to: date) -> list[date]:
     """
     시작일 ~ 종료일까지 날짜 리스트 생성
     """
-    days: List[date] = []
+    days: list[date] = []
     cur = date_from
     while cur <= date_to:
         days.append(cur)
@@ -291,12 +290,12 @@ class MedicationIntakeService:
             scheduled_at=scheduled_at,
         )
 
-    async def get_patient_intake_status(
+    async def get_patient_intake_status(  # noqa: C901
         self,
         patient_id: int,
         date_from: date,
         date_to: date,
-        now: Optional[datetime] = None,
+        now: datetime | None = None,
     ) -> IntakeStatusResponse:
         """
         기간 내 복약 현황 조회
@@ -319,7 +318,7 @@ class MedicationIntakeService:
 
         schedule_times = await self.schedule_repo.list_times_by_schedule_ids(schedule_ids)
 
-        times_by_schedule: Dict[int, List] = {}
+        times_by_schedule: dict[int, list] = {}
         for t in schedule_times:
             times_by_schedule.setdefault(t.schedule_id, []).append(t)
 
@@ -332,14 +331,14 @@ class MedicationIntakeService:
             end_dt=end_dt,
         )
 
-        log_map: Dict[Tuple[int, datetime], object] = {}
+        log_map: dict[tuple[int, datetime], object] = {}
         for log in logs:
             normalized_log_dt = _normalize_datetime_key(log.scheduled_at)
             log_map[(log.schedule_time_id, normalized_log_dt)] = log
 
         grace = timedelta(minutes=GRACE_MINUTES)
 
-        daily_list: List[DailyIntakeStatus] = []
+        daily_list: list[DailyIntakeStatus] = []
         expected_total = 0
         taken = 0
         missed = 0
@@ -347,7 +346,7 @@ class MedicationIntakeService:
         skipped = 0
 
         for day in _daterange(date_from, date_to):
-            items: List[IntakeItem] = []
+            items: list[IntakeItem] = []
 
             for schedule in schedules:
                 if schedule.start_date and day < schedule.start_date:
@@ -443,7 +442,7 @@ class MedicationIntakeService:
         patient_id: int,
         date_from: date,
         date_to: date,
-        now: Optional[datetime] = None,
+        now: datetime | None = None,
     ) -> AdherenceResponse:
         """
         복약 이행률 조회

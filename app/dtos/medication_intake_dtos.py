@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import List, Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -19,13 +19,13 @@ class IntakeItem(BaseModel):
     patient_med_id: int
     scheduled_at: datetime
     status: IntakeStatus
-    taken_at: Optional[datetime] = None
-    note: Optional[str] = None
+    taken_at: datetime | None = None
+    note: str | None = None
 
 
 class DailyIntakeStatus(BaseModel):
     day: date
-    items: List[IntakeItem]
+    items: list[IntakeItem]
 
 
 class AdherenceSummary(BaseModel):
@@ -35,14 +35,14 @@ class AdherenceSummary(BaseModel):
     pending: int
     skipped: int
     overall_rate: float
-    completed_rate: Optional[float] = None
+    completed_rate: float | None = None
 
 
 class IntakeStatusResponse(BaseModel):
     patient_id: int
     date_from: date
     date_to: date
-    days: List[DailyIntakeStatus]
+    days: list[DailyIntakeStatus]
     summary: AdherenceSummary
 
 
@@ -65,14 +65,14 @@ class IntakeCheckRequest(BaseModel):
     scheduled_date: date = Field(..., description="해당 복약 슬롯의 날짜")
 
     # 실제 복용 시각. 없으면 서버 현재시각으로 처리
-    taken_at: Optional[datetime] = Field(None, description="실제 복용 시각")
+    taken_at: datetime | None = Field(None, description="실제 복용 시각")
 
     # 메모
-    note: Optional[str] = Field(None, description="복약 메모")
+    note: str | None = Field(None, description="복약 메모")
 
     # 현재는 인증 연동 전 임시 방식
     # 추후 current_user.id 로 대체 가능
-    recorded_by_user_id: Optional[int] = Field(
+    recorded_by_user_id: int | None = Field(
         None,
         description="기록한 사용자 ID(임시 개발용)",
     )
@@ -96,7 +96,7 @@ class IntakeCheckResponse(BaseModel):
     scheduled_at: datetime
     taken_at: datetime
     status: IntakeStatus
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class IntakeUndoResponse(BaseModel):

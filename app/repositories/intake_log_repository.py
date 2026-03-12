@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
 
 from app.models.schedules import IntakeLog
 
@@ -13,7 +12,7 @@ class IntakeLogRepository:
         patient_id: int,
         start_dt: datetime,
         end_dt: datetime,
-    ) -> List[IntakeLog]:
+    ) -> list[IntakeLog]:
         """
         특정 환자의 기간 내 복약 로그 조회
         """
@@ -28,7 +27,7 @@ class IntakeLogRepository:
         schedule_id: int,
         schedule_time_id: int,
         scheduled_at: datetime,
-    ) -> Optional[IntakeLog]:
+    ) -> IntakeLog | None:
         """
         동일한 복약 슬롯(스케줄/시간/예약시각)에 해당하는 로그 1건 조회
         중복 체크 방지와 undo 대상 탐색에 사용
