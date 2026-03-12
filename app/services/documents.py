@@ -3,10 +3,13 @@ import hashlib
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
+from difflib import SequenceMatcher
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
+from PIL import Image
 from starlette import status
 from tortoise.transactions import in_transaction
 
@@ -21,12 +24,17 @@ from app.dtos.documents import (
     DocumentListQuery,
     DocumentListResponse,
     DocumentOcrStatusResponse,
+    DocumentRenameRequest,
+    DocumentRenameResponse,
     DocumentUploadResponse,
     ExtractedDrugItemResponse,
     ExtractedDrugMfdsInfoResponse,
     ExtractedDrugValidationResponse,
+    MedicationGuideItemResponse,
+    MedicationGuideResponse,
 )
-from app.models.documents import Document, ExtractedMed, OcrJob
+from app.models.documents import Document, ExtractedMed, OcrJob, OcrRawText
+from app.models.dur import DurAlert
 from app.models.healthcare import UserRole
 from app.models.medications import DrugInfoCache, PatientMed
 from app.models.patients import CaregiverPatientLink, Patient
@@ -34,7 +42,8 @@ from app.models.users import User
 from app.services.mfds import MfdsService
 from app.services.ocr import OcrService
 
-ALLOWED_FILE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+ALLOWED_FILE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".heic", ".heif"}
+HEIC_FILE_EXTENSIONS = {".heic", ".heif"}
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
 DRUG_FORM_SUFFIXES = ("장용캡슐", "연질캡슐", "서방정", "캡슐", "정", "액", "주", "겔", "시럽", "크림", "로션")
 
@@ -67,8 +76,13 @@ class DocumentService:
         if len(file_bytes) > MAX_UPLOAD_SIZE_BYTES:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_INPUT")
 
+        stored_extension = extension
+        # HEIC/HEIF 파일은 OCR 호환을 위해 JPEG로 변환 - REQ-DOC-003
+        if extension in HEIC_FILE_EXTENSIONS:
+            file_bytes, stored_extension = self._convert_heic_to_jpeg(file_bytes=file_bytes)
+
         checksum = hashlib.sha256(file_bytes).hexdigest()
-        stored_name = f"{datetime.now(config.TIMEZONE).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex}{extension}"
+        stored_name = f"{datetime.now(config.TIMEZONE).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex}{stored_extension}"
         stored_path = self.upload_root / stored_name
         stored_path.write_bytes(file_bytes)
         file_url = f"uploads/documents/{stored_name}"
@@ -79,7 +93,7 @@ class DocumentService:
                 uploaded_by_user_id=user.id,
                 file_url=file_url,
                 original_filename=original_filename or None,
-                file_type=self._normalize_file_type(extension),
+                file_type=self._normalize_file_type(stored_extension),
                 file_size=len(file_bytes),
                 checksum=checksum,
                 status="uploaded",
@@ -175,6 +189,24 @@ class DocumentService:
             deleted_at=now,
         )
 
+    # 문서명 변경(권한 검증 포함) - REQ-DOC-002
+    async def rename_document(
+        self, user: User, document_id: int, payload: DocumentRenameRequest
+    ) -> DocumentRenameResponse:
+        document = await Document.filter(id=document_id, status="uploaded").first()
+        if not document:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+
+        if not await self._has_patient_access(user=user, patient_id=document.patient_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
+
+        normalized_title = payload.title.strip()
+        if not normalized_title:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_INPUT")
+
+        await Document.filter(id=document_id).update(original_filename=normalized_title)
+        return DocumentRenameResponse(document_id=document.id, original_filename=normalized_title)
+
     # OCR 처리 상태 조회(권한 검증 포함) - REQ-DOC-003
     async def get_document_ocr_status(self, user: User, document_id: int) -> DocumentOcrStatusResponse:
         document = await Document.filter(id=document_id).prefetch_related("ocr_jobs").first()
@@ -185,6 +217,7 @@ class DocumentService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
         latest_job = self._get_latest_ocr_job(document=document)
+        barcode_values = await self._load_barcode_values(ocr_job_id=latest_job.id if latest_job else None)
 
         return DocumentOcrStatusResponse(
             document_id=document.id,
@@ -195,6 +228,9 @@ class DocumentService:
             retry_count=latest_job.retry_count if latest_job else None,
             error_code=latest_job.error_code if latest_job else None,
             error_message=latest_job.error_message if latest_job else None,
+            barcode_detected=bool(barcode_values),
+            barcode_count=len(barcode_values),
+            barcode_values=barcode_values,
             created_at=latest_job.created_at if latest_job else document.created_at,
             updated_at=latest_job.updated_at if latest_job else None,
         )
@@ -213,10 +249,16 @@ class DocumentService:
         latest_job = await OcrJob.filter(document_id=document.id).order_by("-created_at").first()
         if not latest_job or latest_job.status != "success":
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="UNPROCESSABLE")
+        barcode_values = await self._load_barcode_values(ocr_job_id=latest_job.id)
 
         extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_job.id).order_by("id")
         if not extracted_meds:
             # REQ-DOC-005, REQ-DOC-006 - 과거 OCR 성공건의 raw_text 기반 추출 결과 백필
+            backfilled_count = await self.ocr_service.backfill_extracted_meds(ocr_job_id=latest_job.id)
+            if backfilled_count > 0:
+                extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_job.id).order_by("id")
+        elif self._needs_extracted_meds_backfill(extracted_meds=extracted_meds):
+            # REQ-DOC-005, REQ-DOC-006 - 구버전 파서 결과(용량/횟수/기간 비어있는 경우) 자동 보정
             backfilled_count = await self.ocr_service.backfill_extracted_meds(ocr_job_id=latest_job.id)
             if backfilled_count > 0:
                 extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_job.id).order_by("id")
@@ -230,6 +272,9 @@ class DocumentService:
             patient_id=document.patient_id,
             ocr_job_id=latest_job.id,
             ocr_status=latest_job.status,
+            barcode_detected=bool(barcode_values),
+            barcode_count=len(barcode_values),
+            barcode_values=barcode_values,
             items=response_items,
             total=len(response_items),
         )
@@ -249,8 +294,36 @@ class DocumentService:
         if not latest_job or latest_job.status != "success":
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="UNPROCESSABLE")
 
+        updated_meds = await self._apply_extracted_med_patch(
+            ocr_job_id=latest_job.id,
+            patient_id=document.patient_id,
+            payload=payload,
+        )
+        confirmed_patient_med_count = await self._confirm_document_drugs_if_needed(
+            document=document,
+            ocr_job=latest_job,
+            extracted_meds=updated_meds,
+            confirm=payload.confirm,
+            force_confirm=payload.force_confirm,
+        )
+
+        response_items = await self._build_extracted_drug_items(extracted_meds=updated_meds, fetch_missing=True)
+        return DocumentDrugPatchResponse(
+            document_id=document.id,
+            patient_id=document.patient_id,
+            ocr_job_id=latest_job.id,
+            confirmed=payload.confirm,
+            updated_count=len(response_items),
+            confirmed_patient_med_count=confirmed_patient_med_count,
+            items=response_items,
+        )
+
+    # 추출 약 수정 내용 DB 반영(replace_all 포함) - REQ-DOC-007
+    async def _apply_extracted_med_patch(
+        self, ocr_job_id: int, patient_id: int, payload: DocumentDrugPatchRequest
+    ) -> list[ExtractedMed]:
         async with in_transaction() as conn:
-            existing_meds = await ExtractedMed.filter(ocr_job_id=latest_job.id).using_db(conn)
+            existing_meds = await ExtractedMed.filter(ocr_job_id=ocr_job_id).using_db(conn)
             existing_by_id = {med.id: med for med in existing_meds}
             touched_med_ids: list[int] = []
 
@@ -276,39 +349,216 @@ class DocumentService:
 
                 created_med = await self._create_extracted_med_from_patch_item(
                     item=item,
-                    ocr_job_id=latest_job.id,
-                    patient_id=document.patient_id,
+                    ocr_job_id=ocr_job_id,
+                    patient_id=patient_id,
                     using_db=conn,
                 )
                 touched_med_ids.append(created_med.id)
 
             if payload.replace_all:
-                delete_query = ExtractedMed.filter(ocr_job_id=latest_job.id).using_db(conn)
+                delete_query = ExtractedMed.filter(ocr_job_id=ocr_job_id).using_db(conn)
                 if touched_med_ids:
                     delete_query = delete_query.exclude(id__in=touched_med_ids)
                 await delete_query.delete()
 
-            updated_meds = await ExtractedMed.filter(ocr_job_id=latest_job.id).using_db(conn).order_by("id")
+        return await ExtractedMed.filter(ocr_job_id=ocr_job_id).order_by("id")
 
-            confirmed_patient_med_count = 0
-            if payload.confirm:
-                confirmed_patient_med_count = await self._sync_confirmed_meds(
-                    document=document,
-                    ocr_job=latest_job,
-                    extracted_meds=updated_meds,
-                    using_db=conn,
+    # 추출 약 확정 저장(검수 가드 + patient_meds 동기화) - REQ-DOC-007, REQ-DRUG-001, REQ-DRUG-005
+    async def _confirm_document_drugs_if_needed(
+        self,
+        document: Document,
+        ocr_job: OcrJob,
+        extracted_meds: list[ExtractedMed],
+        confirm: bool,
+        force_confirm: bool,
+    ) -> int:
+        if not confirm:
+            return 0
+
+        if not force_confirm:
+            review_required_meds = await self._collect_review_required_med_names(extracted_meds=extracted_meds)
+            if review_required_meds:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "code": "UNPROCESSABLE",
+                        "message": "REVIEW_REQUIRED_BEFORE_CONFIRM",
+                        "review_required_meds": review_required_meds,
+                    },
                 )
 
-        response_items = await self._build_extracted_drug_items(extracted_meds=updated_meds, fetch_missing=True)
-        return DocumentDrugPatchResponse(
-            document_id=document.id,
-            patient_id=document.patient_id,
-            ocr_job_id=latest_job.id,
-            confirmed=payload.confirm,
-            updated_count=len(response_items),
-            confirmed_patient_med_count=confirmed_patient_med_count,
+        async with in_transaction() as conn:
+            return await self._sync_confirmed_meds(
+                document=document,
+                ocr_job=ocr_job,
+                extracted_meds=extracted_meds,
+                using_db=conn,
+            )
+
+    # 복약안내 카드 조회(문서별/전체 + 기존 복용약 포함 옵션) - REQ-DOC-007, REQ-DRUG-002, REQ-DRUG-003
+    async def get_medication_guide(
+        self,
+        user: User,
+        patient_id: int,
+        document_id: int | None = None,
+        include_other_active: bool = False,
+    ) -> MedicationGuideResponse:
+        target_patient = await Patient.get_or_none(id=patient_id)
+        if not target_patient:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+
+        if not await self._has_patient_access(user=user, patient_id=patient_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
+
+        patient_meds = await self._load_patient_meds_for_guide(
+            patient_id=patient_id,
+            document_id=document_id,
+            include_other_active=include_other_active,
+        )
+        extracted_med_map = await self._build_extracted_med_map(patient_meds=patient_meds)
+        extracted_med_fallback_map = await self._build_extracted_med_fallback_map(patient_meds=patient_meds)
+        source_document_map = await self._build_source_document_map(patient_meds=patient_meds)
+
+        interaction_map = await self._build_patient_med_interaction_map(patient_meds=patient_meds)
+        response_items: list[MedicationGuideItemResponse] = []
+        for patient_med in patient_meds:
+            extracted_med = (
+                extracted_med_map.get(patient_med.source_extracted_med_id)
+                if patient_med.source_extracted_med_id
+                else None
+            )
+            if extracted_med is None:
+                extracted_med = self._find_extracted_med_fallback(
+                    patient_med=patient_med,
+                    extracted_med_fallback_map=extracted_med_fallback_map,
+                )
+            drug_info_cache = patient_med.drug_info_cache
+            data_source = "ocr_mfds" if drug_info_cache else "ocr_only"
+            source_document = (
+                source_document_map.get(patient_med.source_document_id) if patient_med.source_document_id else None
+            )
+
+            # 복약방법은 MFDS 우선, 미매칭이면 OCR 구조화 데이터 기반으로 fallback - REQ-DOC-007, REQ-DRUG-002
+            dosage_instructions = self._split_guide_text_to_bullets(
+                text=(drug_info_cache.dosage_info if drug_info_cache else None),
+                fallback_text=self._build_ocr_fallback_instructions_text(
+                    patient_med=patient_med,
+                    extracted_med=extracted_med,
+                ),
+            )
+            if not dosage_instructions:
+                dosage_instructions = ["처방전 또는 의사/약사 안내에 따라 복용하세요."]
+
+            # 주의사항은 MFDS 우선, 미매칭이면 안전 기본 수칙 fallback - REQ-DOC-007, REQ-DRUG-002
+            precautions = self._split_guide_text_to_bullets(
+                text=(drug_info_cache.precautions if drug_info_cache else None),
+                fallback_text=self._build_ocr_fallback_precautions_text(extracted_med=extracted_med),
+            )
+            if not precautions:
+                precautions = self._build_default_precautions()
+
+            prescribed_days = self._extract_prescribed_days(patient_med=patient_med, extracted_med=extracted_med)
+            prescribed_at = self._resolve_prescribed_at_date(patient_med=patient_med, source_document=source_document)
+            expected_end_date = self._calculate_expected_end_date(
+                prescribed_at=prescribed_at,
+                prescribed_days=prescribed_days,
+            )
+
+            response_items.append(
+                MedicationGuideItemResponse(
+                    patient_med_id=patient_med.id,
+                    patient_id=patient_med.patient_id,
+                    display_name=patient_med.display_name,
+                    dosage=patient_med.dosage or (extracted_med.dosage_text if extracted_med else None),
+                    frequency_text=self._coalesce_frequency_text(patient_med=patient_med, extracted_med=extracted_med),
+                    data_source=data_source,
+                    efficacy_summary=self._build_efficacy_summary(
+                        display_name=patient_med.display_name,
+                        drug_info_cache=drug_info_cache,
+                    ),
+                    dosage_instructions=dosage_instructions,
+                    precautions=precautions,
+                    storage_method=self._build_storage_method(drug_info_cache=drug_info_cache),
+                    prescribed_days=prescribed_days,
+                    prescribed_at=prescribed_at,
+                    expected_end_date=expected_end_date,
+                    interaction_warnings=interaction_map.get(patient_med.id, []),
+                    source_document_id=patient_med.source_document_id,
+                    confirmed_at=patient_med.confirmed_at,
+                )
+            )
+
+        return MedicationGuideResponse(
+            patient_id=patient_id,
+            document_id=document_id,
+            include_other_active=include_other_active,
+            total=len(response_items),
             items=response_items,
         )
+
+    # 복약안내 대상 patient_meds 로드 - REQ-DOC-007
+    async def _load_patient_meds_for_guide(
+        self, patient_id: int, document_id: int | None, include_other_active: bool
+    ) -> list[PatientMed]:
+        if document_id is not None:
+            source_document = await Document.filter(id=document_id, status="uploaded").first()
+            if not source_document or source_document.patient_id != patient_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+
+        patient_med_query = PatientMed.filter(patient_id=patient_id, is_active=True)
+        if document_id is not None and not include_other_active:
+            patient_med_query = patient_med_query.filter(source_document_id=document_id)
+
+        return await patient_med_query.select_related("drug_info_cache").order_by("-confirmed_at", "-updated_at")
+
+    # 복약안내용 ExtractedMed 맵 구성 - REQ-DOC-007
+    @staticmethod
+    async def _build_extracted_med_map(patient_meds: list[PatientMed]) -> dict[int, ExtractedMed]:
+        extracted_med_id_list = [med.source_extracted_med_id for med in patient_meds if med.source_extracted_med_id]
+        if not extracted_med_id_list:
+            return {}
+        extracted_meds = await ExtractedMed.filter(id__in=extracted_med_id_list)
+        return {med.id: med for med in extracted_meds}
+
+    # 복약안내용 ExtractedMed fallback 맵 구성(ocr_job_id + 약명) - REQ-DOC-007
+    async def _build_extracted_med_fallback_map(
+        self, patient_meds: list[PatientMed]
+    ) -> dict[tuple[int, str], ExtractedMed]:
+        source_ocr_job_ids = [med.source_ocr_job_id for med in patient_meds if med.source_ocr_job_id]
+        if not source_ocr_job_ids:
+            return {}
+
+        extracted_meds = await ExtractedMed.filter(ocr_job_id__in=source_ocr_job_ids)
+        fallback_map: dict[tuple[int, str], ExtractedMed] = {}
+        for extracted_med in extracted_meds:
+            normalized_name = self._normalize_mfds_keyword(value=extracted_med.name)
+            if not normalized_name:
+                continue
+            fallback_key = (extracted_med.ocr_job_id, normalized_name)
+            if fallback_key not in fallback_map:
+                fallback_map[fallback_key] = extracted_med
+        return fallback_map
+
+    # source_extracted_med_id 불일치 시 fallback 추출약 조회 - REQ-DOC-007
+    def _find_extracted_med_fallback(
+        self, patient_med: PatientMed, extracted_med_fallback_map: dict[tuple[int, str], ExtractedMed]
+    ) -> ExtractedMed | None:
+        if not patient_med.source_ocr_job_id:
+            return None
+        normalized_name = self._normalize_mfds_keyword(value=patient_med.display_name)
+        if not normalized_name:
+            return None
+        fallback_key = (patient_med.source_ocr_job_id, normalized_name)
+        return extracted_med_fallback_map.get(fallback_key)
+
+    # 복약안내용 source document 맵 구성 - REQ-DOC-007
+    @staticmethod
+    async def _build_source_document_map(patient_meds: list[PatientMed]) -> dict[int, Document]:
+        source_document_ids = [med.source_document_id for med in patient_meds if med.source_document_id]
+        if not source_document_ids:
+            return {}
+        source_documents = await Document.filter(id__in=source_document_ids)
+        return {document.id: document for document in source_documents}
 
     # 대상 PATIENT 귀속 검증 - REQ-USER-008, REQ-DOC-003
     async def _resolve_target_patient_for_upload(self, user: User, patient_id: int | None) -> Patient:
@@ -386,6 +636,29 @@ class DocumentService:
     def _normalize_file_type(extension: str) -> str:
         return "pdf" if extension == ".pdf" else "image"
 
+    # HEIC/HEIF -> JPEG 변환 - REQ-DOC-003
+    @staticmethod
+    def _convert_heic_to_jpeg(file_bytes: bytes) -> tuple[bytes, str]:
+        try:
+            # pillow-heif 설치 시 HEIC 오프너 자동 등록
+            try:
+                import pillow_heif  # type: ignore
+
+                pillow_heif.register_heif_opener()
+            except Exception:  # noqa: BLE001
+                pass
+
+            with Image.open(BytesIO(file_bytes)) as image:
+                rgb_image = image.convert("RGB")
+                output = BytesIO()
+                rgb_image.save(output, format="JPEG", quality=95)
+                converted_bytes = output.getvalue()
+            if not converted_bytes:
+                raise ValueError("EMPTY_CONVERTED_IMAGE")
+            return converted_bytes, ".jpg"
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_INPUT") from exc
+
     # 문서별 최신 OCR 상태 계산 - REQ-DOC-002, REQ-DOC-003
     @staticmethod
     def _get_latest_ocr_status(document: Document) -> str | None:
@@ -399,6 +672,45 @@ class DocumentService:
         if not jobs:
             return None
         return max(jobs, key=lambda job: job.created_at)
+
+    # 바코드 인식 결과 로드 - REQ-DOC-009
+    async def _load_barcode_values(self, ocr_job_id: int | None) -> list[str]:
+        if ocr_job_id is None:
+            return []
+        raw_text_row = await OcrRawText.get_or_none(ocr_job_id=ocr_job_id)
+        if not raw_text_row or not raw_text_row.raw_text:
+            return []
+        return self._extract_barcode_values(raw_text=raw_text_row.raw_text)
+
+    # raw_text에서 바코드 값 파싱 - REQ-DOC-009
+    @staticmethod
+    def _extract_barcode_values(raw_text: str) -> list[str]:
+        barcode_values: list[str] = []
+        seen_values: set[str] = set()
+        for raw_line in raw_text.splitlines():
+            line = raw_line.strip()
+            if not line.startswith("type="):
+                continue
+            matched = re.search(r"value=(.+)$", line)
+            if not matched:
+                continue
+            barcode_value = matched.group(1).strip()
+            if not barcode_value or barcode_value in seen_values:
+                continue
+            seen_values.add(barcode_value)
+            barcode_values.append(barcode_value)
+        return barcode_values
+
+    # 기존 추출 결과가 비어있는 경우 재파싱 필요 여부 판별 - REQ-DOC-006
+    @staticmethod
+    def _needs_extracted_meds_backfill(extracted_meds: list[ExtractedMed]) -> bool:
+        if not extracted_meds:
+            return False
+        empty_schedule_count = 0
+        for med in extracted_meds:
+            if not med.dosage_text and not med.frequency_text and not med.duration_text:
+                empty_schedule_count += 1
+        return empty_schedule_count >= max(1, int(len(extracted_meds) * 0.7))
 
     # 추출 약 응답 변환 - REQ-DOC-006, REQ-DOC-007
     @staticmethod
@@ -469,7 +781,7 @@ class DocumentService:
                 display_name=med.name,
                 dosage=med.dosage_text,
                 route=None,
-                notes="confirmed_from_ocr",
+                notes=self._build_confirmed_med_note(extracted_med=med),
                 is_active=True,
                 confirmed_at=now,
                 using_db=using_db,
@@ -515,6 +827,21 @@ class DocumentService:
             )
         return response_items
 
+    # 추출 약 확정 전 검수 필요 약명 수집 - REQ-DOC-007, REQ-DRUG-001, REQ-DRUG-005
+    async def _collect_review_required_med_names(self, extracted_meds: list[ExtractedMed]) -> list[str]:
+        review_required_meds: list[str] = []
+        seen_names: set[str] = set()
+        for med in extracted_meds:
+            cache_resolution = await self._resolve_drug_cache(name=med.name, fetch_missing=True)
+            validation = self._build_validation_status(med=med, cache_resolution=cache_resolution)
+            if not validation.needs_review:
+                continue
+            if med.name in seen_names:
+                continue
+            seen_names.add(med.name)
+            review_required_meds.append(med.name)
+        return review_required_meds
+
     # 자동 검증 상태 계산 - REQ-DRUG-001, REQ-DRUG-005
     def _build_validation_status(
         self, med: ExtractedMed, cache_resolution: DrugCacheResolution
@@ -552,21 +879,29 @@ class DocumentService:
 
     # 약명 기준 drug_info_cache 조회/동기화 - REQ-DRUG-001, REQ-DRUG-002, REQ-DRUG-003
     async def _resolve_drug_cache(self, name: str, fetch_missing: bool) -> DrugCacheResolution:
-        keyword = self._normalize_mfds_keyword(value=name)
-        if not keyword:
+        keywords = self._build_cache_search_keywords(name=name)
+        if not keywords:
             return DrugCacheResolution(cache=None, name_match_status="unmatched")
 
-        matched_cache, name_match_status = await self._find_best_drug_cache(keyword=keyword)
-        if matched_cache or not fetch_missing or not config.MFDS_SERVICE_KEY:
-            return DrugCacheResolution(cache=matched_cache, name_match_status=name_match_status)
+        for keyword in keywords:
+            matched_cache, name_match_status = await self._find_best_drug_cache(keyword=keyword)
+            if matched_cache:
+                return DrugCacheResolution(cache=matched_cache, name_match_status=name_match_status)
 
-        try:
-            await self.mfds_service.search_easy_drug_info(drug_name=keyword, num_of_rows=5)
-        except HTTPException:
+        if not fetch_missing or not config.MFDS_SERVICE_KEY:
             return DrugCacheResolution(cache=None, name_match_status="unmatched")
 
-        matched_cache, name_match_status = await self._find_best_drug_cache(keyword=keyword)
-        return DrugCacheResolution(cache=matched_cache, name_match_status=name_match_status)
+        for keyword in keywords[:2]:
+            try:
+                await self.mfds_service.search_easy_drug_info(drug_name=keyword, num_of_rows=5)
+            except HTTPException:
+                continue
+
+            matched_cache, name_match_status = await self._find_best_drug_cache(keyword=keyword)
+            if matched_cache:
+                return DrugCacheResolution(cache=matched_cache, name_match_status=name_match_status)
+
+        return DrugCacheResolution(cache=None, name_match_status="unmatched")
 
     # 약명 기반 캐시 후보 조회(부분 일치 + 형태소 suffix 제거 fallback) - REQ-DRUG-001, REQ-DRUG-005
     async def _find_best_drug_cache(self, keyword: str) -> tuple[DrugInfoCache | None, str]:  # noqa: C901
@@ -581,6 +916,10 @@ class DocumentService:
                 )
                 keyword = stripped_keyword
         if not candidates:
+            # 부분 일치가 없으면 최근 캐시에서 fuzzy 후보 탐색 - REQ-DRUG-001, REQ-DRUG-005
+            fuzzy_candidate = await self._find_fuzzy_drug_cache(keyword=keyword)
+            if fuzzy_candidate:
+                return fuzzy_candidate, "candidate"
             return None, "unmatched"
 
         normalized_keyword = self._normalize_mfds_keyword(value=keyword)
@@ -603,7 +942,7 @@ class DocumentService:
             return best_cache, "exact"
         if best_score in {1, 2}:
             return best_cache, "candidate"
-        return best_cache, "unmatched"
+        return None, "unmatched"
 
     # MFDS 조회 키워드 정규화 - REQ-DRUG-005
     @staticmethod
@@ -621,3 +960,226 @@ class DocumentService:
             if keyword.endswith(suffix) and len(keyword) > len(suffix) + 1:
                 return keyword[: -len(suffix)]
         return keyword
+
+    # 캐시 검색 키워드 후보 생성 - REQ-DRUG-001, REQ-DRUG-005
+    def _build_cache_search_keywords(self, name: str) -> list[str]:
+        normalized_name = self._normalize_mfds_keyword(value=name)
+        if not normalized_name:
+            return []
+
+        candidates = [normalized_name]
+        stripped_once = self._strip_drug_form_suffix(keyword=normalized_name)
+        if stripped_once and stripped_once != normalized_name:
+            candidates.append(stripped_once)
+
+        stripped_twice = self._strip_drug_form_suffix(keyword=stripped_once)
+        if stripped_twice and stripped_twice not in candidates:
+            candidates.append(stripped_twice)
+
+        without_units = re.sub(r"\d+(?:MG|G|MCG|ML)?", "", normalized_name, flags=re.IGNORECASE)
+        if without_units and without_units not in candidates:
+            candidates.append(without_units)
+
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            cleaned_keyword = candidate.strip()
+            if len(cleaned_keyword) < 2:
+                continue
+            if cleaned_keyword in seen:
+                continue
+            seen.add(cleaned_keyword)
+            deduped.append(cleaned_keyword)
+        return deduped
+
+    # 부분일치 실패 시 fuzzy 캐시 후보 탐색 - REQ-DRUG-001, REQ-DRUG-005
+    async def _find_fuzzy_drug_cache(self, keyword: str) -> DrugInfoCache | None:
+        recent_caches = (
+            await DrugInfoCache.exclude(drug_name_display__isnull=True)
+            .exclude(drug_name_display="")
+            .order_by("-updated_at")
+            .limit(200)
+        )
+        if not recent_caches:
+            return None
+
+        normalized_keyword = self._normalize_mfds_keyword(value=keyword)
+        if not normalized_keyword:
+            return None
+
+        best_ratio = 0.0
+        best_candidate: DrugInfoCache | None = None
+        for cache in recent_caches:
+            normalized_display_name = self._normalize_mfds_keyword(value=cache.drug_name_display or "")
+            if not normalized_display_name:
+                continue
+            ratio = SequenceMatcher(None, normalized_keyword, normalized_display_name).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_candidate = cache
+
+        if best_candidate and best_ratio >= 0.72:
+            return best_candidate
+        return None
+
+    # 복약안내 텍스트를 카드 bullet로 분리 - REQ-DRUG-002
+    @staticmethod
+    def _split_guide_text_to_bullets(text: str | None, fallback_text: str | None) -> list[str]:
+        source_text = text or fallback_text or ""
+        if not source_text.strip():
+            return []
+
+        normalized_text = re.sub(r"<[^>]+>", " ", source_text)
+        normalized_text = normalized_text.replace("\r", "\n")
+        normalized_text = re.sub(r"[ \t]+", " ", normalized_text).strip()
+
+        raw_chunks = re.split(r"[\n•·]+|(?<=[.!?])\s+|(?:\d+\.)\s*", normalized_text)
+        bullets: list[str] = []
+        seen_bullets: set[str] = set()
+        for chunk in raw_chunks:
+            candidate_text = chunk.strip(" -:;")
+            if not candidate_text:
+                continue
+            if len(candidate_text) < 3:
+                continue
+            if len(candidate_text) > 140:
+                candidate_text = f"{candidate_text[:137]}..."
+            if candidate_text in seen_bullets:
+                continue
+            seen_bullets.add(candidate_text)
+            bullets.append(candidate_text)
+            if len(bullets) >= 4:
+                break
+        return bullets
+
+    # 확정 약 메모 생성(OCR fallback 용도) - REQ-DOC-007
+    def _build_confirmed_med_note(self, extracted_med: ExtractedMed) -> str:
+        parts: list[str] = []
+        if extracted_med.dosage_text:
+            parts.append(f"용량:{extracted_med.dosage_text}")
+        if extracted_med.frequency_text:
+            parts.append(f"횟수:{extracted_med.frequency_text}")
+        if extracted_med.duration_text:
+            parts.append(f"기간:{extracted_med.duration_text}")
+        if not parts:
+            return "처방전 인식 기반 확정"
+        return " / ".join(parts)
+
+    # 복약안내 복용횟수 추출(추출약 우선) - REQ-DOC-007
+    def _coalesce_frequency_text(self, patient_med: PatientMed, extracted_med: ExtractedMed | None) -> str | None:
+        if extracted_med and extracted_med.frequency_text:
+            return self._nullable_str(extracted_med.frequency_text)
+
+        if not patient_med.notes:
+            return None
+        match = re.search(r"횟수:([^/]+)", patient_med.notes)
+        if match:
+            return self._nullable_str(match.group(1))
+        return None
+
+    # 복약안내 효능 요약 계산 - REQ-DRUG-002
+    def _build_efficacy_summary(self, display_name: str, drug_info_cache: DrugInfoCache | None) -> str | None:
+        if drug_info_cache and drug_info_cache.efficacy:
+            bullets = self._split_guide_text_to_bullets(text=drug_info_cache.efficacy, fallback_text=None)
+            return bullets[0] if bullets else drug_info_cache.efficacy[:120]
+        return f"{display_name} 처방약 (식약처 상세정보 미매칭)"
+
+    # 복약안내 보관방법 계산 - REQ-DRUG-002
+    @staticmethod
+    def _build_storage_method(drug_info_cache: DrugInfoCache | None) -> str | None:
+        if drug_info_cache and drug_info_cache.storage_method:
+            return drug_info_cache.storage_method
+        return "직사광선/습기를 피하고 실온 보관"
+
+    # OCR 기반 복약방법 fallback 텍스트 생성 - REQ-DOC-007
+    def _build_ocr_fallback_instructions_text(self, patient_med: PatientMed, extracted_med: ExtractedMed | None) -> str:
+        parts: list[str] = []
+        if patient_med.dosage:
+            parts.append(f"1회 {patient_med.dosage} 복용")
+        if extracted_med and extracted_med.frequency_text:
+            parts.append(f"{extracted_med.frequency_text} 복용")
+        if extracted_med and extracted_med.duration_text:
+            parts.append(f"{extracted_med.duration_text} 동안 복용")
+        if not parts and patient_med.notes:
+            parts.append(patient_med.notes)
+        return "\n".join(parts)
+
+    # OCR 기반 주의사항 fallback 텍스트 생성 - REQ-DOC-007
+    def _build_ocr_fallback_precautions_text(self, extracted_med: ExtractedMed | None) -> str:
+        if not extracted_med:
+            return ""
+        parts: list[str] = []
+        if extracted_med.frequency_text and "필요" in extracted_med.frequency_text:
+            parts.append("필요 시 복용 약으로 과다 복용을 피하세요.")
+        if extracted_med.duration_text:
+            parts.append(f"처방된 기간({extracted_med.duration_text})을 우선 지켜 복용하세요.")
+        return "\n".join(parts)
+
+    # MFDS 미매칭 시 기본 안전 수칙 - REQ-DOC-007
+    @staticmethod
+    def _build_default_precautions() -> list[str]:
+        return [
+            "처방전 또는 의사/약사 안내와 다르면 복용 전 재확인하세요.",
+            "어지럼증, 발진 등 이상반응이 있으면 복용을 중지하고 상담하세요.",
+            "다른 약과 함께 복용 중이면 병용 가능 여부를 확인하세요.",
+        ]
+
+    # 처방 일수 추출 - REQ-DOC-007
+    def _extract_prescribed_days(self, patient_med: PatientMed, extracted_med: ExtractedMed | None) -> int | None:
+        duration_candidates: list[str] = []
+        if extracted_med and extracted_med.duration_text:
+            duration_candidates.append(extracted_med.duration_text)
+        if patient_med.notes:
+            duration_candidates.append(patient_med.notes)
+
+        for duration_text in duration_candidates:
+            matched = re.search(r"(\d+)\s*(?:일분|일|days?)", duration_text, flags=re.IGNORECASE)
+            if matched:
+                return int(matched.group(1))
+        return None
+
+    # 처방 시작일 계산(문서 생성일 우선) - REQ-DOC-007
+    @staticmethod
+    def _resolve_prescribed_at_date(patient_med: PatientMed, source_document: Document | None) -> date | None:
+        if source_document:
+            return source_document.created_at.date()
+        if patient_med.confirmed_at:
+            return patient_med.confirmed_at.date()
+        return None
+
+    # 복용 종료 예정일 계산 - REQ-DOC-007
+    @staticmethod
+    def _calculate_expected_end_date(prescribed_at: date | None, prescribed_days: int | None) -> date | None:
+        if not prescribed_at or not prescribed_days or prescribed_days <= 0:
+            return None
+        return prescribed_at + timedelta(days=prescribed_days - 1)
+
+    # DUR 경고 매핑(복약안내 상호작용 노출) - REQ-DRUG-011, REQ-DRUG-013
+    async def _build_patient_med_interaction_map(self, patient_meds: list[PatientMed]) -> dict[int, list[str]]:
+        if not patient_meds:
+            return {}
+
+        patient_id = patient_meds[0].patient_id
+        patient_med_ids = [patient_med.id for patient_med in patient_meds]
+        alerts = (
+            await DurAlert.filter(
+                patient_id=patient_id,
+                is_active=True,
+                patient_med_id__in=patient_med_ids,
+            )
+            .order_by("-created_at")
+            .limit(200)
+        )
+
+        interaction_map: dict[int, list[str]] = {}
+        for alert in alerts:
+            alert_message = (alert.message or "").strip()
+            if not alert_message:
+                continue
+            med_alerts = interaction_map.setdefault(alert.patient_med_id, [])
+            if alert_message in med_alerts:
+                continue
+            if len(med_alerts) >= 3:
+                continue
+            med_alerts.append(alert_message)
+        return interaction_map

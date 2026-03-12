@@ -13,7 +13,10 @@ from app.dtos.documents import (
     DocumentListResponse,
     DocumentOcrRetryResponse,
     DocumentOcrStatusResponse,
+    DocumentRenameRequest,
+    DocumentRenameResponse,
     DocumentUploadResponse,
+    MedicationGuideResponse,
     MfdsDrugSearchResponse,
 )
 from app.models.users import User
@@ -58,6 +61,18 @@ async def soft_delete_document(
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 
+# 문서명 변경 - REQ-DOC-002
+@document_router.patch("/{document_id}/title", response_model=DocumentRenameResponse, status_code=status.HTTP_200_OK)
+async def rename_document(
+    document_id: Annotated[int, Path(ge=1)],
+    payload: DocumentRenameRequest,
+    user: Annotated[User, Depends(get_request_user)],
+    document_service: Annotated[DocumentService, Depends(DocumentService)],
+) -> Response:
+    result = await document_service.rename_document(user=user, document_id=document_id, payload=payload)
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
 # 추출 약 목록 조회 - REQ-DOC-006
 @document_router.get("/{document_id}/drugs", response_model=DocumentDrugsResponse, status_code=status.HTTP_200_OK)
 async def get_document_drugs(
@@ -79,6 +94,24 @@ async def patch_document_drugs(
     document_service: Annotated[DocumentService, Depends(DocumentService)],
 ) -> Response:
     result = await document_service.patch_document_drugs(user=user, document_id=document_id, payload=payload)
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
+# 환자 복약안내 카드 조회 - REQ-DOC-007, REQ-DRUG-002, REQ-DRUG-003
+@document_router.get("/medication-guide", response_model=MedicationGuideResponse, status_code=status.HTTP_200_OK)
+async def get_medication_guide(
+    patient_id: Annotated[int, Query(ge=1)],
+    user: Annotated[User, Depends(get_request_user)],
+    document_service: Annotated[DocumentService, Depends(DocumentService)],
+    document_id: Annotated[int | None, Query(ge=1)] = None,
+    include_other_active: Annotated[bool, Query()] = False,
+) -> Response:
+    result = await document_service.get_medication_guide(
+        user=user,
+        patient_id=patient_id,
+        document_id=document_id,
+        include_other_active=include_other_active,
+    )
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 

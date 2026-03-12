@@ -38,23 +38,43 @@ class BarcodeService:
 
         try:
             with Image.open(file_path) as image:
-                results = zxingcpp.read_barcodes(image)
+                variants = BarcodeService._build_zxing_image_variants(image=image)
         except Exception:  # noqa: BLE001
             return []
 
         detections: list[BarcodeDetection] = []
-        for result in results:
-            raw_value = str(getattr(result, "text", "")).strip()
-            if not raw_value:
+        for variant in variants:
+            try:
+                results = zxingcpp.read_barcodes(variant)
+            except Exception:  # noqa: BLE001
                 continue
-            barcode_type = str(getattr(result, "format", "UNKNOWN")).replace("BarcodeFormat.", "").upper()
-            detections.append(
-                BarcodeDetection(
-                    barcode_type=barcode_type,
-                    barcode_value=raw_value,
+            for result in results:
+                raw_value = str(getattr(result, "text", "")).strip()
+                if not raw_value:
+                    continue
+                barcode_type = str(getattr(result, "format", "UNKNOWN")).replace("BarcodeFormat.", "").upper()
+                detections.append(
+                    BarcodeDetection(
+                        barcode_type=barcode_type,
+                        barcode_value=raw_value,
+                    )
                 )
-            )
         return detections
+
+    # REQ-DOC-009 - zxing 인식률 향상을 위한 이미지 변형 생성
+    @staticmethod
+    def _build_zxing_image_variants(image):
+        from PIL import Image
+
+        rgb_image = image.convert("RGB")
+        width, height = rgb_image.size
+        top_right_crop = rgb_image.crop((max(width // 2, 0), 0, width, max(height // 2, 1)))
+        upscaled = rgb_image.resize((max(width * 2, 1), max(height * 2, 1)), Image.Resampling.LANCZOS)
+        upscaled_top_right_crop = top_right_crop.resize(
+            (max(top_right_crop.size[0] * 2, 1), max(top_right_crop.size[1] * 2, 1)), Image.Resampling.LANCZOS
+        )
+
+        return [rgb_image, top_right_crop, upscaled, upscaled_top_right_crop]
 
     # REQ-DOC-009 - 이미지 바코드 디코딩(pyzbar)
     @staticmethod
@@ -96,11 +116,47 @@ class BarcodeService:
         if image is None:
             return []
 
+        detections: list[BarcodeDetection] = []
         detector = cv2.QRCodeDetector()
-        value, _, _ = detector.detectAndDecode(image)
-        if not value:
-            return []
-        return [BarcodeDetection(barcode_type="QRCODE", barcode_value=value.strip())]
+
+        frames_to_check = BarcodeService._build_qr_detection_frames(image=image)
+        for frame in frames_to_check:
+            try:
+                has_multi, decoded_values, _, _ = detector.detectAndDecodeMulti(frame)
+            except Exception:  # noqa: BLE001
+                has_multi, decoded_values = False, []
+
+            if has_multi and decoded_values:
+                for value in decoded_values:
+                    normalized_value = str(value).strip()
+                    if normalized_value:
+                        detections.append(BarcodeDetection(barcode_type="QRCODE", barcode_value=normalized_value))
+
+            try:
+                single_value, _, _ = detector.detectAndDecode(frame)
+            except Exception:  # noqa: BLE001
+                single_value = ""
+            normalized_single_value = str(single_value).strip()
+            if normalized_single_value:
+                detections.append(BarcodeDetection(barcode_type="QRCODE", barcode_value=normalized_single_value))
+
+        return BarcodeService._deduplicate(detections)
+
+    # REQ-DOC-009 - QR 인식률 향상을 위한 이미지 변형 프레임 생성
+    @staticmethod
+    def _build_qr_detection_frames(image):
+        import cv2
+
+        height, width = image.shape[:2]
+        top_right_crop = image[0 : max(height // 2, 1), max(width // 2, 0) : width]
+
+        grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(grayscale, (3, 3), 0)
+        upscaled = cv2.resize(image, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        upscaled_gray = cv2.resize(grayscale, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+
+        frames = [image, top_right_crop, grayscale, blurred, upscaled, upscaled_gray]
+        return [frame for frame in frames if frame is not None and frame.size > 0]
 
     # REQ-DOC-009 - PDF 바코드 디코딩(zxing-cpp)
     @staticmethod

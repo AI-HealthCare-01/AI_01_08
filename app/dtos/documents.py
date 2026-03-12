@@ -52,6 +52,17 @@ class DocumentDeleteResponse(BaseSerializerModel):
     deleted_at: datetime
 
 
+# 문서명 변경 요청 - REQ-DOC-002
+class DocumentRenameRequest(BaseModel):
+    title: Annotated[str, Field(min_length=1, max_length=255)]
+
+
+# 문서명 변경 응답 - REQ-DOC-002
+class DocumentRenameResponse(BaseSerializerModel):
+    document_id: int
+    original_filename: str
+
+
 # OCR 처리 상태 조회 응답 - REQ-DOC-003
 class DocumentOcrStatusResponse(BaseSerializerModel):
     document_id: int
@@ -62,6 +73,9 @@ class DocumentOcrStatusResponse(BaseSerializerModel):
     retry_count: int | None
     error_code: str | None
     error_message: str | None
+    barcode_detected: bool = False
+    barcode_count: int = 0
+    barcode_values: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime | None
 
@@ -117,6 +131,9 @@ class DocumentDrugsResponse(BaseSerializerModel):
     patient_id: int
     ocr_job_id: int | None
     ocr_status: OcrStatus | None
+    barcode_detected: bool = False
+    barcode_count: int = 0
+    barcode_values: list[str] = Field(default_factory=list)
     items: list[ExtractedDrugItemResponse]
     total: int
 
@@ -136,6 +153,8 @@ class DocumentDrugPatchRequest(BaseModel):
     items: Annotated[list[DocumentDrugPatchItemRequest], Field(min_length=1)]
     replace_all: bool = False
     confirm: bool = True
+    # 검수 필요 약 강제 확정 플래그 - REQ-DOC-007
+    force_confirm: bool = False
 
 
 # 추출 약 수정/확정 응답 - REQ-DOC-007
@@ -147,6 +166,35 @@ class DocumentDrugPatchResponse(BaseSerializerModel):
     updated_count: int
     confirmed_patient_med_count: int
     items: list[ExtractedDrugItemResponse]
+
+
+# 복약안내 카드 항목 응답 - REQ-DOC-007, REQ-DRUG-002, REQ-DRUG-003
+class MedicationGuideItemResponse(BaseSerializerModel):
+    patient_med_id: int
+    patient_id: int
+    display_name: str
+    dosage: str | None
+    frequency_text: str | None
+    data_source: Literal["ocr_only", "ocr_mfds"]
+    efficacy_summary: str | None
+    dosage_instructions: list[str]
+    precautions: list[str]
+    storage_method: str | None
+    prescribed_days: int | None
+    prescribed_at: date | None
+    expected_end_date: date | None
+    interaction_warnings: list[str]
+    source_document_id: int | None
+    confirmed_at: datetime | None
+
+
+# 환자 복약안내 조회 응답 - REQ-DOC-007, REQ-DRUG-002, REQ-DRUG-003
+class MedicationGuideResponse(BaseSerializerModel):
+    patient_id: int
+    document_id: int | None
+    include_other_active: bool
+    total: int
+    items: list[MedicationGuideItemResponse]
 
 
 # 식약처 약 정보 검색 항목 응답 - REQ-DRUG-001, REQ-DRUG-002

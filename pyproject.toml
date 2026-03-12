@@ -27,6 +27,7 @@ app = [
     "bcrypt<=4.0.1",
     "pdf2image>=1.17.0",
     "pillow>=11.3.0",
+    "pillow-heif>=1.1.1",
     "pyzbar>=0.1.9",
     "zxing-cpp>=3.0.0",
     "fastapi[standard]>=0.128.0",
