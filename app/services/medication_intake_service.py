@@ -101,6 +101,7 @@ def _normalize_time_of_day(value: time | timedelta) -> time:
 
     raise TypeError(f"지원하지 않는 time_of_day 타입입니다: {type(value)}")
 
+
 def _normalize_datetime_key(dt: datetime) -> datetime:
     """
     로그 매칭용 datetime 정규화
@@ -114,6 +115,7 @@ def _normalize_datetime_key(dt: datetime) -> datetime:
     if dt.tzinfo is not None:
         dt = dt.replace(tzinfo=None)
     return dt.replace(microsecond=0)
+
 
 def _daterange(date_from: date, date_to: date) -> list[date]:
     """
@@ -155,9 +157,7 @@ class MedicationIntakeService:
                 detail="복약 스케줄을 찾을 수 없습니다.",
             )
 
-        schedule_time = await self.schedule_repo.get_active_schedule_time_by_id(
-            request.schedule_time_id
-        )
+        schedule_time = await self.schedule_repo.get_active_schedule_time_by_id(request.schedule_time_id)
         if schedule_time is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -415,9 +415,7 @@ class MedicationIntakeService:
 
         overall_rate = (taken / expected_total) if expected_total else 0.0
         completed_denominator = taken + missed + skipped
-        completed_rate = (
-            (taken / completed_denominator) if completed_denominator else None
-        )
+        completed_rate = (taken / completed_denominator) if completed_denominator else None
 
         summary = AdherenceSummary(
             expected_total=expected_total,
