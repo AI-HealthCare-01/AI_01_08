@@ -96,3 +96,17 @@ class AuthService:
         if role == LoginRole.CAREGIVER:
             return [LoginRole.CAREGIVER.value, LoginRole.GUARDIAN.value]
         return [LoginRole.PATIENT.value]
+
+    async def find_email(self, name: str, phone_number: str) -> str:
+        normalized_phone = normalize_phone_number(phone_number)
+        user = await self.user_repo.get_user_by_name_and_phone(name, normalized_phone)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="일치하는 사용자를 찾을 수 없습니다.")
+        return user.email
+
+    async def reset_password(self, email: str, name: str, phone_number: str, new_password: str) -> None:
+        normalized_phone = normalize_phone_number(phone_number)
+        user = await self.user_repo.get_user_by_email_name_phone(email, name, normalized_phone)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="일치하는 사용자를 찾을 수 없습니다.")
+        await self.user_repo.update_instance(user, {"hashed_password": hash_password(new_password)})

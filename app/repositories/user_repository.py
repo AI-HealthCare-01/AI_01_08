@@ -66,3 +66,9 @@ class UserRepository:
             user.updated_at = datetime.now(config.TIMEZONE)
             update_fields.append(UPDATED_AT_FIELD)
             await user.save(update_fields=update_fields)
+
+    async def get_user_by_name_and_phone(self, name: str, phone_number: str) -> User | None:
+        return await self._model.get_or_none(name=name, phone_number=phone_number)
+
+    async def get_user_by_email_name_phone(self, email: str, name: str, phone_number: str) -> User | None:
+        return await self._model.get_or_none(email=email, name=name, phone_number=phone_number)

@@ -7,9 +7,12 @@ from fastapi.responses import RedirectResponse
 from app.core import config
 from app.core.config import Env
 from app.dtos.auth import (
+    FindEmailRequest,
+    FindEmailResponse,
     LoginRequest,
     LoginResponse,
     LoginRole,
+    ResetPasswordRequest,
     SignUpRequest,
     SocialLoginStartResponse,
     SocialProvider,
@@ -153,3 +156,21 @@ async def token_refresh(
     return Response(
         content=TokenRefreshResponse(access_token=str(access_token)).model_dump(), status_code=status.HTTP_200_OK
     )
+
+
+@auth_router.post("/find-email", response_model=FindEmailResponse, status_code=status.HTTP_200_OK)
+async def find_email(
+    request: FindEmailRequest,
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+) -> FindEmailResponse:
+    email = await auth_service.find_email(request.name, request.phone_number)
+    return FindEmailResponse(email=email)
+
+
+@auth_router.post("/reset-password", status_code=status.HTTP_200_OK)
+async def reset_password(
+    request: ResetPasswordRequest,
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+) -> Response:
+    await auth_service.reset_password(request.email, request.name, request.phone_number, request.new_password)
+    return Response(content={"detail": "비밀번호가 성공적으로 재설정되었습니다."}, status_code=status.HTTP_200_OK)

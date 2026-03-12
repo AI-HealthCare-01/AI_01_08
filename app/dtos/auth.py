@@ -58,3 +58,19 @@ class TokenRefreshResponse(BaseModel):
 class SocialLoginStartResponse(BaseModel):
     provider: SocialProvider
     authorize_url: str
+
+
+class FindEmailRequest(BaseModel):
+    name: Annotated[str, Field(max_length=20)]
+    phone_number: Annotated[str, AfterValidator(validate_phone_number)]
+
+
+class FindEmailResponse(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    name: Annotated[str, Field(max_length=20)]
+    phone_number: Annotated[str, AfterValidator(validate_phone_number)]
+    new_password: Annotated[str, Field(min_length=8), AfterValidator(validate_password)]
