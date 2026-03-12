@@ -5,25 +5,91 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 
-from app.dtos.medication_intake_dtos import IntakeStatusResponse
+from app.dtos.medication_intake_dtos import (
+    AdherenceResponse,
+    IntakeCheckRequest,
+    IntakeCheckResponse,
+    IntakeStatusResponse,
+    IntakeUndoRequest,
+    IntakeUndoResponse,
+)
 from app.services.medication_intake_service import MedicationIntakeService
 
-router = APIRouter(prefix="/v1/medication", tags=["Medication"])
+# /api/v1 는 상위 router에서 이미 붙기 때문에
+# 여기서는 복약 관련 세부 prefix만 선언한다.
+router = APIRouter(prefix="/schedules", tags=["Medication"])
 
 
 def get_service() -> MedicationIntakeService:
     return MedicationIntakeService()
 
 
-@router.get("/patients/{patient_id}/intake-status", response_model=IntakeStatusResponse)
-async def get_patient_intake_status(
-    patient_id: int,
-    date_from: date = Query(..., alias="from"),
-    date_to: date = Query(..., alias="to"),
-    svc: MedicationIntakeService = Depends(get_service),
+@router.post("/{schedule_id}/check", response_model=IntakeCheckResponse)
+async def check_medication(
+    schedule_id: int,
+    request: IntakeCheckRequest,
+    service: MedicationIntakeService = Depends(get_service),
+) -> IntakeCheckResponse:
+    """
+    복약 완료 체크
+
+    예시:
+    POST /api/v1/schedules/12001/check
+
+    body:
+    {
+      "schedule_time_id": 13001,
+      "scheduled_date": "2026-03-10",
+      "taken_at": "2026-03-10T08:02:00",
+      "note": "식후 복용",
+      "recorded_by_user_id": 9101
+    }
+    """
+    return await service.check_medication(schedule_id, request)
+
+
+@router.delete("/{schedule_id}/check", response_model=IntakeUndoResponse)
+async def undo_medication(
+    schedule_id: int,
+    request: IntakeUndoRequest,
+    service: MedicationIntakeService = Depends(get_service),
+) -> IntakeUndoResponse:
+    """
+    복약 체크 취소(undo)
+
+    같은 schedule_id + schedule_time_id + scheduled_date 슬롯에 대해
+    저장되어 있는 intake_log 1건을 삭제한다.
+    """
+    return await service.undo_medication(schedule_id, request)
+
+
+@router.get("/status", response_model=IntakeStatusResponse)
+async def get_schedule_status(
+    patient_id: int = Query(..., description="환자 ID"),
+    date_from: date = Query(..., alias="from", description="조회 시작일"),
+    date_to: date = Query(..., alias="to", description="조회 종료일"),
+    service: MedicationIntakeService = Depends(get_service),
 ) -> IntakeStatusResponse:
     """
-    환자 복약 현황 조회 (REQ-EXT-004)
-    - 기간(from~to) 동안의 복약 상태(taken/missed/pending/skipped) 및 이행률 요약을 반환
+    기간 내 복약 현황 조회
+
+    예시:
+    GET /api/v1/schedules/status?patient_id=10001&from=2026-03-10&to=2026-03-12
     """
-    return await svc.get_patient_intake_status(patient_id, date_from, date_to)
+    return await service.get_patient_intake_status(patient_id, date_from, date_to)
+
+
+@router.get("/adherence", response_model=AdherenceResponse)
+async def get_schedule_adherence(
+    patient_id: int = Query(..., description="환자 ID"),
+    date_from: date = Query(..., alias="from", description="조회 시작일"),
+    date_to: date = Query(..., alias="to", description="조회 종료일"),
+    service: MedicationIntakeService = Depends(get_service),
+) -> AdherenceResponse:
+    """
+    기간 내 복약 이행률 조회
+
+    예시:
+    GET /api/v1/schedules/adherence?patient_id=10001&from=2026-03-10&to=2026-03-12
+    """
+    return await service.get_patient_adherence(patient_id, date_from, date_to)
