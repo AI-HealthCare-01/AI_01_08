@@ -95,6 +95,7 @@ docker-compose up -d --build
 
 실행 후 다음 주소로 접속 가능합니다:
 - **API 서버**: [http://localhost/api/docs](http://localhost/api/docs) (Swagger UI)
+- **관리자 대시보드**: [http://localhost/auth-demo/app/dashboard](http://localhost/auth-demo/app/dashboard)
 - **프로젝트 문서**: [http://localhost/api/project-docs/](http://localhost/api/project-docs/)
 - **Nginx**: 80 포트를 통해 API 서버로 요청을 전달합니다.
 
@@ -214,3 +215,43 @@ uv run mkdocs serve -a 0.0.0.0:8001
 - **API 추가**: `app/apis/v1/` 아래에 새로운 라우터 파일을 생성하고 `app/apis/v1/__init__.py`에 등록하세요.
 - **DB 모델 추가**: `app/models/`에 Tortoise 모델을 정의하고 `app/db/databases.py`의 `MODELS` 리스트에 추가하세요.
 - **AI 로직 추가**: `ai_worker/tasks/`에 새로운 처리 로직을 작성하고 `ai_worker/main.py`에서 호출하도록 구성하세요.
+
+---
+
+## 📊 관리자 대시보드
+
+관리자 대시보드는 시스템 전체의 통계와 성능 지표를 실시간으로 모니터링할 수 있는 기능을 제공합니다.
+
+### 주요 기능
+
+1. **통계 카드**
+   - 총 사용자 수
+   - 오늘 가이드 생성 수
+   - OCR 성공률
+   - 오늘 챗봇 요청 수
+   - 시스템 에러 수
+   - 각 지표의 전일 대비 변화율
+
+2. **추이 차트**
+   - 가이드 생성 추이 (7일/30일)
+   - 챗봇 요청 추이 (7일/30일)
+
+3. **OCR 성능 분석**
+   - 총 처리 건수
+   - 성공/실패 건수 및 성공률
+   - 실패 사유 Top 3
+
+### 접속 방법
+
+```bash
+# 로그인 후 대시보드 접속
+http://localhost/auth-demo/app/dashboard
+```
+
+### API 엔드포인트
+
+```bash
+GET /api/v1/dashboard?period=7
+```
+
+- `period`: 조회 기간 (일), 기본값 7일, 최대 30일

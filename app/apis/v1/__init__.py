@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends
 
+from app.apis.v1.ai_chat_routers import router as ai_chat_router
 from app.apis.v1.auth_routers import auth_router
 from app.apis.v1.chat_routers import chat_router
+from app.apis.v1.dashboard_routers import dashboard_router
 from app.apis.v1.document_routers import document_router
 from app.apis.v1.guide_routers import guide_router
 from app.apis.v1.hospital_calendar_api import router as hospital_calendar_router
@@ -19,9 +21,11 @@ v1_routers.include_router(public_router)
 v1_routers.include_router(user_router)
 v1_routers.include_router(invitation_router)
 v1_routers.include_router(patient_profile_router)
-v1_routers.include_router(notification_router)
+v1_routers.include_router(notification_router, dependencies=[Depends(get_request_user)])
+v1_routers.include_router(dashboard_router, dependencies=[Depends(get_request_user)])
 v1_routers.include_router(document_router)
 v1_routers.include_router(medication_router)
 v1_routers.include_router(hospital_calendar_router)
 v1_routers.include_router(guide_router)
 v1_routers.include_router(chat_router)
+v1_routers.include_router(ai_chat_router, dependencies=[Depends(get_request_user)])
