@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.apis.v1.auth_routers import auth_router
+from app.apis.v1.medication_intake_api import router as medication_router
 from app.apis.v1.invitation_routers import invitation_router
 from app.apis.v1.notification_routers import notification_router
 from app.apis.v1.patient_profile_routers import router as patient_profile_router
@@ -15,4 +16,5 @@ v1_routers.include_router(user_router)
 v1_routers.include_router(invitation_router)
 v1_routers.include_router(patient_profile_router)
 # 20260303 알림설정 HYJ
+v1_routers.include_router(medication_router)
 v1_routers.include_router(notification_router, dependencies=[Depends(get_request_user)])
