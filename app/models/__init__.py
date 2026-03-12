@@ -3,7 +3,7 @@ from app.models.common_codes import Code, CodeGroup
 from app.models.core_auth import AuthAccount, PhoneVerification, RefreshToken, Role, UserRole
 from app.models.documents import Document, ExtractedMed, OcrJob, OcrRawText
 from app.models.dur import DurAlert, DurCheck
-from app.models.guides import Guide, GuideFeedback, GuideSummary
+from app.models.guides import Guide, GuideFeedback
 from app.models.medications import DrugCatalog, DrugInfoCache, PatientMed
 from app.models.notification_settings import NotificationSettings  # 20260303 알림설정 HYJ
 from app.models.notifications import Notification, UserDevice
@@ -27,7 +27,6 @@ __all__ = [
     "Gender",
     "Guide",
     "GuideFeedback",
-    "GuideSummary",
     "IntakeLog",
     "InvitationCode",
     "MedSchedule",

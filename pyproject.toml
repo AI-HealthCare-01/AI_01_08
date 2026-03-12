@@ -88,6 +88,11 @@ ignore = ["UP046", "E501"]
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "db/migrations/*" = ["ALL"]
+"ai_worker/tasks/generate_guide.py" = ["C901"]
+"app/services/chat.py" = ["C901"]
+"app/services/mfds_client.py" = ["C901"]
+"app/apis/v1/chat_routers.py" = ["B008"]
+"app/apis/v1/guide_routers.py" = ["B008"]
 
 [tool.ruff.format]
 # 포매터 설정
