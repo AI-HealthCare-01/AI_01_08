@@ -1,6 +1,5 @@
+from datetime import UTC, datetime
 from pathlib import Path
-
-from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,7 +65,7 @@ async def auth_app_page() -> HTMLResponse:
 
 @app.get("/api/health", include_in_schema=False)
 async def health_check() -> dict[str, str]:
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {"status": "ok", "timestamp": datetime.now(UTC).isoformat()}
 
 
 @app.on_event("startup")

@@ -1,7 +1,8 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse as Response, RedirectResponse
+from fastapi.responses import JSONResponse as Response
+from fastapi.responses import RedirectResponse
 
 from app.core import config
 from app.core.config import Env
