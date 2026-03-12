@@ -15,6 +15,7 @@ frontend/.env
 frontend/.env.*
 node_modules/
 frontend/node_modules/
+app/ui/auth-demo/
 .idea/
 .vscode
 .coverage

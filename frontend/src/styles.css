@@ -1,0 +1,59 @@
+:root {
+  color: #0b1b2d;
+  background-color: #f4f6fb;
+}
+
+body {
+  font-family: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+  background-color: #f4f6fb;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.hero {
+  background: linear-gradient(130deg, #0b3c5d 0%, #1d6fa5 45%, #6ab3d6 100%);
+  color: #ffffff;
+}
+
+.hero .navbar-brand {
+  color: #ffffff;
+}
+
+.hero .card {
+  border-radius: 1.25rem;
+}
+
+.login-page {
+  min-height: 100vh;
+  background: linear-gradient(145deg, #f9fbff 0%, #e4eef7 100%);
+  display: flex;
+  align-items: center;
+  padding: 4rem 0;
+}
+
+.cta-banner {
+  background: #fef6e0;
+  border: 1px solid #f4d27c;
+}
+
+.btn-warning {
+  background-color: #f4b63e;
+  border-color: #f4b63e;
+  color: #1e1e1e;
+}
+
+.btn-kakao {
+  background-color: #fee500;
+  border-color: #fee500;
+  color: #3c1e1e;
+  font-weight: 600;
+}
+
+.btn-kakao:hover,
+.btn-kakao:focus {
+  background-color: #f9d700;
+  border-color: #f9d700;
+  color: #2f1717;
+}

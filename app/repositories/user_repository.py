@@ -44,11 +44,17 @@ class UserRepository:
     async def get_user_by_email(self, email: str) -> User | None:
         return await self._model.get_or_none(email=email)
 
-    async def exists_by_email(self, email: str) -> bool:
-        return await self._model.filter(email=email).exists()
+    async def exists_by_email(self, email: str, *, exclude_user_id: int | None = None) -> bool:
+        qs = self._model.filter(email=email)
+        if exclude_user_id is not None:
+            qs = qs.exclude(id=exclude_user_id)
+        return await qs.exists()
 
-    async def exists_by_phone_number(self, phone_number: str) -> bool:
-        return await self._model.filter(phone_number=phone_number).exists()
+    async def exists_by_phone_number(self, phone_number: str, *, exclude_user_id: int | None = None) -> bool:
+        qs = self._model.filter(phone_number=phone_number)
+        if exclude_user_id is not None:
+            qs = qs.exclude(id=exclude_user_id)
+        return await qs.exists()
 
     async def update_instance(self, user: User, data: dict[str, Any]) -> None:
         update_fields = []

@@ -1,0 +1,4 @@
+site_name: AI Health Docs
+site_url: http://localhost/api/project-docs/
+nav:
+  - Home: index.md
