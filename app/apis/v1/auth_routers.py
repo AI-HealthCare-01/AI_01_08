@@ -1,7 +1,8 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse as Response
+from fastapi.responses import RedirectResponse
 
 from app.core import config
 from app.core.config import Env
@@ -21,19 +22,46 @@ from app.services.social_auth import SocialAuthService
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _cookie_domain() -> str | None:
+    domain = (config.COOKIE_DOMAIN or "").strip() or None
+    if not domain:
+        return None
+    if domain in {"localhost", "127.0.0.1"}:
+        return None
+    return domain
+
+
 def _build_login_response(tokens: dict, login_role: LoginRole) -> Response:
     resp = Response(
         content=LoginResponse(access_token=str(tokens["access_token"]), login_role=login_role).model_dump(),
         status_code=status.HTTP_200_OK,
     )
+    _set_refresh_cookie(resp, tokens)
+    return resp
+
+
+def _set_refresh_cookie(resp: Response | RedirectResponse, tokens: dict) -> None:
+    refresh_exp = None
+    try:
+        refresh_exp = tokens["refresh_token"].payload.get("exp")
+    except Exception:
+        refresh_exp = None
+
     resp.set_cookie(
         key="refresh_token",
         value=str(tokens["refresh_token"]),
         httponly=True,
         secure=True if config.ENV == Env.PROD else False,
-        domain=config.COOKIE_DOMAIN or None,
-        expires=tokens["access_token"].payload["exp"],
+        domain=_cookie_domain(),
+        path="/",
+        expires=refresh_exp,
     )
+
+
+@auth_router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout() -> Response:
+    resp = Response(content={"detail": "로그아웃되었습니다."}, status_code=status.HTTP_200_OK)
+    resp.delete_cookie(key="refresh_token", domain=_cookie_domain(), path="/")
     return resp
 
 
@@ -72,25 +100,45 @@ async def social_login_start(
 
 @auth_router.get("/social/{provider}/callback", response_model=LoginResponse, status_code=status.HTTP_200_OK)
 async def social_login_callback(
+    request: Request,
     provider: SocialProvider,
     code: Annotated[str, Query(min_length=1)],
     social_auth_service: Annotated[SocialAuthService, Depends(SocialAuthService)],
     auth_service: Annotated[AuthService, Depends(AuthService)],
+    jwt_service: Annotated[JwtService, Depends(JwtService)],
     state: Annotated[str | None, Query()] = None,
     role: Annotated[LoginRole | None, Query()] = None,
+    refresh_token: Annotated[str | None, Cookie()] = None,
 ) -> Response:
     profile = await social_auth_service.exchange_code_and_fetch_profile(provider=provider, code=code, state=state)
     provider_user_id = profile.get("provider_user_id")
     if not provider_user_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provider user id is missing.")
+
+    current_user = None
+    if refresh_token:
+        try:
+            verified_refresh = jwt_service.verify_jwt(token=refresh_token, token_type="refresh")
+            current_user = await auth_service.user_repo.get_user(verified_refresh.payload["user_id"])
+        except HTTPException:
+            current_user = None
+
     user = await social_auth_service.get_or_create_user_by_social(
         provider=provider,
         provider_user_id=provider_user_id,
         email=profile.get("email"),
         name=profile.get("name") or f"{provider.value}-user",
+        current_user=current_user,
     )
     selected_role = social_auth_service.resolve_role(requested_role=role, state=state)
     tokens = await auth_service.login(user, role=selected_role)
+
+    accept_header = request.headers.get("accept", "")
+    if "text/html" in accept_header:
+        redirect = RedirectResponse(url="/auth-demo/app", status_code=status.HTTP_302_FOUND)
+        _set_refresh_cookie(redirect, tokens)
+        return redirect
+
     return _build_login_response(tokens, login_role=selected_role)
 
 

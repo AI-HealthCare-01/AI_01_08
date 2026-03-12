@@ -84,6 +84,7 @@ services:
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - static_volume:/vol/web/static
+      - ./app/ui/auth-demo:/var/www/auth-demo:ro
       - media_volume:/vol/web/media
       - certbot-conf:/etc/letsencrypt
       - certbot-www:/var/www/certbot
