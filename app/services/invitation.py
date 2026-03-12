@@ -7,7 +7,7 @@ from starlette import status
 from tortoise.transactions import in_transaction
 
 from app.core import config
-from app.models.core_auth import UserRole
+from app.models.healthcare import UserRole
 from app.models.patients import CaregiverPatientLink, InvitationCode, Patient
 from app.models.users import User
 

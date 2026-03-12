@@ -45,3 +45,11 @@ class Config(BaseSettings):
     NAVER_CLIENT_ID: str = ""
     NAVER_CLIENT_SECRET: str = ""
     NAVER_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/social/naver/callback"
+
+    NAVER_OCR_API_URL: str = ""
+    NAVER_OCR_SECRET_KEY: str = ""
+    NAVER_OCR_TIMEOUT_SECONDS: int = 20
+
+    MFDS_SERVICE_KEY: str = ""
+    MFDS_BASE_URL: str = "http://apis.data.go.kr/1471000"
+    MFDS_TIMEOUT_SECONDS: int = 20
