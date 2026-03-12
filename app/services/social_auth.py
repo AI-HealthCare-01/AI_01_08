@@ -119,7 +119,13 @@ class SocialAuthService:
         return LoginRole.PATIENT
 
     async def get_or_create_user_by_social(
-        self, *, provider: SocialProvider, provider_user_id: str, email: str | None, name: str
+        self,
+        *,
+        provider: SocialProvider,
+        provider_user_id: str,
+        email: str | None,
+        name: str,
+        current_user: User | None = None,
     ) -> User:
         auth_account = (
             await AuthAccount.filter(provider=provider.value, provider_user_id=provider_user_id)
@@ -127,7 +133,16 @@ class SocialAuthService:
             .first()
         )
         if auth_account:
+            if current_user and auth_account.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="해당 소셜 계정은 이미 다른 사용자에 연결되어 있습니다.",
+                )
             return auth_account.user
+
+        if current_user is not None:
+            await AuthAccount.create(user=current_user, provider=provider.value, provider_user_id=provider_user_id)
+            return current_user
 
         user: User | None = None
         if email:
@@ -149,7 +164,7 @@ class SocialAuthService:
             )
             await UserRole.get_or_create(user=user, role=default_role)
 
-        await AuthAccount.get_or_create(user=user, provider=provider.value, provider_user_id=provider_user_id)
+        await AuthAccount.create(user=user, provider=provider.value, provider_user_id=provider_user_id)
         return user
 
     async def _generate_fallback_email(self, provider: SocialProvider, provider_user_id: str) -> str:

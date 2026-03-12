@@ -82,7 +82,7 @@
       <div class="grid">
         <section class="card">
           <h2>회원가입</h2>
-          <div class="row"><label>이메일</label><input id="su_email" value="user_demo@example.com" /></div>
+          <div class="row"><label>이메일</label><input id="su_email" value="user_demo@gmail.com" /></div>
           <div class="row"><label>비밀번호</label><input id="su_password" value="User_123" /></div>
           <div class="row"><label>이름</label><input id="su_name" value="kimuser" /></div>
           <div class="row">
@@ -91,12 +91,26 @@
           </div>
           <div class="row"><label>생년월일</label><input id="su_birth" value="1996-03-04" /></div>
           <div class="row"><label>휴대폰</label><input id="su_phone" value="010-1234-6789" /></div>
+          <div class="row">
+            <label style="display:flex; gap:8px; align-items:flex-start; cursor:pointer; user-select:none;">
+              <input id="su_privacy" type="checkbox" style="width:auto; margin-top:2px;" />
+              <span>
+                개인정보 수집·이용에 동의합니다(필수)
+                <div style="margin-top:4px; font-size:12px; color: var(--muted); line-height:1.45;">
+                  수집·이용 목적: 회원가입, 본인확인, 서비스 제공 및 고객지원<br />
+                  수집 항목: 이름, 이메일(아이디), 비밀번호, 성별, 생년월일, 휴대폰 번호<br />
+                  보유·이용 기간: 회원 탈퇴 시까지(단, 관계법령에 따라 보관이 필요한 경우 해당 기간 보관)<br />
+                  동의 거부 권리: 동의를 거부할 수 있으나, 동의 거부 시 회원가입이 제한됩니다.
+                </div>
+              </span>
+            </label>
+          </div>
           <button onclick="signup()">회원가입 요청</button>
         </section>
 
         <section class="card">
           <h2>로그인</h2>
-          <div class="row"><label>이메일</label><input id="li_email" value="user_demo@example.com" /></div>
+          <div class="row"><label>이메일</label><input id="li_email" value="user_demo@gmail.com" /></div>
           <div class="row"><label>비밀번호</label><input id="li_password" value="User_123" /></div>
           <div class="row">
             <label>Role</label>
@@ -122,6 +136,27 @@
           <h2>토큰 리프레시</h2>
           <p style="font-size:12px;">로그인 성공 후 refresh_token 쿠키가 있으면 테스트됩니다.</p>
           <button onclick="refreshToken()">토큰 갱신 요청</button>
+        </section>
+
+        <section class="card">
+          <h2>유저 정보</h2>
+          <p style="font-size:12px;">로그인 후 `Authorization: Bearer` 없이도 쿠키 기반 인증으로 테스트됩니다.</p>
+          <button onclick="userMe()">내 정보 조회 (/api/v1/users/me)</button>
+          <div class="row" style="margin-top:10px;"><label>수정 이름</label><input id="me_name" value="updated-name" /></div>
+          <button class="btn-green" onclick="userMePatch()">내 정보 수정 (/api/v1/users/me)</button>
+        </section>
+
+        <section class="card">
+          <h2>알림 API</h2>
+          <button onclick="notifUnreadCount()">안읽은 개수 (/api/v1/notifications/unread-count)</button>
+          <button style="margin-top:8px;" onclick="notifList()">목록 조회 (/api/v1/notifications)</button>
+          <button style="margin-top:8px;" onclick="notifSettingsGet()">설정 조회 (/api/v1/notifications/settings)</button>
+          <div class="row" style="margin-top:10px;">
+            <label>intake_reminder</label>
+            <select id="nf_intake"><option value="true">true</option><option value="false">false</option></select>
+          </div>
+          <button class="btn-green" onclick="notifSettingsPatch()">설정 수정 (/api/v1/notifications/settings)</button>
+          <button style="margin-top:8px;" onclick="notifReadAll()">전체 읽음 (/api/v1/notifications/read-all)</button>
         </section>
 
         <section class="card full">
@@ -179,6 +214,10 @@
       }
 
       function signup() {
+        if (!document.getElementById("su_privacy").checked) {
+          setOut({ status: "validation_error", action: "signup", message: "개인정보 수집·이용에 동의해 주세요." });
+          return;
+        }
         return callApi("/api/v1/auth/signup", "POST", {
           email: document.getElementById("su_email").value,
           password: document.getElementById("su_password").value,
@@ -225,6 +264,38 @@
 
       function refreshToken() {
         return callApi("/api/v1/auth/token/refresh", "GET");
+      }
+
+      function userMe() {
+        return callApi("/api/v1/users/me", "GET");
+      }
+
+      function userMePatch() {
+        return callApi("/api/v1/users/me", "PATCH", {
+          name: document.getElementById("me_name").value,
+        });
+      }
+
+      function notifUnreadCount() {
+        return callApi("/api/v1/notifications/unread-count", "GET");
+      }
+
+      function notifList() {
+        return callApi("/api/v1/notifications?limit=20", "GET");
+      }
+
+      function notifSettingsGet() {
+        return callApi("/api/v1/notifications/settings", "GET");
+      }
+
+      function notifSettingsPatch() {
+        return callApi("/api/v1/notifications/settings", "PATCH", {
+          intake_reminder: document.getElementById("nf_intake").value === "true",
+        });
+      }
+
+      function notifReadAll() {
+        return callApi("/api/v1/notifications/read-all", "PATCH");
       }
     </script>
   </body>

@@ -114,6 +114,29 @@ uv run python -m ai_worker.main
 docker compose up -d --build ai_worker
 ```
 
+---
+
+## 🧩 프론트엔드 (React + Bootstrap)
+
+프론트엔드는 `frontend/` 디렉터리에 분리되어 있습니다. Vite 기반으로 동작합니다.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+기본 개발 서버는 `http://localhost:5173`에서 실행됩니다.
+
+### FastAPI에서 정적 서빙
+
+`/auth-demo/app` 경로에서 React 화면을 제공하려면 빌드가 필요합니다.
+
+```bash
+cd frontend
+npm run build
+```
+
 ### 2. EC2 배포 환경 (Production)
 
 제공된 쉘 스크립트를 사용하여 AWS EC2 환경에 이미지를 빌드, 푸시 및 배포할 수 있습니다.

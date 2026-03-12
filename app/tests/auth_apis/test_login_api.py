@@ -12,14 +12,14 @@ class TestLoginAPI(TestCase):
     async def test_login_success(self):
         # 먼저 사용자 등록
         signup_data = {
-            "email": "login_test@example.com",
+            "email": "login_test@gmail.com",
             "password": "Password123!",
             "name": "로그인테스터",
             "gender": "FEMALE",
             "birth_date": "1995-05-05",
             "phone_number": "01011112222",
         }
-        login_data = {"email": "login_test@example.com", "password": "Password123!"}
+        login_data = {"email": "login_test@gmail.com", "password": "Password123!"}
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             await client.post("/api/v1/auth/signup", json=signup_data)
@@ -33,7 +33,7 @@ class TestLoginAPI(TestCase):
         assert any("refresh_token" in header for header in response.headers.get_list("set-cookie"))
 
     async def test_login_invalid_credentials(self):
-        login_data = {"email": "nonexistent@example.com", "password": "WrongPassword123!"}
+        login_data = {"email": "nonexistent@gmail.com", "password": "WrongPassword123!"}
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post("/api/v1/auth/login", json=login_data)
 
@@ -42,7 +42,7 @@ class TestLoginAPI(TestCase):
 
     async def test_login_guardian_role_success(self):
         signup_data = {
-            "email": "guardian_login_test@example.com",
+            "email": "guardian_login_test@gmail.com",
             "password": "Password123!",
             "name": "보호자로그인테스터",
             "gender": "FEMALE",
@@ -50,7 +50,7 @@ class TestLoginAPI(TestCase):
             "phone_number": "01033334444",
         }
         login_data = {
-            "email": "guardian_login_test@example.com",
+            "email": "guardian_login_test@gmail.com",
             "password": "Password123!",
             "role": "GUARDIAN",
         }
@@ -71,7 +71,7 @@ class TestLoginAPI(TestCase):
 
     async def test_login_role_not_assigned(self):
         signup_data = {
-            "email": "role_missing_test@example.com",
+            "email": "role_missing_test@gmail.com",
             "password": "Password123!",
             "name": "역할없음테스터",
             "gender": "MALE",
@@ -79,7 +79,7 @@ class TestLoginAPI(TestCase):
             "phone_number": "01044445555",
         }
         login_data = {
-            "email": "role_missing_test@example.com",
+            "email": "role_missing_test@gmail.com",
             "password": "Password123!",
             "role": "GUARDIAN",
         }
