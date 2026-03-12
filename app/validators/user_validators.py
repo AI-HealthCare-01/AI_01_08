@@ -3,6 +3,18 @@ from datetime import date, datetime
 
 from app.core import config
 
+ALLOWED_EMAIL_DOMAINS = {"gmail.com", "naver.com", "daum.net", "daum.com"}
+
+
+def validate_email_format(email: str) -> str:
+    # EmailStr 검증 이후에도 가입 규칙을 명시적으로 고정한다.
+    if not re.fullmatch(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        raise ValueError("유효하지 않은 이메일 형식입니다.")
+    domain = email.rsplit("@", 1)[1].lower()
+    if domain not in ALLOWED_EMAIL_DOMAINS:
+        raise ValueError("지원하지 않는 이메일 도메인입니다. gmail.com, naver.com, daum.net만 사용 가능합니다.")
+    return email
+
 
 def validate_password(password: str) -> str:
     if len(password) < 8:

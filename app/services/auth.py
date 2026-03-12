@@ -81,13 +81,13 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="선택한 역할로 로그인할 수 없습니다.")
         return self.jwt_service.issue_jwt_pair(user, extra_claims={"login_role": requested_role})
 
-    async def check_email_exists(self, email: str | EmailStr) -> None:
-        if await self.user_repo.exists_by_email(email):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용중인 이메일입니다.")
+    async def check_email_exists(self, email: str | EmailStr, *, exclude_user_id: int | None = None) -> None:
+        if await self.user_repo.exists_by_email(email, exclude_user_id=exclude_user_id):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용 중인 이메일입니다.")
 
-    async def check_phone_number_exists(self, phone_number: str) -> None:
-        if await self.user_repo.exists_by_phone_number(phone_number):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용중인 휴대폰 번호입니다.")
+    async def check_phone_number_exists(self, phone_number: str, *, exclude_user_id: int | None = None) -> None:
+        if await self.user_repo.exists_by_phone_number(phone_number, exclude_user_id=exclude_user_id):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 사용 중인 휴대폰 번호입니다.")
 
     @staticmethod
     def _role_candidates(role: LoginRole) -> list[str]:

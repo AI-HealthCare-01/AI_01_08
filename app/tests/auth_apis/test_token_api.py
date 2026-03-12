@@ -9,7 +9,7 @@ class TestJWTTokenRefreshAPI(TestCase):
     async def test_token_refresh_success(self):
         # 사용자 등록 및 로그인하여 리프레시 토큰 획득
         signup_data = {
-            "email": "refresh@example.com",
+            "email": "refresh@gmail.com",
             "password": "Password123!",
             "name": "리프레시테스터",
             "gender": "MALE",
@@ -20,7 +20,7 @@ class TestJWTTokenRefreshAPI(TestCase):
             await client.post("/api/v1/auth/signup", json=signup_data)
 
             login_response = await client.post(
-                "/api/v1/auth/login", json={"email": "refresh@example.com", "password": "Password123!"}
+                "/api/v1/auth/login", json={"email": "refresh@gmail.com", "password": "Password123!"}
             )
 
             # 쿠키에서 refresh_token 추출
