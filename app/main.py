@@ -56,6 +56,8 @@ async def auth_login_page() -> HTMLResponse:
 @app.get("/auth-demo/app", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/dashboard", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/health-profile", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/documents", include_in_schema=False, response_class=HTMLResponse)
 async def auth_app_page() -> HTMLResponse:
     if auth_app_index.exists():
         return HTMLResponse(content=auth_app_index.read_text(encoding="utf-8"))

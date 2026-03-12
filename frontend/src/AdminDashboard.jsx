@@ -105,6 +105,12 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const handleLogout = () => {
+    localStorage.removeItem("access_token");
+    document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    window.location.href = "/auth-demo/login";
+  };
+
   const fetchDashboard = async () => {
     setLoading(true);
     setError(null);
@@ -155,7 +161,18 @@ function AdminDashboard() {
   const { stats, guide_trend, chatbot_trend, ocr_analysis } = dashboardData;
 
   return (
-    <div className="container-fluid py-4" style={{ backgroundColor: "#f8f9fa" }}>
+    <div className="container-fluid py-4" style={{ backgroundColor: "#f8f9fa", minHeight: "100vh" }}>
+      <nav className="navbar navbar-expand-lg navbar-light bg-white shadow-sm mb-4">
+        <div className="container-fluid">
+          <a className="navbar-brand fw-bold" href="/auth-demo/app">AI Health</a>
+          <div className="ms-auto d-flex gap-2">
+            <a className="btn btn-outline-primary btn-sm" href="/auth-demo/app">홈</a>
+            <a className="btn btn-outline-primary btn-sm" href="/auth-demo/app/profile">개인정보</a>
+            <button className="btn btn-outline-danger btn-sm" onClick={handleLogout}>로그아웃</button>
+          </div>
+        </div>
+      </nav>
+
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
           <h2 className="fw-bold mb-1">대시보드</h2>

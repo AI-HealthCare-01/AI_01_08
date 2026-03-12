@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import AdminDashboard from "./AdminDashboard.jsx";
+import HealthProfile from "./HealthProfile.jsx";
+import DocumentManagement from "./DocumentManagement.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -211,6 +213,12 @@ function App() {
   const isDashboardPage = useMemo(() => {
     return pathname.startsWith("/auth-demo/dashboard") || pathname.startsWith("/auth-demo/app/dashboard");
   }, [pathname]);
+  const isHealthProfilePage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/health-profile") || pathname.startsWith("/auth-demo/app/health-profile");
+  }, [pathname]);
+  const isDocumentsPage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/documents") || pathname.startsWith("/auth-demo/app/documents");
+  }, [pathname]);
 
   const persistAccessToken = (token) => {
     if (typeof window !== "undefined") {
@@ -327,91 +335,12 @@ function App() {
       }
     };
 
-    const loadLinks = async () => {
-      setLinksState((prev) => ({ ...prev, loading: true, error: null }));
-      try {
-        const res = await authFetch(`${API_PREFIX}/users/links`);
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw new Error(body?.detail || `status ${res.status}`);
-        }
-        const data = await res.json();
-        setLinksState({ loading: false, data, error: null });
-      } catch (error) {
-        setLinksState({ loading: false, data: null, error: error.message });
-      }
-    };
-
-    const loadNotifications = async () => {
-      setNotificationsState({ loading: true, items: [], nextCursor: null, error: null });
-      try {
-        const res = await authFetch(`${API_PREFIX}/notifications?limit=20`);
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw new Error(body?.detail || `status ${res.status}`);
-        }
-        const body = await safeJson(res);
-        const data = body?.data || body;
-        setNotificationsState({
-          loading: false,
-          items: data?.items || [],
-          nextCursor: data?.next_cursor ?? null,
-          error: null
-        });
-      } catch (error) {
-        setNotificationsState({ loading: false, items: [], nextCursor: null, error: error.message });
-      }
-    };
-
-    const loadUnreadCount = async () => {
-      setUnreadCountState((prev) => ({ ...prev, loading: true, error: null }));
-      try {
-        const res = await authFetch(`${API_PREFIX}/notifications/unread-count`);
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw new Error(body?.detail || `status ${res.status}`);
-        }
-        const body = await safeJson(res);
-        const data = body?.data || body;
-        setUnreadCountState({ loading: false, count: data?.count ?? 0, error: null });
-      } catch (error) {
-        setUnreadCountState({ loading: false, count: 0, error: error.message });
-      }
-    };
-
-    const loadSettings = async () => {
-      setSettingsState((prev) => ({ ...prev, loading: true, error: null }));
-      try {
-        const res = await authFetch(`${API_PREFIX}/notifications/settings`);
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw new Error(body?.detail || `status ${res.status}`);
-        }
-        const body = await safeJson(res);
-        const data = body?.data || body;
-        setSettingsState((prev) => ({
-          ...prev,
-          loading: false,
-          data,
-          error: null,
-          success: false
-        }));
-      } catch (error) {
-        setSettingsState((prev) => ({
-          ...prev,
-          loading: false,
-          data: null,
-          error: error.message,
-          success: false
-        }));
-      }
-    };
-
     loadMe();
-    loadLinks();
-    loadNotifications();
-    loadUnreadCount();
-    loadSettings();
+    // 알림 기능은 임시로 비활성화
+    // loadLinks();
+    // loadNotifications();
+    // loadUnreadCount();
+    // loadSettings();
   }, [accessToken]);
 
   useEffect(() => {
@@ -1471,6 +1400,40 @@ function App() {
     return <AdminDashboard />;
   }
 
+  if (isHealthProfilePage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <HealthProfile />;
+  }
+
+  if (isDocumentsPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <DocumentManagement />;
+  }
+
   if (isProfilePage) {
     return (
       <div className="app-shell">
@@ -1723,6 +1686,12 @@ function App() {
                 <>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/dashboard">
                     대시보드
+                  </a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/health-profile">
+                    건강 프로필
+                  </a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/documents">
+                    문서 관리
                   </a>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/profile">
                     개인정보
