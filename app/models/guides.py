@@ -14,7 +14,7 @@ class GuideStatus(StrEnum):
 
 class Guide(models.Model):
     # 가이드 본문/요약/생성 상태를 저장하는 메인 모델
-    id = fields.BigIntField(pk=True)
+    id = fields.BigIntField(primary_key=True)
 
     # 가이드 대상 환자
     patient = fields.ForeignKeyField(
@@ -97,7 +97,7 @@ class Guide(models.Model):
 
 class GuideFeedback(models.Model):
     # 가이드 만족도/피드백 저장 모델
-    id = fields.BigIntField(pk=True)
+    id = fields.BigIntField(primary_key=True)
 
     # 피드백 대상 가이드
     guide = fields.ForeignKeyField(

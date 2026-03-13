@@ -10,8 +10,8 @@ from app.models.users import User
 
 class TestInvitationApis(TestCase):
     async def test_invite_link_list_unlink_flow(self):
-        patient_email = "patient.invite@example.com"
-        caregiver_email = "caregiver.invite@example.com"
+        patient_email = "patient.invite@naver.com"
+        caregiver_email = "caregiver.invite@naver.com"
 
         patient_signup_data = {
             "email": patient_email,

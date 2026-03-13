@@ -13,7 +13,7 @@ from app.models.users import User
 class TestDocumentDrugsApis(TestCase):
     async def test_get_document_drugs_success(self):
         signup_data = {
-            "email": "patient.docs1@example.com",
+            "email": "patient.docs1@gmail.com",
             "password": "Password123!",
             "name": "문서환자1",
             "gender": "FEMALE",
@@ -66,7 +66,7 @@ class TestDocumentDrugsApis(TestCase):
 
     async def test_patch_document_drugs_confirm_success(self):
         signup_data = {
-            "email": "patient.docs2@example.com",
+            "email": "patient.docs2@gmail.com",
             "password": "Password123!",
             "name": "문서환자2",
             "gender": "MALE",
@@ -126,6 +126,7 @@ class TestDocumentDrugsApis(TestCase):
                 ],
                 "replace_all": False,
                 "confirm": True,
+                "force_confirm": True,
             }
 
             response = await client.patch(f"/api/v1/documents/{document.id}/drugs", json=patch_payload, headers=headers)

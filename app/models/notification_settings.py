@@ -4,7 +4,7 @@ from tortoise.models import Model
 
 
 class NotificationSettings(Model):
-    id = fields.BigIntField(pk=True)
+    id = fields.BigIntField(primary_key=True)
     user = fields.ForeignKeyField(
         "models.User", related_name="notification_settings", on_delete=fields.CASCADE, unique=True
     )
