@@ -53,3 +53,7 @@ class Config(BaseSettings):
     MFDS_SERVICE_KEY: str = ""
     MFDS_BASE_URL: str = "http://apis.data.go.kr/1471000"
     MFDS_TIMEOUT_SECONDS: int = 20
+
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    KIDS_API_KEY: str = ""

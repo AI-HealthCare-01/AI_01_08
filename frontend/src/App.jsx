@@ -3,6 +3,7 @@ import AdminDashboard from "./AdminDashboard.jsx";
 import HealthProfile from "./HealthProfile.jsx";
 import DocumentManagement from "./DocumentManagement.jsx";
 import CaregiverManagement from "./CaregiverManagement.jsx";
+import AiPage from "./AiPage.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -222,6 +223,9 @@ function App() {
   }, [pathname]);
   const isCaregiverPage = useMemo(() => {
     return pathname.startsWith("/auth-demo/caregiver") || pathname.startsWith("/auth-demo/app/caregiver");
+  }, [pathname]);
+  const isAiPage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/ai") || pathname.startsWith("/auth-demo/app/ai");
   }, [pathname]);
 
   const persistAccessToken = (token) => {
@@ -1470,6 +1474,23 @@ function App() {
     return <CaregiverManagement />;
   }
 
+  if (isAiPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <AiPage />;
+  }
+
   if (isProfilePage) {
     return (
       <div className="app-shell">
@@ -2243,7 +2264,13 @@ function App() {
                 <div className="card-body">
                   <h5 className="card-title">{item.title}</h5>
                   <p className="card-text text-muted">{item.description}</p>
-                  <button className="btn btn-outline-primary btn-sm">자세히 보기</button>
+                  {item.title === "AI 상담" ? (
+                    <a className="btn btn-outline-primary btn-sm" href="/auth-demo/app/ai">
+                      자세히 보기
+                    </a>
+                  ) : (
+                    <button className="btn btn-outline-primary btn-sm">자세히 보기</button>
+                  )}
                 </div>
               </div>
             </div>

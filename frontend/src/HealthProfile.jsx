@@ -10,7 +10,6 @@ function HealthProfile() {
   const [formData, setFormData] = useState({
     height_cm: "",
     weight_kg: "",
-    blood_type: "",
     allergies: "",
     conditions: "",
     meds: "",
@@ -42,7 +41,6 @@ function HealthProfile() {
         setFormData({
           height_cm: data.data?.height_cm || "",
           weight_kg: data.data?.weight_kg || "",
-          blood_type: data.data?.blood_type || "",
           allergies: data.data?.allergies?.join(", ") || "",
           conditions: data.data?.conditions?.join(", ") || "",
           meds: data.data?.meds?.join(", ") || "",
@@ -125,7 +123,6 @@ function HealthProfile() {
       setFormData({
         height_cm: "",
         weight_kg: "",
-        blood_type: "",
         allergies: "",
         conditions: "",
         meds: "",

@@ -57,3 +57,12 @@ body {
   border-color: #f9d700;
   color: #2f1717;
 }
+
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}

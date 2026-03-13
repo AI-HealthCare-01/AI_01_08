@@ -24,6 +24,7 @@ class SignUpRequest(BaseModel):
     gender: Gender
     birth_date: Annotated[date, AfterValidator(validate_birthday)]
     phone_number: Annotated[str, AfterValidator(validate_phone_number)]
+    role: str = Field(default="PATIENT", description="회원가입 역할: PATIENT, CAREGIVER, ADMIN")
 
 
 class LoginRole(StrEnum):

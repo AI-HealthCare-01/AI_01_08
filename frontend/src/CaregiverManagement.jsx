@@ -117,7 +117,7 @@ function CaregiverManagement() {
     <div className="container py-5">
       <div className="d-flex align-items-center mb-4">
         <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
-          <img src="/auth-demo/app/assets/mascot.png" alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
+          <img src="/mascot.png" alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
         </a>
         <h2 className="mb-0">보호자 관리</h2>
       </div>
