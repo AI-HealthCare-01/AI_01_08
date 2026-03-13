@@ -39,9 +39,7 @@ class DashboardService:
         today_guides, yesterday_guides = await DashboardService._get_guide_counts(
             today_start, today_end, yesterday_start, yesterday_end
         )
-        guides_change = (
-            ((today_guides - yesterday_guides) / yesterday_guides * 100) if yesterday_guides > 0 else 0
-        )
+        guides_change = ((today_guides - yesterday_guides) / yesterday_guides * 100) if yesterday_guides > 0 else 0
 
         ocr_success_rate, yesterday_ocr_rate = await DashboardService._get_ocr_rates(
             today_start, today_end, yesterday_start, yesterday_end
@@ -75,7 +73,9 @@ class DashboardService:
     ) -> tuple[int, int]:
         try:
             today_guides = await Guide.filter(created_at__gte=today_start, created_at__lte=today_end).count()
-            yesterday_guides = await Guide.filter(created_at__gte=yesterday_start, created_at__lte=yesterday_end).count()
+            yesterday_guides = await Guide.filter(
+                created_at__gte=yesterday_start, created_at__lte=yesterday_end
+            ).count()
         except Exception as exc:
             print(f"Guide 모델 오류: {exc}")
             today_guides = 12
@@ -98,9 +98,7 @@ class DashboardService:
             yesterday_ocr_jobs = await OcrJob.filter(created_at__gte=yesterday_start, created_at__lte=yesterday_end)
             yesterday_ocr_total = len(yesterday_ocr_jobs)
             yesterday_success_ocr = len([job for job in yesterday_ocr_jobs if job.status == "completed"])
-            yesterday_ocr_rate = (
-                (yesterday_success_ocr / yesterday_ocr_total * 100) if yesterday_ocr_total > 0 else 0
-            )
+            yesterday_ocr_rate = (yesterday_success_ocr / yesterday_ocr_total * 100) if yesterday_ocr_total > 0 else 0
         except Exception as exc:
             print(f"OcrJob 모델 오류: {exc}")
             ocr_success_rate = 80.0

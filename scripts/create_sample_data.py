@@ -2,6 +2,7 @@
 """
 대시보드 테스트용 샘플 데이터 생성 스크립트
 """
+
 import asyncio
 import sys
 from datetime import date, datetime, timedelta
@@ -10,6 +11,7 @@ from pathlib import Path
 # 프로젝트 루트를 Python path에 추가
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
 
 async def create_sample_data():
     """샘플 데이터 생성"""
@@ -71,7 +73,7 @@ async def _create_users(user_model, gender_model) -> int:
                 name=f"테스트사용자{i}",
                 gender=gender_model.MALE if i % 2 == 0 else gender_model.FEMALE,
                 birthday=date(1990, 1, 1) + timedelta(days=i * 30),
-                phone_number=f"010-0000-{1000+i}",
+                phone_number=f"010-0000-{1000 + i}",
                 nickname=f"닉네임{i}",
                 is_active=True,
                 created_at=datetime.now() - timedelta(days=i),
@@ -90,7 +92,7 @@ async def _create_patients(patient_model, gender_model) -> int:
                 name=f"환자{i}",
                 gender=gender_model.MALE if i % 2 == 0 else gender_model.FEMALE,
                 birthday=date(1980, 1, 1) + timedelta(days=i * 60),
-                phone_number=f"010-1111-{2000+i}",
+                phone_number=f"010-1111-{2000 + i}",
                 created_at=datetime.now() - timedelta(days=i * 2),
             )
             patients_created += 1
