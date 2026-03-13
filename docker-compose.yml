@@ -31,6 +31,7 @@ services:
       - ws
     volumes:
       - mysql_data:/var/lib/mysql  # 컨테이너가 삭제돼도 데이터는 호스트 파일시스템에 남음
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
     command: # 한글 저장을 위한 문자셋 설정 (필수!)
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci

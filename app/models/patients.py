@@ -15,7 +15,7 @@ class Patient(models.Model):
 
 # 건강 프로필
 class PatientProfile(models.Model):
-    id = fields.BigIntField(pk=True)
+    id = fields.BigIntField(primary_key=True)
 
     birth_year = fields.IntField(null=True)
     sex = fields.CharField(max_length=20, null=True)

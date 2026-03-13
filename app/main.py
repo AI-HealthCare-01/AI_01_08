@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,8 +12,19 @@ from app.core import config
 from app.db.bootstrap import bootstrap_database
 from app.db.databases import initialize_tortoise
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await bootstrap_database()
+    yield
+
+
 app = FastAPI(
-    default_response_class=ORJSONResponse, docs_url="/api/docs", redoc_url="/api/redoc", openapi_url="/api/openapi.json"
+    default_response_class=ORJSONResponse,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan,
 )
 initialize_tortoise(app)
 allowed_origins = [origin.strip() for origin in config.CORS_ALLOW_ORIGINS.split(",") if origin.strip()]
@@ -66,8 +78,3 @@ async def auth_app_page() -> HTMLResponse:
 @app.get("/api/health", include_in_schema=False)
 async def health_check() -> dict[str, str]:
     return {"status": "ok", "timestamp": datetime.now(UTC).isoformat()}
-
-
-@app.on_event("startup")
-async def startup_db_bootstrap() -> None:
-    await bootstrap_database()

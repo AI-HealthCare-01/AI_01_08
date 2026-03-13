@@ -1,4 +1,5 @@
 import asyncio
+import os
 from collections.abc import Generator
 from typing import Any
 from unittest.mock import Mock, patch
@@ -15,11 +16,13 @@ from app.db.databases import TORTOISE_APP_MODELS
 TEST_BASE_URL = "http://test"
 TEST_DB_LABEL = "models"
 TEST_DB_TZ = "Asia/Seoul"
+TEST_DB_HOST = os.getenv("PYTEST_DB_HOST", "127.0.0.1")
+TEST_DB_PORT = int(os.getenv("PYTEST_DB_PORT", str(config.DB_PORT)))
 
 
 def get_test_db_config() -> dict[str, Any]:
     tortoise_config = generate_config(
-        db_url=f"mysql://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/test",
+        db_url=f"mysql://{config.DB_USER}:{config.DB_PASSWORD}@{TEST_DB_HOST}:{TEST_DB_PORT}/test",
         app_modules={TEST_DB_LABEL: TORTOISE_APP_MODELS},
         connection_label=TEST_DB_LABEL,
         testing=True,
