@@ -6,6 +6,7 @@ from tortoise.transactions import in_transaction
 
 from app.dtos.auth import LoginRequest, LoginRole, SignUpRequest
 from app.models.healthcare import Role, UserRole
+from app.models.patients import Patient
 from app.models.users import User
 from app.repositories.user_repository import UserRepository
 from app.services.jwt import JwtService
@@ -39,10 +40,17 @@ class AuthService:
                 gender=data.gender,
                 birthday=data.birth_date,
             )
-            default_role, _ = await Role.get_or_create(
-                code=LoginRole.PATIENT.value, defaults={"name": LoginRole.PATIENT.value}
-            )
+            # 기본 역할은 PATIENT, 회원가입 시 역할 선택 가능하도록 수정
+            role_code = getattr(data, "role", LoginRole.PATIENT.value)
+            default_role, _ = await Role.get_or_create(code=role_code, defaults={"name": role_code})
             await UserRole.get_or_create(user=user, role=default_role)
+
+            # PATIENT 역할인 경우 Patient 레코드 자동 생성
+            if role_code == LoginRole.PATIENT.value:
+                await Patient.get_or_create(
+                    user_id=user.id,
+                    defaults={"display_name": user.name, "owner_user_id": user.id},
+                )
 
             return user
 
@@ -96,3 +104,17 @@ class AuthService:
         if role == LoginRole.CAREGIVER:
             return [LoginRole.CAREGIVER.value, LoginRole.GUARDIAN.value]
         return [LoginRole.PATIENT.value]
+
+    async def find_email(self, name: str, phone_number: str) -> str:
+        normalized_phone = normalize_phone_number(phone_number)
+        user = await self.user_repo.get_user_by_name_and_phone(name, normalized_phone)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="일치하는 사용자를 찾을 수 없습니다.")
+        return user.email
+
+    async def reset_password(self, email: str, name: str, phone_number: str, new_password: str) -> None:
+        normalized_phone = normalize_phone_number(phone_number)
+        user = await self.user_repo.get_user_by_email_name_phone(email, name, normalized_phone)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="일치하는 사용자를 찾을 수 없습니다.")
+        await self.user_repo.update_instance(user, {"hashed_password": hash_password(new_password)})

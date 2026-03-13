@@ -1,4 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import AdminDashboard from "./AdminDashboard.jsx";
+import HealthProfile from "./HealthProfile.jsx";
+import DocumentManagement from "./DocumentManagement.jsx";
+import CaregiverManagement from "./CaregiverManagement.jsx";
+import AiPage from "./AiPage.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -56,6 +61,29 @@ function App() {
     submitting: false,
     error: null
   });
+  const [findEmailForm, setFindEmailForm] = useState({
+    name: "",
+    phoneNumber: ""
+  });
+  const [findEmailState, setFindEmailState] = useState({
+    submitting: false,
+    error: null,
+    email: null
+  });
+  const [resetPasswordForm, setResetPasswordForm] = useState({
+    email: "",
+    name: "",
+    phoneNumber: "",
+    newPassword: "",
+    newPasswordConfirm: ""
+  });
+  const [resetPasswordState, setResetPasswordState] = useState({
+    submitting: false,
+    error: null,
+    success: false
+  });
+  const [showFindModal, setShowFindModal] = useState(false);
+  const [findModalTab, setFindModalTab] = useState("email");
   const [authChecking, setAuthChecking] = useState(true);
   const readCookie = (name) => {
     if (typeof document === "undefined") {
@@ -183,6 +211,21 @@ function App() {
   }, [pathname]);
   const isProfilePage = useMemo(() => {
     return pathname.startsWith("/auth-demo/profile") || pathname.startsWith("/auth-demo/app/profile");
+  }, [pathname]);
+  const isDashboardPage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/dashboard") || pathname.startsWith("/auth-demo/app/dashboard");
+  }, [pathname]);
+  const isHealthProfilePage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/health-profile") || pathname.startsWith("/auth-demo/app/health-profile");
+  }, [pathname]);
+  const isDocumentsPage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/documents") || pathname.startsWith("/auth-demo/app/documents");
+  }, [pathname]);
+  const isCaregiverPage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/caregiver") || pathname.startsWith("/auth-demo/app/caregiver");
+  }, [pathname]);
+  const isAiPage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/ai") || pathname.startsWith("/auth-demo/app/ai");
   }, [pathname]);
 
   const persistAccessToken = (token) => {
@@ -315,76 +358,12 @@ function App() {
       }
     };
 
-    const loadNotifications = async () => {
-      setNotificationsState({ loading: true, items: [], nextCursor: null, error: null });
-      try {
-        const res = await authFetch(`${API_PREFIX}/notifications?limit=20`);
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw new Error(body?.detail || `status ${res.status}`);
-        }
-        const body = await safeJson(res);
-        const data = body?.data || body;
-        setNotificationsState({
-          loading: false,
-          items: data?.items || [],
-          nextCursor: data?.next_cursor ?? null,
-          error: null
-        });
-      } catch (error) {
-        setNotificationsState({ loading: false, items: [], nextCursor: null, error: error.message });
-      }
-    };
-
-    const loadUnreadCount = async () => {
-      setUnreadCountState((prev) => ({ ...prev, loading: true, error: null }));
-      try {
-        const res = await authFetch(`${API_PREFIX}/notifications/unread-count`);
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw new Error(body?.detail || `status ${res.status}`);
-        }
-        const body = await safeJson(res);
-        const data = body?.data || body;
-        setUnreadCountState({ loading: false, count: data?.count ?? 0, error: null });
-      } catch (error) {
-        setUnreadCountState({ loading: false, count: 0, error: error.message });
-      }
-    };
-
-    const loadSettings = async () => {
-      setSettingsState((prev) => ({ ...prev, loading: true, error: null }));
-      try {
-        const res = await authFetch(`${API_PREFIX}/notifications/settings`);
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw new Error(body?.detail || `status ${res.status}`);
-        }
-        const body = await safeJson(res);
-        const data = body?.data || body;
-        setSettingsState((prev) => ({
-          ...prev,
-          loading: false,
-          data,
-          error: null,
-          success: false
-        }));
-      } catch (error) {
-        setSettingsState((prev) => ({
-          ...prev,
-          loading: false,
-          data: null,
-          error: error.message,
-          success: false
-        }));
-      }
-    };
-
     loadMe();
     loadLinks();
-    loadNotifications();
-    loadUnreadCount();
-    loadSettings();
+    // 알림 기능은 DB 스키마 문제로 비활성화
+    // loadNotifications();
+    // loadUnreadCount();
+    // loadSettings();
   }, [accessToken]);
 
   useEffect(() => {
@@ -617,6 +596,64 @@ function App() {
     }
   };
 
+  const handleFindEmailSubmit = async (event) => {
+    event.preventDefault();
+    setFindEmailState({ submitting: true, error: null, email: null });
+    try {
+      const payload = {
+        name: findEmailForm.name,
+        phone_number: findEmailForm.phoneNumber
+      };
+      const res = await fetch("/api/v1/auth/find-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(body) || `status ${res.status}`);
+      }
+      const body = await res.json();
+      setFindEmailState({ submitting: false, error: null, email: body.email });
+    } catch (error) {
+      setFindEmailState({ submitting: false, error: formatApiError(error?.message || error), email: null });
+    }
+  };
+
+  const handleResetPasswordSubmit = async (event) => {
+    event.preventDefault();
+    if (resetPasswordForm.newPassword !== resetPasswordForm.newPasswordConfirm) {
+      setResetPasswordState({ submitting: false, error: "비밀번호가 일치하지 않습니다.", success: false });
+      return;
+    }
+    setResetPasswordState({ submitting: true, error: null, success: false });
+    try {
+      const payload = {
+        email: resetPasswordForm.email,
+        name: resetPasswordForm.name,
+        phone_number: resetPasswordForm.phoneNumber,
+        new_password: resetPasswordForm.newPassword
+      };
+      const res = await fetch("/api/v1/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(body) || `status ${res.status}`);
+      }
+      setResetPasswordState({ submitting: false, error: null, success: true });
+      setTimeout(() => {
+        setShowFindModal(false);
+        setResetPasswordState({ submitting: false, error: null, success: false });
+        setResetPasswordForm({ email: "", name: "", phoneNumber: "", newPassword: "", newPasswordConfirm: "" });
+      }, 2000);
+    } catch (error) {
+      setResetPasswordState({ submitting: false, error: formatApiError(error?.message || error), success: false });
+    }
+  };
+
   const startSocialLogin = async (provider, role) => {
     setLoginState({ submitting: true, error: null });
     try {
@@ -655,7 +692,9 @@ function App() {
       setLinksState({ loading: false, data: null, error: null });
       setNotificationsState({ loading: false, items: [], nextCursor: null, error: null });
       setUnreadCountState({ loading: false, count: 0, error: null });
-      window.location.href = "/auth-demo/login";
+      if (typeof window !== "undefined") {
+        window.location.href = "/auth-demo/login";
+      }
     }
   };
 
@@ -1177,6 +1216,16 @@ function App() {
                       <a className="btn btn-outline-secondary" href="/auth-demo/signup">
                         회원가입
                       </a>
+                      <button
+                        type="button"
+                        className="btn btn-link text-muted"
+                        onClick={() => {
+                          setShowFindModal(true);
+                          setFindModalTab("email");
+                        }}
+                      >
+                        아이디/비밀번호 찾기
+                      </button>
                       <a className="btn btn-outline-secondary" href="/auth-demo/app">
                         대시보드로 이동
                       </a>
@@ -1189,6 +1238,142 @@ function App() {
             </div>
           </div>
         </div>
+        {showFindModal && (
+          <div className="modal show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">아이디/비밀번호 찾기</h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => {
+                      setShowFindModal(false);
+                      setFindEmailState({ submitting: false, error: null, email: null });
+                      setResetPasswordState({ submitting: false, error: null, success: false });
+                      setFindEmailForm({ name: "", phoneNumber: "" });
+                      setResetPasswordForm({ email: "", name: "", phoneNumber: "", newPassword: "", newPasswordConfirm: "" });
+                    }}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <ul className="nav nav-tabs mb-3">
+                    <li className="nav-item">
+                      <button
+                        className={`nav-link ${findModalTab === "email" ? "active" : ""}`}
+                        onClick={() => setFindModalTab("email")}
+                      >
+                        아이디 찾기
+                      </button>
+                    </li>
+                    <li className="nav-item">
+                      <button
+                        className={`nav-link ${findModalTab === "password" ? "active" : ""}`}
+                        onClick={() => setFindModalTab("password")}
+                      >
+                        비밀번호 재설정
+                      </button>
+                    </li>
+                  </ul>
+                  {findModalTab === "email" && (
+                    <form onSubmit={handleFindEmailSubmit}>
+                      <div className="mb-3">
+                        <label className="form-label">이름</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={findEmailForm.name}
+                          onChange={(e) => setFindEmailForm({ ...findEmailForm, name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">휴대폰 번호</label>
+                        <input
+                          type="tel"
+                          className="form-control"
+                          value={findEmailForm.phoneNumber}
+                          onChange={(e) => setFindEmailForm({ ...findEmailForm, phoneNumber: e.target.value })}
+                          placeholder="01012345678"
+                          required
+                        />
+                      </div>
+                      <button type="submit" className="btn btn-primary w-100" disabled={findEmailState.submitting}>
+                        {findEmailState.submitting ? "확인 중..." : "아이디 찾기"}
+                      </button>
+                      {findEmailState.error && <div className="alert alert-danger mt-3">{findEmailState.error}</div>}
+                      {findEmailState.email && (
+                        <div className="alert alert-success mt-3">
+                          회원님의 아이디는 <strong>{findEmailState.email}</strong> 입니다.
+                        </div>
+                      )}
+                    </form>
+                  )}
+                  {findModalTab === "password" && (
+                    <form onSubmit={handleResetPasswordSubmit}>
+                      <div className="mb-3">
+                        <label className="form-label">이메일</label>
+                        <input
+                          type="email"
+                          className="form-control"
+                          value={resetPasswordForm.email}
+                          onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, email: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">이름</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={resetPasswordForm.name}
+                          onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">휴대폰 번호</label>
+                        <input
+                          type="tel"
+                          className="form-control"
+                          value={resetPasswordForm.phoneNumber}
+                          onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, phoneNumber: e.target.value })}
+                          placeholder="01012345678"
+                          required
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">새 비밀번호</label>
+                        <input
+                          type="password"
+                          className="form-control"
+                          value={resetPasswordForm.newPassword}
+                          onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, newPassword: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">새 비밀번호 확인</label>
+                        <input
+                          type="password"
+                          className="form-control"
+                          value={resetPasswordForm.newPasswordConfirm}
+                          onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, newPasswordConfirm: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <button type="submit" className="btn btn-primary w-100" disabled={resetPasswordState.submitting}>
+                        {resetPasswordState.submitting ? "처리 중..." : "비밀번호 재설정"}
+                      </button>
+                      {resetPasswordState.error && <div className="alert alert-danger mt-3">{resetPasswordState.error}</div>}
+                      {resetPasswordState.success && <div className="alert alert-success mt-3">비밀번호가 재설정되었습니다.</div>}
+                    </form>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1221,22 +1406,107 @@ function App() {
     return null;
   }
 
+  if (isDashboardPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <AdminDashboard />;
+  }
+
+  if (isHealthProfilePage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <HealthProfile />;
+  }
+
+  if (isDocumentsPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <DocumentManagement />;
+  }
+
+  if (isCaregiverPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <CaregiverManagement />;
+  }
+
+  if (isAiPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <AiPage />;
+  }
+
   if (isProfilePage) {
     return (
       <div className="app-shell">
         <header className="hero">
           <div className="container py-5">
             <nav className="navbar navbar-expand-lg">
-              <a className="navbar-brand fw-bold" href="/auth-demo/app">
-                AI Health
+              <a className="navbar-brand fw-bold" href="/auth-demo/app" style={{ fontSize: '1.5rem' }}>
+                (주)케어브릿지
               </a>
               <div className="ms-auto d-flex gap-2">
                 <a className="btn btn-outline-light btn-sm" href="/auth-demo/app">
                   대시보드
                 </a>
-                <a className="btn btn-light btn-sm text-primary" href="/auth-demo/login" onClick={handleLogout}>
+                <button className="btn btn-light btn-sm text-primary" onClick={handleLogout}>
                   로그아웃
-                </a>
+                </button>
               </div>
             </nav>
             <div className="row align-items-center mt-4">
@@ -1465,18 +1735,30 @@ function App() {
       <header className="hero">
         <div className="container py-5">
           <nav className="navbar navbar-expand-lg">
-            <a className="navbar-brand fw-bold" href="#">
-              AI Health
+            <a className="navbar-brand fw-bold" href="#" style={{ fontSize: '1.5rem' }}>
+              (주)케어브릿지
             </a>
             <div className="ms-auto d-flex gap-2">
               {accessToken ? (
                 <>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/dashboard">
+                    대시보드
+                  </a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/caregiver">
+                    보호자 관리
+                  </a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/health-profile">
+                    건강 프로필
+                  </a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/documents">
+                    문서 관리
+                  </a>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/profile">
                     개인정보
                   </a>
-                  <a className="btn btn-light btn-sm text-primary" href="/auth-demo/login" onClick={handleLogout}>
+                  <button className="btn btn-light btn-sm text-primary" onClick={handleLogout}>
                     로그아웃
-                  </a>
+                  </button>
                 </>
               ) : (
                 <>
@@ -1490,8 +1772,8 @@ function App() {
           </nav>
           <div className="row align-items-center mt-4">
             <div className="col-lg-7">
-              <h1 className="display-5 fw-bold">진료 흐름을 스마트하게 연결하세요.</h1>
-              <p className="lead mt-3">AI 기반 의료 워크플로우로 환자 대응 속도를 높이고, 팀 협업을 단순화합니다.</p>
+              <h1 className="display-5 fw-bold">나와 내 가족을 지켜주는 AI기반 의료 워크플로우</h1>
+              <p className="lead mt-3">한 눈에 볼 수 있는 나의 의료서비스</p>
               <div className="d-flex gap-2 mt-4">
                 <button className="btn btn-warning btn-lg">바로 시작</button>
                 <button className="btn btn-outline-light btn-lg">기능 살펴보기</button>
@@ -1982,7 +2264,13 @@ function App() {
                 <div className="card-body">
                   <h5 className="card-title">{item.title}</h5>
                   <p className="card-text text-muted">{item.description}</p>
-                  <button className="btn btn-outline-primary btn-sm">자세히 보기</button>
+                  {item.title === "AI 상담" ? (
+                    <a className="btn btn-outline-primary btn-sm" href="/auth-demo/app/ai">
+                      자세히 보기
+                    </a>
+                  ) : (
+                    <button className="btn btn-outline-primary btn-sm">자세히 보기</button>
+                  )}
                 </div>
               </div>
             </div>

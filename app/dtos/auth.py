@@ -24,6 +24,7 @@ class SignUpRequest(BaseModel):
     gender: Gender
     birth_date: Annotated[date, AfterValidator(validate_birthday)]
     phone_number: Annotated[str, AfterValidator(validate_phone_number)]
+    role: str = Field(default="PATIENT", description="회원가입 역할: PATIENT, CAREGIVER, ADMIN")
 
 
 class LoginRole(StrEnum):
@@ -58,3 +59,19 @@ class TokenRefreshResponse(BaseModel):
 class SocialLoginStartResponse(BaseModel):
     provider: SocialProvider
     authorize_url: str
+
+
+class FindEmailRequest(BaseModel):
+    name: Annotated[str, Field(max_length=20)]
+    phone_number: Annotated[str, AfterValidator(validate_phone_number)]
+
+
+class FindEmailResponse(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    name: Annotated[str, Field(max_length=20)]
+    phone_number: Annotated[str, AfterValidator(validate_phone_number)]
+    new_password: Annotated[str, Field(min_length=8), AfterValidator(validate_password)]

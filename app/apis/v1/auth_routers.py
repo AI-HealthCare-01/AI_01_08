@@ -1,15 +1,18 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.responses import JSONResponse as Response
-from fastapi.responses import RedirectResponse
 
 from app.core import config
 from app.core.config import Env
 from app.dtos.auth import (
+    FindEmailRequest,
+    FindEmailResponse,
     LoginRequest,
     LoginResponse,
     LoginRole,
+    ResetPasswordRequest,
     SignUpRequest,
     SocialLoginStartResponse,
     SocialProvider,
@@ -84,6 +87,38 @@ async def login(
     return _build_login_response(tokens, login_role=request.role)
 
 
+@auth_router.post("/admin/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
+async def admin_login(
+    request: LoginRequest,
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+) -> Response:
+    """관리자 전용 로그인 (임시로 모든 사용자 허용)"""
+    user = await auth_service.authenticate(request)
+
+    # 임시로 모든 사용자를 관리자로 인정 (role 컴럼이 없어서)
+    # 추후 role 컴럼 추가 후 제한 가능
+
+    tokens = await auth_service.login(user, role=LoginRole.PATIENT)
+    return _build_login_response(tokens, login_role=LoginRole.PATIENT)
+
+
+@auth_router.post("/admin/signup", status_code=status.HTTP_201_CREATED)
+async def admin_signup(
+    request: SignUpRequest,
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+) -> Response:
+    """관리자 회원가입"""
+    await auth_service.signup(request)
+    return Response(content={"detail": "관리자 계정이 성공적으로 생성되었습니다."}, status_code=status.HTTP_201_CREATED)
+
+
+@auth_router.get("/admin/signup", response_class=HTMLResponse)
+async def admin_signup_page():
+    """관리자 회원가입 페이지"""
+    with open("app/ui/admin_signup.html", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+
 @auth_router.get(
     "/social/{provider}/login",
     response_model=SocialLoginStartResponse,
@@ -153,3 +188,21 @@ async def token_refresh(
     return Response(
         content=TokenRefreshResponse(access_token=str(access_token)).model_dump(), status_code=status.HTTP_200_OK
     )
+
+
+@auth_router.post("/find-email", response_model=FindEmailResponse, status_code=status.HTTP_200_OK)
+async def find_email(
+    request: FindEmailRequest,
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+) -> FindEmailResponse:
+    email = await auth_service.find_email(request.name, request.phone_number)
+    return FindEmailResponse(email=email)
+
+
+@auth_router.post("/reset-password", status_code=status.HTTP_200_OK)
+async def reset_password(
+    request: ResetPasswordRequest,
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+) -> Response:
+    await auth_service.reset_password(request.email, request.name, request.phone_number, request.new_password)
+    return Response(content={"detail": "비밀번호가 성공적으로 재설정되었습니다."}, status_code=status.HTTP_200_OK)

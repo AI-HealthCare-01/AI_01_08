@@ -45,6 +45,8 @@ app.include_router(v1_routers)
 
 auth_login_file = Path(__file__).resolve().parent / "ui" / "auth_login.html"
 auth_app_file = Path(__file__).resolve().parent / "ui" / "auth_app.html"
+admin_login_file = Path(__file__).resolve().parent / "ui" / "admin_login.html"
+admin_signup_file = Path(__file__).resolve().parent / "ui" / "admin_signup.html"
 auth_app_dir = Path(__file__).resolve().parent / "ui" / "auth-demo"
 auth_app_index = auth_app_dir / "index.html"
 auth_app_assets = auth_app_dir / "assets"
@@ -65,8 +67,30 @@ async def auth_login_page() -> HTMLResponse:
     return HTMLResponse(content=auth_login_file.read_text(encoding="utf-8"))
 
 
+@app.get("/admin/login", include_in_schema=False, response_class=HTMLResponse)
+async def admin_login_page() -> HTMLResponse:
+    """관리자 로그인 페이지"""
+    if not admin_login_file.exists():
+        return HTMLResponse(content="admin login file not found", status_code=404)
+    return HTMLResponse(content=admin_login_file.read_text(encoding="utf-8"))
+
+
+@app.get("/admin/signup", include_in_schema=False, response_class=HTMLResponse)
+async def admin_signup_page() -> HTMLResponse:
+    """관리자 회원가입 페이지"""
+    if not admin_signup_file.exists():
+        return HTMLResponse(content="admin signup file not found", status_code=404)
+    return HTMLResponse(content=admin_signup_file.read_text(encoding="utf-8"))
+
+
 @app.get("/auth-demo/app", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/dashboard", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/health-profile", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/documents", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/caregiver", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/ai", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/profile", include_in_schema=False, response_class=HTMLResponse)
 async def auth_app_page() -> HTMLResponse:
     if auth_app_index.exists():
         return HTMLResponse(content=auth_app_index.read_text(encoding="utf-8"))
