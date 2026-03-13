@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends
 
 from app.apis.v1.auth_routers import auth_router
+from app.apis.v1.chat_routers import chat_router
 from app.apis.v1.document_routers import document_router
+from app.apis.v1.guide_routers import guide_router
 from app.apis.v1.invitation_routers import invitation_router
 from app.apis.v1.notification_routers import notification_router
 from app.apis.v1.patient_profile_routers import router as patient_profile_router
@@ -16,3 +18,5 @@ v1_routers.include_router(invitation_router)
 v1_routers.include_router(patient_profile_router)
 v1_routers.include_router(notification_router)
 v1_routers.include_router(document_router)
+v1_routers.include_router(guide_router)
+v1_routers.include_router(chat_router)
