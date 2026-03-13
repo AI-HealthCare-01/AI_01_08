@@ -7,16 +7,14 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from tortoise import Tortoise
-
-from app.core.config import Config
-from app.models.healthcare import UserRole
-from app.models.patients import Patient
-from app.models.users import User
-
-
 async def create_missing_patients():
     """PATIENT 역할을 가진 사용자 중 Patient 레코드가 없는 경우 생성"""
+    from tortoise import Tortoise
+
+    from app.core.config import Config
+    from app.models.healthcare import UserRole
+    from app.models.patients import Patient
+
     config = Config()
     # Tortoise ORM 초기화
     db_url = f"mysql://{config.DB_USER}:{config.DB_PASSWORD}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
