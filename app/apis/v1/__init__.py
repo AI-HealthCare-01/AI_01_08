@@ -7,7 +7,6 @@ from app.apis.v1.notification_routers import notification_router
 from app.apis.v1.patient_profile_routers import router as patient_profile_router
 from app.apis.v1.public_routers import public_router
 from app.apis.v1.user_routers import user_router
-from app.dependencies.security import get_request_user
 
 v1_routers = APIRouter(prefix="/api/v1")
 v1_routers.include_router(auth_router)
