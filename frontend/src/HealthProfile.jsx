@@ -151,6 +151,12 @@ function HealthProfile() {
 
   return (
     <div className="container py-5">
+      <div className="d-flex align-items-center justify-content-center mb-4">
+        <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
+          <img src="/mascot.png" alt="약승이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
+        </a>
+        <h2 className="mb-0">건강 프로필</h2>
+      </div>
       <div className="row justify-content-center">
         <div className="col-lg-8">
           <div className="card shadow-sm">

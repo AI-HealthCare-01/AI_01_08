@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import AdminDashboard from "./AdminDashboard.jsx";
 import HealthProfile from "./HealthProfile.jsx";
 import DocumentManagement from "./DocumentManagement.jsx";
+import CaregiverManagement from "./CaregiverManagement.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -219,6 +220,9 @@ function App() {
   const isDocumentsPage = useMemo(() => {
     return pathname.startsWith("/auth-demo/documents") || pathname.startsWith("/auth-demo/app/documents");
   }, [pathname]);
+  const isCaregiverPage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/caregiver") || pathname.startsWith("/auth-demo/app/caregiver");
+  }, [pathname]);
 
   const persistAccessToken = (token) => {
     if (typeof window !== "undefined") {
@@ -335,9 +339,24 @@ function App() {
       }
     };
 
+    const loadLinks = async () => {
+      setLinksState((prev) => ({ ...prev, loading: true, error: null }));
+      try {
+        const res = await authFetch(`${API_PREFIX}/users/links`);
+        if (!res.ok) {
+          const body = await safeJson(res);
+          throw new Error(body?.detail || `status ${res.status}`);
+        }
+        const data = await res.json();
+        setLinksState({ loading: false, data, error: null });
+      } catch (error) {
+        setLinksState({ loading: false, data: null, error: error.message });
+      }
+    };
+
     loadMe();
-    // 알림 기능은 임시로 비활성화
-    // loadLinks();
+    loadLinks();
+    // 알림 기능은 DB 스키마 문제로 비활성화
     // loadNotifications();
     // loadUnreadCount();
     // loadSettings();
@@ -1434,14 +1453,31 @@ function App() {
     return <DocumentManagement />;
   }
 
+  if (isCaregiverPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <CaregiverManagement />;
+  }
+
   if (isProfilePage) {
     return (
       <div className="app-shell">
         <header className="hero">
           <div className="container py-5">
             <nav className="navbar navbar-expand-lg">
-              <a className="navbar-brand fw-bold" href="/auth-demo/app">
-                AI Health
+              <a className="navbar-brand fw-bold" href="/auth-demo/app" style={{ fontSize: '1.5rem' }}>
+                (주)케어브릿지
               </a>
               <div className="ms-auto d-flex gap-2">
                 <a className="btn btn-outline-light btn-sm" href="/auth-demo/app">
@@ -1678,14 +1714,17 @@ function App() {
       <header className="hero">
         <div className="container py-5">
           <nav className="navbar navbar-expand-lg">
-            <a className="navbar-brand fw-bold" href="#">
-              AI Health
+            <a className="navbar-brand fw-bold" href="#" style={{ fontSize: '1.5rem' }}>
+              (주)케어브릿지
             </a>
             <div className="ms-auto d-flex gap-2">
               {accessToken ? (
                 <>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/dashboard">
                     대시보드
+                  </a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/caregiver">
+                    보호자 관리
                   </a>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/health-profile">
                     건강 프로필

@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse as Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 
 from app.core import config
 from app.core.config import Env
@@ -18,6 +18,7 @@ from app.dtos.auth import (
     SocialProvider,
     TokenRefreshResponse,
 )
+from app.models.users import User
 from app.services.auth import AuthService
 from app.services.jwt import JwtService
 from app.services.social_auth import SocialAuthService
@@ -85,6 +86,38 @@ async def login(
     user = await auth_service.authenticate(request)
     tokens = await auth_service.login(user, role=request.role)
     return _build_login_response(tokens, login_role=request.role)
+
+
+@auth_router.post("/admin/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
+async def admin_login(
+    request: LoginRequest,
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+) -> Response:
+    """관리자 전용 로그인 (임시로 모든 사용자 허용)"""
+    user = await auth_service.authenticate(request)
+    
+    # 임시로 모든 사용자를 관리자로 인정 (role 컴럼이 없어서)
+    # 추후 role 컴럼 추가 후 제한 가능
+    
+    tokens = await auth_service.login(user, role=LoginRole.PATIENT)
+    return _build_login_response(tokens, login_role=LoginRole.PATIENT)
+
+
+@auth_router.post("/admin/signup", status_code=status.HTTP_201_CREATED)
+async def admin_signup(
+    request: SignUpRequest,
+    auth_service: Annotated[AuthService, Depends(AuthService)],
+) -> Response:
+    """관리자 회원가입"""
+    await auth_service.signup(request)
+    return Response(content={"detail": "관리자 계정이 성공적으로 생성되었습니다."}, status_code=status.HTTP_201_CREATED)
+
+
+@auth_router.get("/admin/signup", response_class=HTMLResponse)
+async def admin_signup_page():
+    """관리자 회원가입 페이지"""
+    with open("app/ui/admin_signup.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
 
 
 @auth_router.get(

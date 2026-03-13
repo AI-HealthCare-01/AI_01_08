@@ -136,7 +136,12 @@ function DocumentManagement() {
 
   return (
     <div className="container py-5">
-      <h2 className="mb-4">문서 관리</h2>
+      <div className="d-flex align-items-center mb-4">
+        <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
+          <img src="/mascot.png" alt="약승이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
+        </a>
+        <h2 className="mb-0">문서 관리</h2>
+      </div>
 
       {error && (
         <div className="alert alert-danger alert-dismissible">

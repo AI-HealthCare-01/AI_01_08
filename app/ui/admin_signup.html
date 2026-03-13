@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 회원가입 - AI Health</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .admin-signup-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .admin-badge {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+        .btn-admin {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            border-radius: 25px;
+            padding: 12px 30px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        .btn-admin:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        .form-control {
+            border-radius: 15px;
+            border: 2px solid #e9ecef;
+            padding: 12px 20px;
+            transition: all 0.3s ease;
+        }
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .alert-danger, .alert-success {
+            border-radius: 15px;
+            border: none;
+        }
+        .alert-danger {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+        .alert-success {
+            background: rgba(25, 135, 84, 0.1);
+            color: #198754;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-6 col-lg-5">
+                <div class="card admin-signup-card border-0 p-4">
+                    <div class="card-body text-center">
+                        <div class="mb-4">
+                            <img src="/auth-demo/app/assets/mascot.png" alt="약속이" style="width: 80px; height: auto;">
+                        </div>
+                        
+                        <div class="admin-badge">
+                            🛡️ ADMIN SIGNUP
+                        </div>
+                        
+                        <h3 class="fw-bold mb-1">관리자 회원가입</h3>
+                        <p class="text-muted mb-4">AI Health 시스템 관리자 계정 생성</p>
+                        
+                        <div id="error-message" class="alert alert-danger d-none" role="alert">
+                            <strong>회원가입 실패!</strong> <span id="error-text"></span>
+                        </div>
+                        
+                        <div id="success-message" class="alert alert-success d-none" role="alert">
+                            <strong>회원가입 성공!</strong> 관리자 계정이 생성되었습니다. 로그인해주세요.
+                        </div>
+                        
+                        <form id="admin-signup-form">
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <input 
+                                        type="text" 
+                                        class="form-control" 
+                                        id="name" 
+                                        placeholder="이름"
+                                        required
+                                    >
+                                </div>
+                                <div class="col-md-6">
+                                    <select class="form-control" id="gender" required>
+                                        <option value="">성별 선택</option>
+                                        <option value="MALE">남성</option>
+                                        <option value="FEMALE">여성</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <input 
+                                    type="email" 
+                                    class="form-control" 
+                                    id="email" 
+                                    placeholder="관리자 이메일 (gmail.com, naver.com, daum.net만 가능)"
+                                    required
+                                >
+                                <small class="text-muted">예: admin@gmail.com, admin@naver.com</small>
+                            </div>
+                            <div class="mb-3">
+                                <input 
+                                    type="tel" 
+                                    class="form-control" 
+                                    id="phone" 
+                                    placeholder="전화번호 (010-0000-0000)"
+                                    required
+                                >
+                            </div>
+                            <div class="mb-3">
+                                <input 
+                                    type="date" 
+                                    class="form-control" 
+                                    id="birthday" 
+                                    required
+                                >
+                            </div>
+                            <div class="mb-3">
+                                <input 
+                                    type="password" 
+                                    class="form-control" 
+                                    id="password" 
+                                    placeholder="비밀번호 (대소문자, 숫자, 특수문자 포함)"
+                                    required
+                                >
+                                <small class="text-muted">예: Admin123!</small>
+                            </div>
+                            <div class="mb-4">
+                                <input 
+                                    type="password" 
+                                    class="form-control" 
+                                    id="confirm-password" 
+                                    placeholder="비밀번호 확인"
+                                    required
+                                >
+                            </div>
+                            <button type="submit" class="btn btn-admin btn-primary w-100" id="signup-btn">
+                                <span id="signup-text">관리자 계정 생성</span>
+                                <span id="signup-spinner" class="spinner-border spinner-border-sm d-none ms-2"></span>
+                            </button>
+                        </form>
+                        
+                        <div class="mt-4 pt-3 border-top">
+                            <small class="text-muted">
+                                이미 계정이 있으신가요? 
+                                <a href="/admin/login" class="text-decoration-none">관리자 로그인</a>
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_PREFIX = "/api/v1";
+        
+        document.getElementById('admin-signup-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('name').value;
+            const gender = document.getElementById('gender').value;
+            const email = document.getElementById('email').value;
+            const phone = document.getElementById('phone').value;
+            const birthday = document.getElementById('birthday').value;
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            
+            const signupBtn = document.getElementById('signup-btn');
+            const signupText = document.getElementById('signup-text');
+            const signupSpinner = document.getElementById('signup-spinner');
+            const errorMessage = document.getElementById('error-message');
+            const successMessage = document.getElementById('success-message');
+            const errorText = document.getElementById('error-text');
+            
+            // 비밀번호 확인
+            if (password !== confirmPassword) {
+                errorText.textContent = '비밀번호가 일치하지 않습니다.';
+                errorMessage.classList.remove('d-none');
+                successMessage.classList.add('d-none');
+                return;
+            }
+            
+            // 로딩 상태
+            signupBtn.disabled = true;
+            signupText.textContent = '계정 생성 중...';
+            signupSpinner.classList.remove('d-none');
+            errorMessage.classList.add('d-none');
+            successMessage.classList.add('d-none');
+            
+            try {
+                const response = await fetch(`${API_PREFIX}/auth/signup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name,
+                        gender,
+                        email,
+                        phone_number: phone,
+                        birth_date: birthday, // birthday -> birth_date
+                        password
+                    }),
+                    credentials: 'include'
+                });
+                
+                let data;
+                try {
+                    data = await response.json();
+                } catch (jsonError) {
+                    console.error('JSON 파싱 에러:', jsonError);
+                    throw new Error(`서버 응답 오류 (HTTP ${response.status})`);
+                }
+                
+                console.log('서버 응답:', response.status, data);
+                
+                if (response.ok) {
+                    successMessage.classList.remove('d-none');
+                    document.getElementById('admin-signup-form').reset();
+                    
+                    // 3초 후 로그인 페이지로 이동
+                    setTimeout(() => {
+                        window.location.href = '/admin/login';
+                    }, 3000);
+                } else {
+                    throw new Error(data.detail || `HTTP ${response.status}: 회원가입에 실패했습니다.`);
+                }
+            } catch (error) {
+                console.error('회원가입 에러:', error);
+                errorText.textContent = error.message || '알 수 없는 오류가 발생했습니다.';
+                errorMessage.classList.remove('d-none');
+            } finally {
+                // 로딩 상태 해제
+                signupBtn.disabled = false;
+                signupText.textContent = '관리자 계정 생성';
+                signupSpinner.classList.add('d-none');
+            }
+        });
+    </script>
+</body>
+</html>

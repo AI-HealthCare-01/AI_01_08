@@ -57,9 +57,14 @@ const LineChart = ({ title, data }) => {
             })}
           </svg>
           <div className="d-flex justify-content-between mt-2 small text-muted">
-            {data.map((d, i) => (
-              <span key={i}>{d.date.slice(5)}</span>
-            ))}
+            {data.map((d, i) => {
+              // 날짜 포맷 개선: MM-DD 형식으로 표시
+              const dateStr = typeof d.date === 'string' ? d.date : d.date.toISOString().split('T')[0];
+              const formattedDate = dateStr.slice(5); // YYYY-MM-DD에서 MM-DD 추출
+              return (
+                <span key={i}>{formattedDate}</span>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -105,10 +110,33 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const handleLogout = () => {
-    localStorage.removeItem("access_token");
-    document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-    window.location.href = "/auth-demo/login";
+  const handleLogout = async () => {
+    try {
+      // 로컬 스토리지와 쿠키에서 토큰 제거
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("user_role");
+      
+      // 쿠키 제거
+      document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      document.cookie = "refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+      
+      // 서버에 로그아웃 요청 (선택사항)
+      try {
+        await fetch(`${API_PREFIX}/auth/logout`, {
+          method: 'POST',
+          credentials: 'include'
+        });
+      } catch (error) {
+        console.log('서버 로그아웃 요청 실패:', error);
+      }
+      
+      // 일반 로그인 페이지로 리다이렉트
+      window.location.href = "/auth-demo/login";
+    } catch (error) {
+      console.error('로그아웃 처리 중 오류:', error);
+      // 오류가 발생해도 로그인 페이지로 이동
+      window.location.href = "/auth-demo/login";
+    }
   };
 
   const fetchDashboard = async () => {
@@ -116,18 +144,41 @@ function AdminDashboard() {
     setError(null);
     try {
       const token = localStorage.getItem("access_token");
+      if (!token) {
+        window.location.href = "/auth-demo/login";
+        return;
+      }
+      
       const res = await fetch(`${API_PREFIX}/dashboard?period=${period}`, {
         headers: {
+          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         credentials: "include",
       });
-      if (!res.ok) {
-        throw new Error(`status ${res.status}`);
+      
+      if (res.status === 401) {
+        localStorage.removeItem("access_token");
+        window.location.href = "/auth-demo/login";
+        return;
       }
+      
+      if (res.status === 403) {
+        localStorage.removeItem("access_token");
+        alert("접근 권한이 없습니다. 로그인을 다시 해주세요.");
+        window.location.href = "/auth-demo/login";
+        return;
+      }
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.detail || `HTTP ${res.status}`);
+      }
+      
       const data = await res.json();
       setDashboardData(data);
     } catch (err) {
+      console.error('Dashboard fetch error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -141,7 +192,12 @@ function AdminDashboard() {
   if (loading) {
     return (
       <div className="container py-5">
-        <div className="text-center text-muted">데이터 로딩 중...</div>
+        <div className="text-center">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+          <div className="mt-3 text-muted">대시보드 데이터를 불러오는 중...</div>
+        </div>
       </div>
     );
   }
@@ -149,7 +205,19 @@ function AdminDashboard() {
   if (error) {
     return (
       <div className="container py-5">
-        <div className="alert alert-danger">오류: {error}</div>
+        <div className="alert alert-danger alert-dismissible" role="alert">
+          <strong>오류 발생!</strong> {error}
+          <button 
+            type="button" 
+            className="btn-close" 
+            onClick={() => setError(null)}
+          ></button>
+        </div>
+        <div className="text-center">
+          <button className="btn btn-primary" onClick={fetchDashboard}>
+            다시 시도
+          </button>
+        </div>
       </div>
     );
   }
@@ -174,23 +242,48 @@ function AdminDashboard() {
       </nav>
 
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <div>
-          <h2 className="fw-bold mb-1">대시보드</h2>
-          <h4 className="text-muted">관리자 대시보드</h4>
+        <div className="d-flex align-items-center">
+          <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
+            <img src="/auth-demo/app/assets/mascot.png" alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
+          </a>
+          <div>
+            <h2 className="fw-bold mb-1">대시보드</h2>
+            <h4 className="text-muted">시스템 대시보드</h4>
+          </div>
         </div>
-        <div className="btn-group">
-          <button
-            className={`btn ${period === 7 ? "btn-primary" : "btn-outline-secondary"}`}
-            onClick={() => setPeriod(7)}
+        <div className="d-flex gap-2">
+          <button 
+            className="btn btn-outline-primary btn-sm" 
+            onClick={fetchDashboard}
+            disabled={loading}
           >
-            7일
+            {loading ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-1" role="status"></span>
+                새로고침 중...
+              </>
+            ) : (
+              <>
+                🔄 새로고침
+              </>
+            )}
           </button>
-          <button
-            className={`btn ${period === 30 ? "btn-primary" : "btn-outline-secondary"}`}
-            onClick={() => setPeriod(30)}
-          >
-            30일
-          </button>
+          <div className="btn-group">
+            <button
+              className={`btn ${period === 7 ? "btn-primary" : "btn-outline-secondary"}`}
+              onClick={() => setPeriod(7)}
+              disabled={loading}
+            >
+              7일
+            </button>
+            <button
+              className={`btn ${period === 30 ? "btn-primary" : "btn-outline-secondary"}`}
+              onClick={() => setPeriod(30)}
+              disabled={loading}
+            >
+              30일
+            </button>
+          </div>
         </div>
       </div>
 
