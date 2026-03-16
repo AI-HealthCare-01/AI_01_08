@@ -1834,7 +1834,7 @@ function App() {
                     <ul className="dropdown-menu dropdown-menu-end">
                       <li><a className="dropdown-item" href="/auth-demo/app/dashboard">대시보드</a></li>
                       <li><a className="dropdown-item" href="/auth-demo/app/health-profile">건강 프로필</a></li>
-                      <li><a className="dropdown-item" href="/auth-demo/app/documents">문서 관리</a></li>
+                      <li><a className="dropdown-item" href="/auth-demo/app/documents">처방전 관리</a></li>
                     </ul>
                   </div>
                   <div className="dropdown">
@@ -1855,7 +1855,7 @@ function App() {
                       <li><a className="dropdown-item" href="/auth-demo/app/schedule">스케줄</a></li>
                     </ul>
                   </div>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/documents">문서 관리</a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/documents">처방전 관리</a>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/schedule">스케줄</a>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/settings">개인정보</a>
                   <button className="btn btn-light btn-sm" onClick={handleLogout}>

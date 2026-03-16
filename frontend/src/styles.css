@@ -87,11 +87,180 @@ body {
   color: #2f1717;
 }
 
+.ocr-text-box {
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: #ffffff;
+  border: 1px solid #dfe7f1;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 @keyframes bounce {
   0%, 80%, 100% {
     transform: scale(0);
   }
   40% {
     transform: scale(1);
+  }
+}
+
+
+/* ─── Document Management Layout ─── */
+.doc-layout {
+  display: flex;
+  min-height: 100vh;
+  background: #f4f6fb;
+}
+
+.doc-sidebar {
+  width: 220px;
+  min-height: 100vh;
+  background: #fff;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 0;
+  flex-shrink: 0;
+}
+
+.doc-sidebar-brand {
+  padding: 0 1.25rem 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
+  color: #2563eb;
+  font-size: 1rem;
+}
+
+.doc-sidebar-nav {
+  flex: 1;
+  padding: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.doc-sidebar-link {
+  display: block;
+  padding: 0.6rem 1.25rem;
+  color: #374151;
+  text-decoration: none;
+  font-size: 0.9rem;
+  border-left: 3px solid transparent;
+  transition: all 0.15s;
+}
+
+.doc-sidebar-link:hover {
+  background: #f0f4ff;
+  color: #2563eb;
+}
+
+.doc-sidebar-link.active {
+  background: #2563eb;
+  color: #fff;
+  border-left-color: #2563eb;
+  border-radius: 0 8px 8px 0;
+  font-weight: 600;
+}
+
+.doc-sidebar-footer {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 0.75rem;
+}
+
+.doc-main {
+  flex: 1;
+  padding: 2rem 2.5rem;
+  overflow-y: auto;
+}
+
+.doc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+/* 상단 카드 영역 */
+.doc-top-cards {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.doc-info-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.doc-preview-box {
+  background: #f4f6fb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.doc-stat-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-stat-value {
+  font-size: 2.2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: auto;
+}
+
+/* 약 테이블 */
+.doc-drugs-section {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.doc-drug-table th {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b7280;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.doc-drug-table td {
+  vertical-align: middle;
+  padding: 0.5rem 0.4rem;
+}
+
+.doc-drug-table .form-control-sm {
+  font-size: 0.85rem;
+  border-radius: 6px;
+}
+
+/* 하단 액션 */
+.doc-bottom-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.25rem 0;
+}
+
+@media (max-width: 992px) {
+  .doc-top-cards {
+    grid-template-columns: 1fr 1fr;
+  }
+  .doc-sidebar {
+    display: none;
   }
 }

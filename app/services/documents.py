@@ -23,6 +23,7 @@ from app.dtos.documents import (
     DocumentListItemResponse,
     DocumentListQuery,
     DocumentListResponse,
+    DocumentOcrTextResponse,
     DocumentOcrStatusResponse,
     DocumentRenameRequest,
     DocumentRenameResponse,
@@ -233,6 +234,36 @@ class DocumentService:
             barcode_values=barcode_values,
             created_at=latest_job.created_at if latest_job else document.created_at,
             updated_at=latest_job.updated_at if latest_job else None,
+        )
+
+    # OCR 결과 원문 조회(권한 검증 포함) - REQ-DOC-003
+    async def get_document_ocr_text(self, user: User, document_id: int) -> DocumentOcrTextResponse:
+        document = await Document.filter(id=document_id).prefetch_related("ocr_jobs").first()
+        if not document or document.status == "deleted":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+
+        if not await self._has_patient_access(user=user, patient_id=document.patient_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
+
+        latest_job = self._get_latest_ocr_job(document=document)
+        if not latest_job:
+            return DocumentOcrTextResponse(
+                document_id=document.id,
+                patient_id=document.patient_id,
+                ocr_job_id=None,
+                ocr_status=None,
+                raw_text=None,
+                created_at=document.created_at,
+            )
+
+        raw_text_row = await OcrRawText.get_or_none(ocr_job_id=latest_job.id)
+        return DocumentOcrTextResponse(
+            document_id=document.id,
+            patient_id=document.patient_id,
+            ocr_job_id=latest_job.id,
+            ocr_status=latest_job.status,
+            raw_text=raw_text_row.raw_text if raw_text_row else None,
+            created_at=raw_text_row.created_at if raw_text_row else latest_job.created_at,
         )
 
     # 추출 약 목록 조회(권한 검증 포함) - REQ-DOC-006

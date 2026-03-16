@@ -80,6 +80,16 @@ class DocumentOcrStatusResponse(BaseSerializerModel):
     updated_at: datetime | None
 
 
+# OCR 결과 원문 조회 응답 - REQ-DOC-003
+class DocumentOcrTextResponse(BaseSerializerModel):
+    document_id: int
+    patient_id: int
+    ocr_job_id: int | None
+    ocr_status: OcrStatus | None
+    raw_text: str | None
+    created_at: datetime
+
+
 # OCR 재시도 요청 응답 - REQ-DOC-008
 class DocumentOcrRetryResponse(BaseSerializerModel):
     document_id: int
