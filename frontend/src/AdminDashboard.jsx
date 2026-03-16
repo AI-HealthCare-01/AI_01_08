@@ -245,7 +245,7 @@ function AdminDashboard() {
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div className="d-flex align-items-center">
           <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
-            <img src="/mascot.png" alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
+            <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
           </a>
           <div>
             <h2 className="fw-bold mb-1">대시보드</h2>

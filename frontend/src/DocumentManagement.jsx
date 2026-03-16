@@ -1,70 +1,178 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 
 const API_PREFIX = "/api/v1";
 
+const authFetch = async (url, options = {}) => {
+  const token = localStorage.getItem("access_token");
+  const headers = { ...options.headers };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(url, { ...options, headers, credentials: "include" });
+};
+
+const SIDEBAR_ITEMS = [
+  { key: "dashboard", label: "대시보드", href: "/auth-demo/app/dashboard" },
+  { key: "documents", label: "처방전 업로드", href: null },
+  { key: "ai", label: "AI 가이드", href: "/auth-demo/app/ai" },
+  { key: "notifications", label: "알림센터", href: "/auth-demo/app" },
+  { key: "health", label: "건강 프로필", href: "/auth-demo/app/health-profile" },
+];
+
+function Sidebar({ onNavigate }) {
+  return (
+    <div className="doc-sidebar">
+      <div className="doc-sidebar-brand">
+        <strong>복약관리시스템</strong>
+        <div className="text-muted small">보호자 모드</div>
+      </div>
+      <nav className="doc-sidebar-nav">
+        {SIDEBAR_ITEMS.map((item) => (
+          <a
+            key={item.key}
+            className={`doc-sidebar-link ${item.key === "documents" ? "active" : ""}`}
+            href={item.href || "#"}
+            onClick={item.href ? undefined : (e) => { e.preventDefault(); }}
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
+      <div className="doc-sidebar-footer">
+        <a className="doc-sidebar-link" href="/auth-demo/app/settings">Settings</a>
+        <a className="doc-sidebar-link" href="#" onClick={(e) => {
+          e.preventDefault();
+          localStorage.removeItem("access_token");
+          document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+          window.location.href = "/auth-demo/login";
+        }}>Logout</a>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, unit, color }) {
+  return (
+    <div className="doc-stat-card">
+      <div className="text-muted small mb-1">{label}</div>
+      <div className="doc-stat-value" style={{ color: color || "#2563eb" }}>{value}</div>
+      {unit && <div className="text-muted small">{unit}</div>}
+    </div>
+  );
+}
+
+function DrugRow({ drug, index, onChange, onDelete }) {
+  const timeSlots = ["아침", "점심", "저녁", "취침"];
+  const freq = drug.frequency_text || "";
+
+  return (
+    <tr>
+      <td>
+        <input
+          className={`form-control form-control-sm ${!drug.name ? "is-invalid" : ""}`}
+          value={drug.name}
+          onChange={(e) => onChange(index, "name", e.target.value)}
+          placeholder="약명 입력"
+        />
+      </td>
+      <td>
+        <input
+          className="form-control form-control-sm"
+          value={drug.dosage_text || ""}
+          onChange={(e) => onChange(index, "dosage_text", e.target.value)}
+          placeholder=""
+        />
+      </td>
+      <td>
+        <input
+          className="form-control form-control-sm"
+          value={drug.frequency_text || ""}
+          onChange={(e) => onChange(index, "frequency_text", e.target.value)}
+          placeholder="예: 2회"
+        />
+      </td>
+      <td>
+        <div className="d-flex gap-1 align-items-center">
+          {timeSlots.map((slot) => {
+            const checked = freq.includes(slot);
+            return (
+              <div key={slot} className="text-center" style={{ minWidth: 28 }}>
+                <div className="small text-muted" style={{ fontSize: "0.65rem", lineHeight: 1 }}>{slot}</div>
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  checked={checked}
+                  onChange={() => {}}
+                  style={{ marginTop: 2 }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </td>
+      <td>
+        <input
+          className="form-control form-control-sm"
+          value={drug.duration_text || ""}
+          onChange={(e) => onChange(index, "duration_text", e.target.value)}
+          placeholder=""
+        />
+      </td>
+      <td>
+        <input
+          className="form-control form-control-sm"
+          value={drug.notes || ""}
+          onChange={(e) => onChange(index, "notes", e.target.value)}
+          placeholder="비고"
+        />
+      </td>
+      <td>
+        <button className="btn btn-outline-danger btn-sm" onClick={() => onDelete(index)}>🗑</button>
+      </td>
+    </tr>
+  );
+}
+
+// 메인 뷰: 목록 or OCR 결과
 function DocumentManagement() {
+  const [view, setView] = useState("list"); // "list" | "ocr"
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [patientId, setPatientId] = useState("");
-  const [filters, setFilters] = useState({
-    patient_id: "",
-    ocr_status: "",
-    page: 1,
-    page_size: 10,
-  });
 
-  const authFetch = async (url, options = {}) => {
-    const token = localStorage.getItem("access_token");
-    const headers = { ...options.headers };
-    if (token && !options.skipAuth) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-    return fetch(url, { ...options, headers, credentials: "include" });
-  };
+  // OCR 결과 뷰 상태
+  const [currentDoc, setCurrentDoc] = useState(null);
+  const [ocrStatus, setOcrStatus] = useState(null);
+  const [drugs, setDrugs] = useState([]);
+  const [drugsLoading, setDrugsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
+  const [pollingId, setPollingId] = useState(null);
+  const [showReviewOnly, setShowReviewOnly] = useState(false);
 
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (filters.patient_id) params.set("patient_id", filters.patient_id);
-      if (filters.ocr_status) params.set("ocr_status", filters.ocr_status);
-
-      const res = await authFetch(`${API_PREFIX}/documents?${params.toString()}`);
+      const res = await authFetch(`${API_PREFIX}/documents`);
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data = await res.json();
-      setDocuments(data.items || data.documents || []);
+      setDocuments(data.items || []);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadDocuments();
-  }, [filters]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const patientIdParam = params.get("patient_id");
-    if (patientIdParam && patientIdParam !== filters.patient_id) {
-      setFilters((prev) => ({ ...prev, patient_id: patientIdParam, page: 1 }));
-    }
   }, []);
 
-  const handleFileChange = (e) => {
-    setSelectedFile(e.target.files[0]);
-  };
+  useEffect(() => { loadDocuments(); }, [loadDocuments]);
 
+  // 업로드 후 OCR 뷰로 전환
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!selectedFile) return;
-
     setUploading(true);
+    setError(null);
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -77,16 +185,22 @@ function DocumentManagement() {
         body: formData,
         credentials: "include",
       });
-
       if (!res.ok) {
-        const body = await res.json();
+        const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || `status ${res.status}`);
       }
-
+      const result = await res.json();
       setSelectedFile(null);
-      setPatientId("");
-      document.getElementById("fileInput").value = "";
-      await loadDocuments();
+      if (document.getElementById("fileInput")) document.getElementById("fileInput").value = "";
+
+      // 업로드 완료 → OCR 결과 뷰로 이동
+      openOcrView({
+        document_id: result.document_id,
+        patient_id: result.patient_id,
+        original_filename: selectedFile.name,
+        created_at: result.created_at,
+        uploaded_by_user_id: result.uploaded_by_user_id,
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -94,223 +208,437 @@ function DocumentManagement() {
     }
   };
 
-  const handleDelete = async (documentId) => {
-    if (!confirm("문서를 삭제하시겠습니까?")) return;
-
-    try {
-      const res = await authFetch(`${API_PREFIX}/documents/${documentId}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      await loadDocuments();
-    } catch (err) {
-      setError(err.message);
-    }
+  // OCR 뷰 열기
+  const openOcrView = (doc) => {
+    setCurrentDoc(doc);
+    setView("ocr");
+    setDrugs([]);
+    setOcrStatus(null);
+    setSaveMsg(null);
+    pollOcrStatus(doc.document_id);
   };
 
-  const handleRetry = async (documentId) => {
-    try {
-      const res = await authFetch(`${API_PREFIX}/documents/${documentId}/retry`, {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      alert("OCR 재시도 요청이 완료되었습니다.");
-      await loadDocuments();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+  // OCR 상태 폴링
+  const pollOcrStatus = async (docId) => {
+    const poll = async () => {
+      try {
+        const res = await authFetch(`${API_PREFIX}/documents/${docId}/status`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setOcrStatus(data);
 
-  const getStatusBadge = (status) => {
-    const badges = {
-      queued: "badge bg-warning",
-      processing: "badge bg-info",
-      success: "badge bg-success",
-      failed: "badge bg-danger",
-      uploaded: "badge bg-secondary",
-      deleted: "badge bg-dark",
+        if (data.ocr_status === "success") {
+          loadDrugs(docId);
+          return true; // stop polling
+        }
+        if (data.ocr_status === "failed") return true;
+      } catch { /* ignore */ }
+      return false;
     };
-    return badges[status] || "badge bg-secondary";
+
+    const done = await poll();
+    if (done) return;
+
+    const id = setInterval(async () => {
+      const finished = await poll();
+      if (finished) clearInterval(id);
+    }, 2000);
+    setPollingId(id);
   };
 
-  const getStatusText = (status) => {
-    const texts = {
-      queued: "대기 중",
-      processing: "처리 중",
-      success: "완료",
-      failed: "실패",
-      uploaded: "업로드됨",
-      deleted: "삭제됨",
-    };
-    return texts[status] || status;
+  useEffect(() => {
+    return () => { if (pollingId) clearInterval(pollingId); };
+  }, [pollingId]);
+
+  // 약 목록 로드
+  const loadDrugs = async (docId) => {
+    setDrugsLoading(true);
+    try {
+      const res = await authFetch(`${API_PREFIX}/documents/${docId}/drugs?include_mfds=true`);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = await res.json();
+      setDrugs((data.items || []).map((d) => ({
+        extracted_med_id: d.extracted_med_id,
+        name: d.name,
+        dosage_text: d.dosage_text || "",
+        frequency_text: d.frequency_text || "",
+        duration_text: d.duration_text || "",
+        confidence: d.confidence,
+        notes: "",
+        needs_review: d.validation?.needs_review || false,
+      })));
+    } catch { /* ignore */ }
+    finally { setDrugsLoading(false); }
   };
 
-  const pagedDocuments = documents.slice(
-    (filters.page - 1) * filters.page_size,
-    filters.page * filters.page_size
-  );
+  const handleDrugChange = (idx, field, value) => {
+    setDrugs((prev) => prev.map((d, i) => i === idx ? { ...d, [field]: value } : d));
+  };
 
-  return (
-    <div className="container py-5">
-      <div className="d-flex align-items-center mb-4">
-        <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
-          <img src="/mascot.png" alt="약승이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
-        </a>
-        <h2 className="mb-0">문서 관리</h2>
-      </div>
+  const handleDrugDelete = (idx) => {
+    setDrugs((prev) => prev.filter((_, i) => i !== idx));
+  };
 
-      {error && (
-        <div className="alert alert-danger alert-dismissible">
-          {error}
-          <button type="button" className="btn-close" onClick={() => setError(null)}></button>
-        </div>
-      )}
+  const handleAddDrug = () => {
+    setDrugs((prev) => [...prev, {
+      extracted_med_id: null, name: "", dosage_text: "", frequency_text: "",
+      duration_text: "", confidence: null, notes: "", needs_review: false,
+    }]);
+  };
 
-      {/* 업로드 폼 */}
-      <div className="card mb-4">
-        <div className="card-body">
-          <h5 className="card-title">문서 업로드</h5>
-          <form onSubmit={handleUpload}>
-            <div className="row g-3">
-              <div className="col-md-6">
-                <label className="form-label">파일 선택</label>
-                <input
-                  type="file"
-                  id="fileInput"
-                  className="form-control"
-                  onChange={handleFileChange}
-                  accept="image/*,.pdf"
-                  required
-                />
-              </div>
-              <div className="col-md-4">
-                <label className="form-label">환자 ID (선택)</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={patientId}
-                  onChange={(e) => setPatientId(e.target.value)}
-                  placeholder="본인이면 비워두세요"
-                />
-              </div>
-              <div className="col-md-2 d-flex align-items-end">
-                <button type="submit" className="btn btn-primary w-100" disabled={uploading || !selectedFile}>
-                  {uploading ? "업로드 중..." : "업로드"}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
+  // 임시저장
+  const handleTempSave = async () => {
+    if (!currentDoc) return;
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const payload = {
+        items: drugs.map((d) => ({
+          extracted_med_id: d.extracted_med_id || undefined,
+          name: d.name,
+          dosage_text: d.dosage_text || null,
+          frequency_text: d.frequency_text || null,
+          duration_text: d.duration_text || null,
+          confidence: d.confidence,
+        })),
+        replace_all: true,
+        confirm: false,
+      };
+      const res = await authFetch(`${API_PREFIX}/documents/${currentDoc.document_id}/drugs`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `status ${res.status}`);
+      }
+      setSaveMsg({ type: "success", text: "임시저장 완료" });
+    } catch (err) {
+      setSaveMsg({ type: "danger", text: err.message });
+    } finally { setSaving(false); }
+  };
 
-      {/* 필터 */}
-      <div className="card mb-4">
-        <div className="card-body">
-          <div className="row g-3">
-            <div className="col-md-4">
-              <label className="form-label">환자 ID</label>
-              <input
-                type="number"
-                className="form-control"
-                value={filters.patient_id}
-                onChange={(e) => setFilters({ ...filters, patient_id: e.target.value, page: 1 })}
-                placeholder="전체"
-              />
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">상태</label>
-              <select
-                className="form-select"
-                value={filters.ocr_status}
-                onChange={(e) => setFilters({ ...filters, ocr_status: e.target.value, page: 1 })}
-              >
-                <option value="">전체</option>
-                <option value="queued">대기 중</option>
-                <option value="processing">처리 중</option>
-                <option value="success">완료</option>
-                <option value="failed">실패</option>
-              </select>
-            </div>
-            <div className="col-md-4 d-flex align-items-end">
-              <button className="btn btn-secondary w-100" onClick={loadDocuments} disabled={loading}>
-                {loading ? "로딩 중..." : "새로고침"}
-              </button>
-            </div>
+  // 확정하기
+  const handleConfirm = async () => {
+    if (!currentDoc) return;
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const payload = {
+        items: drugs.map((d) => ({
+          extracted_med_id: d.extracted_med_id || undefined,
+          name: d.name,
+          dosage_text: d.dosage_text || null,
+          frequency_text: d.frequency_text || null,
+          duration_text: d.duration_text || null,
+          confidence: d.confidence,
+        })),
+        replace_all: true,
+        confirm: true,
+        force_confirm: true,
+      };
+      const res = await authFetch(`${API_PREFIX}/documents/${currentDoc.document_id}/drugs`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(typeof body.detail === "object" ? body.detail.message : (body.detail || `status ${res.status}`));
+      }
+      setSaveMsg({ type: "success", text: "확정 완료! 복약 가이드에 반영되었습니다." });
+    } catch (err) {
+      setSaveMsg({ type: "danger", text: err.message });
+    } finally { setSaving(false); }
+  };
+
+  const goBackToList = () => {
+    setView("list");
+    setCurrentDoc(null);
+    if (pollingId) clearInterval(pollingId);
+    loadDocuments();
+  };
+
+  // 통계 계산
+  const reviewCount = drugs.filter((d) => d.needs_review).length;
+  const avgConfidence = drugs.length > 0
+    ? Math.round(drugs.reduce((s, d) => s + (d.confidence || 0), 0) / drugs.length * 100)
+    : 0;
+  const freqCount = drugs.filter((d) => d.frequency_text).length;
+
+  const displayDrugs = showReviewOnly ? drugs.filter((d) => d.needs_review) : drugs;
+
+  // ─── OCR 결과 뷰 ───
+  if (view === "ocr") {
+    const isProcessing = !ocrStatus || ocrStatus.ocr_status === "queued" || ocrStatus.ocr_status === "processing";
+    const isFailed = ocrStatus?.ocr_status === "failed";
+    const isSuccess = ocrStatus?.ocr_status === "success";
+
+    return (
+      <div className="doc-layout">
+        <Sidebar />
+        <div className="doc-main">
+          <div className="doc-header">
+            <h4 className="fw-bold mb-0">처방전 업로드</h4>
+            {isSuccess && (
+              <span className="badge bg-success-subtle text-success px-3 py-2" style={{ fontSize: "0.85rem" }}>
+                ✅ OCR 완료
+              </span>
+            )}
           </div>
-        </div>
-      </div>
 
-      {/* 문서 목록 */}
-      <div className="card">
-        <div className="card-body">
-          <h5 className="card-title">문서 목록</h5>
-          {loading && documents.length === 0 ? (
-            <div className="text-center py-5">로딩 중...</div>
-          ) : documents.length === 0 ? (
-            <div className="text-center py-5 text-muted">문서가 없습니다.</div>
-          ) : (
-            <div className="table-responsive">
-              <table className="table table-hover">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>파일명</th>
-                    <th>환자 ID</th>
-                    <th>상태</th>
-                    <th>업로드 일시</th>
-                    <th>작업</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagedDocuments.map((doc) => {
-                    const displayStatus = doc.ocr_status || doc.status;
-                    return (
-                    <tr key={doc.document_id || doc.id}>
-                      <td>{doc.document_id || doc.id}</td>
-                      <td>{doc.original_filename || "—"}</td>
-                      <td>{doc.patient_id}</td>
-                      <td>
-                        <span className={getStatusBadge(displayStatus)}>
-                          {getStatusText(displayStatus)}
-                        </span>
-                      </td>
-                      <td>{new Date(doc.created_at).toLocaleString("ko-KR")}</td>
-                      <td>
-                        <div className="btn-group btn-group-sm">
-                          {doc.ocr_status === "failed" && (
-                            <button className="btn btn-warning" onClick={() => handleRetry(doc.document_id || doc.id)}>
-                              재시도
-                            </button>
-                          )}
-                          <button className="btn btn-danger" onClick={() => handleDelete(doc.document_id || doc.id)}>
-                            삭제
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )})}
-                </tbody>
-              </table>
+          {/* OCR 처리 중 */}
+          {isProcessing && (
+            <div className="text-center py-5">
+              <div className="spinner-border text-primary mb-3" role="status" />
+              <div className="text-muted">OCR 처리 중입니다... 잠시만 기다려주세요.</div>
             </div>
           )}
 
-          {/* 페이지네이션 */}
-          <div className="d-flex justify-content-center gap-2 mt-3">
-            <button
-              className="btn btn-outline-primary btn-sm"
-              onClick={() => setFilters({ ...filters, page: Math.max(1, filters.page - 1) })}
-              disabled={filters.page === 1}
-            >
-              이전
-            </button>
-            <span className="align-self-center">페이지 {filters.page}</span>
-            <button
-              className="btn btn-outline-primary btn-sm"
-              onClick={() => setFilters({ ...filters, page: filters.page + 1 })}
-              disabled={filters.page * filters.page_size >= documents.length}
-            >
-              다음
-            </button>
+          {/* OCR 실패 */}
+          {isFailed && (
+            <div className="alert alert-danger">
+              OCR 처리에 실패했습니다. {ocrStatus.error_message || ""}
+              <button className="btn btn-warning btn-sm ms-3" onClick={() => {
+                authFetch(`${API_PREFIX}/documents/${currentDoc.document_id}/retry`, { method: "POST" })
+                  .then(() => pollOcrStatus(currentDoc.document_id));
+              }}>재시도</button>
+            </div>
+          )}
+
+          {/* OCR 성공 */}
+          {isSuccess && (
+            <>
+              <div className="mb-3">
+                <h5 className="fw-bold">OCR 결과 확인</h5>
+                <p className="text-muted mb-0">추출된 약 정보를 확인하고 필요 시 수정한 뒤 확정해주세요.</p>
+              </div>
+
+              {/* 상단 카드 영역 */}
+              <div className="doc-top-cards">
+                <div className="doc-info-card">
+                  <div className="d-flex align-items-center gap-2 mb-3">
+                    <span style={{ fontSize: "1.2rem" }}>📄</span>
+                    <strong>문서 정보</strong>
+                  </div>
+                  <div className="doc-preview-box">
+                    <div className="text-muted text-center py-4">
+                      <div style={{ fontSize: "2rem" }}>📋</div>
+                      <div className="small">문서 미리보기</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 small">
+                    <div className="d-flex justify-content-between mb-1">
+                      <span className="text-muted">파일명</span>
+                      <span className="fw-semibold">{currentDoc.original_filename || "—"}</span>
+                    </div>
+                    <div className="d-flex justify-content-between mb-1">
+                      <span className="text-muted">업로드 날짜</span>
+                      <span className="fw-semibold">{currentDoc.created_at ? new Date(currentDoc.created_at).toLocaleString("ko-KR") : "—"}</span>
+                    </div>
+                    <div className="d-flex justify-content-between mb-1">
+                      <span className="text-muted">업로드 주체</span>
+                      <span className="fw-semibold">본인</span>
+                    </div>
+                    <div className="d-flex justify-content-between mb-1">
+                      <span className="text-muted">대상 환자</span>
+                      <span className="fw-semibold">환자 #{currentDoc.patient_id}</span>
+                    </div>
+                  </div>
+                  <div className="d-flex gap-2 mt-3">
+                    <button className="btn btn-outline-primary btn-sm flex-fill">👁 원본 보기</button>
+                    <button className="btn btn-outline-secondary btn-sm flex-fill" onClick={() => {
+                      document.getElementById("reuploadInput")?.click();
+                    }}>↑ 다시 업로드</button>
+                    <input type="file" id="reuploadInput" className="d-none" accept="image/*,.pdf" onChange={async (e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const formData = new FormData();
+                      formData.append("file", file);
+                      if (currentDoc.patient_id) formData.append("patient_id", String(currentDoc.patient_id));
+                      const token = localStorage.getItem("access_token");
+                      const res = await fetch(`${API_PREFIX}/documents/upload`, {
+                        method: "POST", headers: { Authorization: `Bearer ${token}` },
+                        body: formData, credentials: "include",
+                      });
+                      if (res.ok) {
+                        const result = await res.json();
+                        openOcrView({ ...currentDoc, document_id: result.document_id, created_at: result.created_at, original_filename: file.name });
+                      }
+                    }} />
+                  </div>
+                </div>
+
+                <StatCard label="추출된 약 개수" value={drugs.length} unit="개" color="#2563eb" />
+                <StatCard label="복용 일정 감지" value={freqCount} unit="개" color="#7c3aed" />
+                <StatCard label="검토 필요 항목" value={reviewCount} unit="개" color="#dc2626" />
+                <StatCard label="신뢰도" value={avgConfidence} unit="%" color="#2563eb" />
+              </div>
+
+              {/* 약 정보 테이블 */}
+              <div className="doc-drugs-section">
+                <div className="d-flex align-items-center justify-content-between mb-3">
+                  <div className="d-flex align-items-center gap-2">
+                    <h5 className="fw-bold mb-0">약 정보 목록</h5>
+                    <button className="btn btn-primary btn-sm" onClick={handleAddDrug}>+ 약 추가</button>
+                  </div>
+                  <label className="form-check-label d-flex align-items-center gap-1 small">
+                    <input type="checkbox" className="form-check-input" checked={showReviewOnly}
+                      onChange={(e) => setShowReviewOnly(e.target.checked)} />
+                    검토 필요 항목만 보기
+                  </label>
+                </div>
+
+                <div className="small text-muted mb-2">
+                  ⚠ 확정된 약 리스트가 이후 가이드 생성에 사용됩니다.
+                </div>
+
+                {drugsLoading ? (
+                  <div className="text-center py-4 text-muted">약 정보 불러오는 중...</div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="table table-sm align-middle doc-drug-table">
+                      <thead>
+                        <tr>
+                          <th>약명 <span className="text-danger">*</span></th>
+                          <th>용량/단위</th>
+                          <th>1일 횟수</th>
+                          <th>복용 시간</th>
+                          <th>기간(일)</th>
+                          <th>비고</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayDrugs.map((drug, idx) => {
+                          const realIdx = showReviewOnly ? drugs.indexOf(drug) : idx;
+                          return <DrugRow key={realIdx} drug={drug} index={realIdx} onChange={handleDrugChange} onDelete={handleDrugDelete} />;
+                        })}
+                        {displayDrugs.length === 0 && (
+                          <tr><td colSpan={7} className="text-center text-muted py-3">추출된 약이 없습니다.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* 하단 액션 */}
+              {saveMsg && (
+                <div className={`alert alert-${saveMsg.type} mt-3`}>{saveMsg.text}</div>
+              )}
+              <div className="doc-bottom-actions">
+                <button className="btn btn-outline-secondary" onClick={handleTempSave} disabled={saving}>
+                  📋 임시저장
+                </button>
+                <button className="btn btn-primary btn-lg px-5" onClick={handleConfirm} disabled={saving}>
+                  ✅ 확정하기
+                </button>
+                <button className="btn btn-outline-secondary" onClick={goBackToList}>
+                  목록으로
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── 문서 목록 뷰 ───
+  return (
+    <div className="doc-layout">
+      <Sidebar />
+      <div className="doc-main">
+        <div className="doc-header">
+          <h4 className="fw-bold mb-0">처방전 업로드</h4>
+        </div>
+
+        {error && (
+          <div className="alert alert-danger alert-dismissible">
+            {error}
+            <button type="button" className="btn-close" onClick={() => setError(null)} />
+          </div>
+        )}
+
+        {/* 업로드 폼 */}
+        <div className="card border-0 shadow-sm mb-4">
+          <div className="card-body">
+            <h6 className="fw-bold mb-3">처방전 업로드</h6>
+            <form onSubmit={handleUpload}>
+              <div className="row g-3 align-items-end">
+                <div className="col-md-5">
+                  <label className="form-label small">파일 선택</label>
+                  <input type="file" id="fileInput" className="form-control" onChange={(e) => setSelectedFile(e.target.files[0])} accept="image/*,.pdf" required />
+                </div>
+                <div className="col-md-4">
+                  <label className="form-label small">환자 ID (선택)</label>
+                  <input type="number" className="form-control" value={patientId} onChange={(e) => setPatientId(e.target.value)} placeholder="본인이면 비워두세요" />
+                </div>
+                <div className="col-md-3">
+                  <button type="submit" className="btn btn-primary w-100" disabled={uploading || !selectedFile}>
+                    {uploading ? "업로드 중..." : "업로드"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {/* 문서 목록 */}
+        <div className="card border-0 shadow-sm">
+          <div className="card-body">
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <h6 className="fw-bold mb-0">처방전 목록</h6>
+              <button className="btn btn-outline-secondary btn-sm" onClick={loadDocuments} disabled={loading}>
+                {loading ? "로딩..." : "새로고침"}
+              </button>
+            </div>
+            {documents.length === 0 ? (
+              <div className="text-center py-5 text-muted">처방전이 없습니다.</div>
+            ) : (
+              <div className="table-responsive">
+                <table className="table table-hover align-middle">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>파일명</th>
+                      <th>환자 ID</th>
+                      <th>상태</th>
+                      <th>업로드 일시</th>
+                      <th>작업</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documents.map((doc) => {
+                      const docId = doc.document_id || doc.id;
+                      const st = doc.ocr_status || doc.status;
+                      const badgeCls = { queued: "bg-warning", processing: "bg-info", success: "bg-success", failed: "bg-danger" }[st] || "bg-secondary";
+                      const stText = { queued: "대기 중", processing: "처리 중", success: "완료", failed: "실패" }[st] || st;
+                      return (
+                        <tr key={docId}>
+                          <td>{docId}</td>
+                          <td>{doc.original_filename || "—"}</td>
+                          <td>{doc.patient_id}</td>
+                          <td><span className={`badge ${badgeCls}`}>{stText}</span></td>
+                          <td>{new Date(doc.created_at).toLocaleString("ko-KR")}</td>
+                          <td>
+                            <button className="btn btn-outline-primary btn-sm" onClick={() => openOcrView({
+                              document_id: docId, patient_id: doc.patient_id,
+                              original_filename: doc.original_filename, created_at: doc.created_at,
+                              uploaded_by_user_id: doc.uploaded_by_user_id,
+                            })}>
+                              OCR 결과
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>

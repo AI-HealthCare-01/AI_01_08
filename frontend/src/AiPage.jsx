@@ -367,7 +367,7 @@ function AiPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: 0 }}>AI 가이드</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <img src="/mascot.png" alt="프로필" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+            <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="프로필" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
             <div>
               <div style={{ fontSize: '14px', fontWeight: '600' }}>{meState.data?.name || '옥영향'}</div>
               <div style={{ fontSize: '12px', color: '#666' }}>보호자</div>
@@ -485,7 +485,7 @@ function AiPage() {
               <div style={{ fontSize: '14px', color: '#333', marginBottom: '8px' }}>• 하루 수분 섭취 1.5L 이상</div>
             </div>
             <div style={{ position: 'relative', textAlign: 'right' }}>
-              <img src="/mascot.png" alt="약속이" style={{ width: '100px', height: 'auto' }} />
+              <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: '100px', height: 'auto' }} />
             </div>
           </div>
         </div>
@@ -493,7 +493,7 @@ function AiPage() {
         {/* AI 챗봇 섹션 */}
         <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', marginTop: '30px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
-            <img src="/mascot.png" alt="약속이" style={{ width: '50px', height: '50px', marginRight: '12px' }} />
+            <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: '50px', height: '50px', marginRight: '12px' }} />
             <h3 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>AI 상담 - 약속이</h3>
           </div>
           <div ref={chatContainerRef} style={{ height: '400px', overflowY: 'auto', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '20px', marginBottom: '16px', backgroundColor: '#f9f9f9' }}>
