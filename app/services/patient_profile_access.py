@@ -51,16 +51,17 @@ async def require_caregiver_role(user: User) -> None:
 # 내 계정에 연결된 Patient row 를 찾는 함수
 # ------------------------------------------------------------
 async def get_my_patient_or_404(user: User) -> Patient:
-    await require_patient_role(user)
-
     patient = await Patient.get_or_none(user_id=user.id)
     if not patient:
-        patient = await Patient.get_or_none(owner_user_id=user.id)
+        # Louis수정(코드삭제): owner_user_id 단일 조회는 보호자가 여러 복약자를 관리할 때 MultipleObjectsReturned 를 유발
+        patient = await Patient.get_or_none(user_id=user.id, owner_user_id=user.id)
 
+    # Louis수정(기능추가): 보호자 본인도 복약자가 될 수 있으므로 본인용 Patient row 를 자동 보장
     if not patient:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="본인에게 연결된 복약자 정보를 찾을 수 없습니다.",
+        patient = await Patient.create(
+            user_id=user.id,
+            owner_user_id=user.id,
+            display_name=user.name,
         )
 
     return patient

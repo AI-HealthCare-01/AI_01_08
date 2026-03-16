@@ -14,6 +14,7 @@ from app.models.users import User
 from app.services.patient_profile_access import (
     get_linked_patient_or_404,
     get_my_patient_or_404,
+    resolve_actor_role,
 )
 from app.services.patient_profile_history_service import write_profile_history
 from app.utils.jwt.health_profile import (
@@ -302,10 +303,11 @@ async def get_my_patient_profile(user: User) -> PatientProfileOut:
 # ------------------------------------------------------------
 async def create_my_patient_profile(user: User, payload: PatientProfileUpsertIn) -> PatientProfileOut:
     patient = await get_my_patient_or_404(user)
+    actor_role = await resolve_actor_role(user)
     return await _create_or_restore_profile(
         patient=patient,
         actor_user_id=user.id,
-        actor_role="PATIENT",
+        actor_role=actor_role,
         payload=payload,
     )
 
@@ -315,10 +317,11 @@ async def create_my_patient_profile(user: User, payload: PatientProfileUpsertIn)
 # ------------------------------------------------------------
 async def update_my_patient_profile(user: User, payload: PatientProfileUpsertIn) -> PatientProfileOut:
     patient = await get_my_patient_or_404(user)
+    actor_role = await resolve_actor_role(user)
     return await _update_profile(
         patient=patient,
         actor_user_id=user.id,
-        actor_role="PATIENT",
+        actor_role=actor_role,
         payload=payload,
     )
 
@@ -328,10 +331,11 @@ async def update_my_patient_profile(user: User, payload: PatientProfileUpsertIn)
 # ------------------------------------------------------------
 async def delete_my_patient_profile(user: User) -> None:
     patient = await get_my_patient_or_404(user)
+    actor_role = await resolve_actor_role(user)
     await _soft_delete_profile(
         patient=patient,
         actor_user_id=user.id,
-        actor_role="PATIENT",
+        actor_role=actor_role,
     )
 
 
