@@ -20,10 +20,10 @@ from app.dtos.chat import (
     RequesterRole,
 )
 from app.models.chat import ChatMessage, ChatSession
-from app.models.healthcare import UserRole
 from app.models.guides import Guide, GuideStatus
+from app.models.healthcare import UserRole
 from app.models.medications import PatientMed
-from app.models.patients import CaregiverPatientLink, Patient, PatientProfile
+from app.models.patients import Patient, PatientProfile
 from app.models.schedules import MedSchedule, MedScheduleTime
 from app.models.users import User
 from app.services.kids_client import KIDSClient
@@ -107,7 +107,16 @@ _ALLERGY_FOOD_KEYWORDS = [
     "먹으면 안",
 ]
 _MISSED_DOSE_KEYWORDS = ["놓쳤다면", "놓쳤으면", "복약을 놓쳤", "지금 바로 먹여", "바로 먹여도", "깜빡", "복용을 놓쳤"]
-_LIFESTYLE_TOP_KEYWORDS = ["생활관리", "생활 관리", "생활관리에서", "생활 관리에서", "중요한 것 3가지", "중요한 것 세 가지", "세 가지만", "3가지만"]
+_LIFESTYLE_TOP_KEYWORDS = [
+    "생활관리",
+    "생활 관리",
+    "생활관리에서",
+    "생활 관리에서",
+    "중요한 것 3가지",
+    "중요한 것 세 가지",
+    "세 가지만",
+    "3가지만",
+]
 _SESSION_SUMMARY_KEYWORDS = ["한 줄로 요약", "지금까지 대화", "상태를 요약", "요약해줘"]
 _RASH_KEYWORDS = ["두드러기", "발진", "두드러기처럼", "발진이 생기", "약 먹고 나서 발진"]
 _MEDICATION_CAUTION_KEYWORDS = [
@@ -837,7 +846,9 @@ def _answer_med_list_intent(
 ) -> str:
     if not meds:
         base = f"{target_label} 기준으로 현재 확인되는 복용 약 정보가 없습니다."
-        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
 
     med_lines: list[str] = []
     for med in meds:
@@ -1031,9 +1042,12 @@ def _answer_lifestyle_top_intent(
     if not points and guide and guide.content_text:
         points.extend([line.strip() for line in guide.content_text.split(".") if line.strip()])
 
-    base = f"{target_label} 기준으로 오늘 생활관리에서 중요한 점 3가지는 다음과 같습니다.\n" + "\n".join(
-        f"- {item}" for item in points[:3]
-    ) if points else f"{target_label} 기준 생활관리 요약 정보가 아직 충분하지 않습니다."
+    base = (
+        f"{target_label} 기준으로 오늘 생활관리에서 중요한 점 3가지는 다음과 같습니다.\n"
+        + "\n".join(f"- {item}" for item in points[:3])
+        if points
+        else f"{target_label} 기준 생활관리 요약 정보가 아직 충분하지 않습니다."
+    )
 
     return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
@@ -1046,15 +1060,17 @@ def _answer_session_summary_intent(
     requester_role: RequesterRole,
     audience: str,
 ) -> str:
-    med_names = ", ".join([str(med.get("display_name")) for med in meds if med.get("display_name")]) or "복용 약 정보 없음"
-    conditions = []
+    med_names = (
+        ", ".join([str(med.get("display_name")) for med in meds if med.get("display_name")]) or "복용 약 정보 없음"
+    )
+    conditions: list[str] = []
     if profile and getattr(profile, "conditions", None):
-        try:
-            conditions = _to_list(profile.conditions)
-        except Exception:
-            conditions = [str(profile.conditions)]
+        raw_conditions = str(profile.conditions)
+        conditions = [item.strip() for chunk in raw_conditions.splitlines() for item in chunk.split(",") if item.strip()]
     cond_text = ", ".join(conditions) if conditions else "기저질환 정보 확인 필요"
-    base = f"{target_label}는 {cond_text}가 있고 현재 {med_names} 중심으로 복약 관리가 필요한 상태로 요약할 수 있습니다."
+    base = (
+        f"{target_label}는 {cond_text}가 있고 현재 {med_names} 중심으로 복약 관리가 필요한 상태로 요약할 수 있습니다."
+    )
     return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
 
@@ -1133,7 +1149,9 @@ def _answer_medication_caution_intent(
         if med_notes:
             points.append(f"{med_name}: {med_notes}")
         if "같이" in message or "상호작용" in message or "조심" in message:
-            points.append(f"{med_name} 복용 후 두통, 발진, 호흡 불편 같은 이상 반응이 있으면 추가 복용 전에 상태를 확인해 주세요.")
+            points.append(
+                f"{med_name} 복용 후 두통, 발진, 호흡 불편 같은 이상 반응이 있으면 추가 복용 전에 상태를 확인해 주세요."
+            )
 
     if profile and getattr(profile, "allergies", None):
         raw_allergies = str(profile.allergies).strip()
