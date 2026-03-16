@@ -1066,7 +1066,9 @@ def _answer_session_summary_intent(
     conditions: list[str] = []
     if profile and getattr(profile, "conditions", None):
         raw_conditions = str(profile.conditions)
-        conditions = [item.strip() for chunk in raw_conditions.splitlines() for item in chunk.split(",") if item.strip()]
+        conditions = [
+            item.strip() for chunk in raw_conditions.splitlines() for item in chunk.split(",") if item.strip()
+        ]
     cond_text = ", ".join(conditions) if conditions else "기저질환 정보 확인 필요"
     base = (
         f"{target_label}는 {cond_text}가 있고 현재 {med_names} 중심으로 복약 관리가 필요한 상태로 요약할 수 있습니다."
