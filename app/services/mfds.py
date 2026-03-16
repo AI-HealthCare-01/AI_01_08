@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 
 import httpx
@@ -10,12 +11,34 @@ from app.models.medications import DrugInfoCache
 
 
 class MfdsService:
+    _NEDRUG_SEARCH_URL = "https://nedrug.mfds.go.kr/searchDrug"
+    _NEDRUG_ITEM_SEQ_PATTERN = re.compile(r'href="/pbp/CCBBB01/getItemDetail\?itemSeq=(\d+)"', re.IGNORECASE)
+
     # 식약처 약 정보 검색 - REQ-DRUG-001, REQ-DRUG-002
     async def search_easy_drug_info(self, drug_name: str, num_of_rows: int = 5) -> MfdsDrugSearchResponse:
         if not config.MFDS_SERVICE_KEY:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="SERVICE_UNAVAILABLE")
 
-        items = await self._request_easy_drug_info(drug_name=drug_name, num_of_rows=num_of_rows)
+        normalized_query = str(drug_name or "").strip()
+        search_candidates = self._build_easy_drug_search_candidates(drug_name=normalized_query)
+        if self._looks_like_standard_code(normalized_query):
+            standard_code = self._extract_digits(value=normalized_query)
+            resolved_item_seqs = await self._resolve_item_seq_candidates_by_standard_code(standard_code=standard_code)
+            search_candidates = self._prepend_item_seq_candidates(
+                candidates=search_candidates,
+                item_seqs=resolved_item_seqs,
+            )
+
+        items: list[dict] = []
+        for query_field, query_value in search_candidates:
+            items = await self._request_easy_drug_info(
+                query=query_value,
+                num_of_rows=num_of_rows,
+                query_field=query_field,
+            )
+            if items:
+                break
+
         await self._sync_drug_info_cache(items=items)
 
         response_items = [
@@ -23,25 +46,29 @@ class MfdsService:
                 item_seq=str(self._pick(item, "ITEM_SEQ", "itemSeq") or ""),
                 item_name=str(self._pick(item, "ITEM_NAME", "itemName") or ""),
                 entp_name=self._nullable_str(self._pick(item, "ENTP_NAME", "entpName")),
+                item_image=self._nullable_str(self._pick(item, "ITEM_IMAGE", "itemImage", "BIG_PRDT_IMG_URL")),
                 efficacy=self._nullable_str(self._pick(item, "EE_DOC_DATA", "efcyQesitm")),
                 dosage_info=self._nullable_str(self._pick(item, "UD_DOC_DATA", "useMethodQesitm")),
-                precautions=self._nullable_str(self._pick(item, "NB_DOC_DATA", "atpnQesitm")),
+                precautions=self._nullable_str(self._pick(item, "NB_DOC_DATA", "atpnQesitm", "atpnWarnQesitm")),
             )
             for item in items
         ]
 
-        return MfdsDrugSearchResponse(query=drug_name, total=len(response_items), items=response_items)
+        return MfdsDrugSearchResponse(query=normalized_query or drug_name, total=len(response_items), items=response_items)
 
     # 식약처 e약은요 API 호출 - REQ-DRUG-001, REQ-DRUG-002
-    async def _request_easy_drug_info(self, drug_name: str, num_of_rows: int) -> list[dict]:
+    async def _request_easy_drug_info(self, query: str, num_of_rows: int, query_field: str = "itemName") -> list[dict]:
         url = f"{config.MFDS_BASE_URL}/DrbEasyDrugInfoService/getDrbEasyDrugList"
+        if query_field not in {"itemName", "itemSeq"}:
+            query_field = "itemName"
+
         params = {
             "serviceKey": config.MFDS_SERVICE_KEY,
-            "itemName": drug_name,
             "type": "json",
             "pageNo": 1,
             "numOfRows": num_of_rows,
         }
+        params[query_field] = query
 
         timeout = httpx.Timeout(config.MFDS_TIMEOUT_SECONDS)
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -60,6 +87,101 @@ class MfdsService:
             return items
         return []
 
+    async def _resolve_item_seq_candidates_by_standard_code(self, standard_code: str) -> list[str]:
+        if not standard_code:
+            return []
+
+        params = {
+            "page": 1,
+            "sort": "",
+            "sortOrder": "false",
+            "searchYn": "true",
+            "searchDivision": "detail",
+            "searchConEe": "AND",
+            "searchConUd": "AND",
+            "searchConNb": "AND",
+            "stdrCodeName": standard_code,
+        }
+        timeout = httpx.Timeout(config.MFDS_TIMEOUT_SECONDS)
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                response = await client.get(self._NEDRUG_SEARCH_URL, params=params)
+            if response.status_code >= status.HTTP_400_BAD_REQUEST:
+                return []
+            return self._extract_item_seq_candidates_from_nedrug_html(response.text)
+        except httpx.HTTPError:
+            return []
+
+    @classmethod
+    def _extract_item_seq_candidates_from_nedrug_html(cls, html: str, limit: int = 5) -> list[str]:
+        if not html:
+            return []
+
+        item_seqs: list[str] = []
+        seen: set[str] = set()
+        for matched in cls._NEDRUG_ITEM_SEQ_PATTERN.finditer(html):
+            item_seq = matched.group(1).strip()
+            if not item_seq or item_seq in seen:
+                continue
+            seen.add(item_seq)
+            item_seqs.append(item_seq)
+            if len(item_seqs) >= limit:
+                break
+
+        return item_seqs
+
+    @staticmethod
+    def _build_easy_drug_search_candidates(drug_name: str) -> list[tuple[str, str]]:
+        normalized_query = str(drug_name or "").strip()
+        if not normalized_query:
+            return []
+
+        candidates: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+
+        digits_only = MfdsService._extract_digits(value=normalized_query)
+        # 품목기준코드는 대체로 숫자 8~10자리
+        if 8 <= len(digits_only) <= 10:
+            item_seq_candidate = ("itemSeq", digits_only)
+            candidates.append(item_seq_candidate)
+            seen.add(item_seq_candidate)
+
+        name_candidate = ("itemName", normalized_query)
+        if name_candidate not in seen:
+            candidates.append(name_candidate)
+
+        return candidates
+
+    @staticmethod
+    def _prepend_item_seq_candidates(candidates: list[tuple[str, str]], item_seqs: list[str]) -> list[tuple[str, str]]:
+        if not item_seqs:
+            return candidates
+
+        normalized_candidates = list(candidates)
+        seen = set(normalized_candidates)
+        prepend: list[tuple[str, str]] = []
+        for item_seq in item_seqs:
+            normalized_item_seq = str(item_seq or "").strip()
+            if not normalized_item_seq:
+                continue
+            candidate = ("itemSeq", normalized_item_seq)
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            prepend.append(candidate)
+
+        return prepend + normalized_candidates
+
+    @staticmethod
+    def _extract_digits(value: str) -> str:
+        return re.sub(r"\D", "", str(value or ""))
+
+    @classmethod
+    def _looks_like_standard_code(cls, value: str) -> bool:
+        digits = cls._extract_digits(value=value)
+        return 12 <= len(digits) <= 14
+
     # 식약처 조회결과 캐시 저장 - REQ-DRUG-003
     async def _sync_drug_info_cache(self, items: list[dict]) -> None:
         expires_at = datetime.now(config.TIMEZONE) + timedelta(days=7)
@@ -73,7 +195,9 @@ class MfdsService:
                 "manufacturer": self._nullable_str(self._pick(item, "ENTP_NAME", "entpName")),
                 "efficacy": self._nullable_str(self._pick(item, "EE_DOC_DATA", "efcyQesitm")),
                 "dosage_info": self._nullable_str(self._pick(item, "UD_DOC_DATA", "useMethodQesitm")),
-                "precautions": self._nullable_str(self._pick(item, "NB_DOC_DATA", "atpnQesitm")),
+                "precautions": self._nullable_str(self._pick(item, "NB_DOC_DATA", "atpnQesitm", "atpnWarnQesitm")),
+                "interactions": self._nullable_str(self._pick(item, "INTRC_QESITM", "intrcQesitm")),
+                "side_effects": self._nullable_str(self._pick(item, "SE_QESITM", "seQesitm")),
                 "storage_method": self._nullable_str(self._pick(item, "STORAGE_METHOD", "depositMethodQesitm")),
                 "expires_at": expires_at,
             }

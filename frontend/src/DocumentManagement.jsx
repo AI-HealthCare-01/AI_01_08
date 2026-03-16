@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 
 const API_PREFIX = "/api/v1";
+const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 const authFetch = async (url, options = {}) => {
   const token = localStorage.getItem("access_token");
@@ -12,12 +13,13 @@ const authFetch = async (url, options = {}) => {
 const SIDEBAR_ITEMS = [
   { key: "dashboard", label: "대시보드", href: "/auth-demo/app/dashboard" },
   { key: "documents", label: "처방전 업로드", href: null },
+  { key: "drug-search", label: "약 검색", href: "/auth-demo/app/drug-search" },
   { key: "ai", label: "AI 가이드", href: "/auth-demo/app/ai" },
   { key: "notifications", label: "알림센터", href: "/auth-demo/app" },
   { key: "health", label: "건강 프로필", href: "/auth-demo/app/health-profile" },
 ];
 
-function Sidebar({ onNavigate }) {
+function Sidebar() {
   return (
     <div className="doc-sidebar">
       <div className="doc-sidebar-brand">
@@ -139,7 +141,9 @@ function DocumentManagement() {
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [documentTitle, setDocumentTitle] = useState("");
   const [patientId, setPatientId] = useState("");
+  const [uploadNotice, setUploadNotice] = useState(null);
 
   // OCR 결과 뷰 상태
   const [currentDoc, setCurrentDoc] = useState(null);
@@ -150,6 +154,10 @@ function DocumentManagement() {
   const [saveMsg, setSaveMsg] = useState(null);
   const [pollingId, setPollingId] = useState(null);
   const [showReviewOnly, setShowReviewOnly] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewMimeType, setPreviewMimeType] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -167,40 +175,131 @@ function DocumentManagement() {
 
   useEffect(() => { loadDocuments(); }, [loadDocuments]);
 
-  // 업로드 후 OCR 뷰로 전환
+  useEffect(() => {
+    if (view !== "list") return undefined;
+    const hasPendingDocument = documents.some((doc) => {
+      const status = doc.ocr_status || doc.status;
+      return status === "queued" || status === "processing";
+    });
+    if (!hasPendingDocument) return undefined;
+
+    const id = setInterval(() => {
+      loadDocuments();
+    }, 4000);
+    return () => clearInterval(id);
+  }, [documents, loadDocuments, view]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const validateUploadFile = useCallback((file) => {
+    if (!file) return false;
+    if (file.size > MAX_UPLOAD_FILE_SIZE_BYTES) {
+      setError("파일 크기는 최대 10MB까지 업로드할 수 있습니다.");
+      return false;
+    }
+    return true;
+  }, []);
+
+  const handleFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+    if (!validateUploadFile(file)) {
+      setSelectedFile(null);
+      event.target.value = "";
+      return;
+    }
+    setError(null);
+    setSelectedFile(file);
+  };
+
+  const fetchDocumentBlob = useCallback(async (documentId) => {
+    const response = await authFetch(`${API_PREFIX}/documents/${documentId}/file`);
+    if (!response.ok) {
+      throw new Error(`status ${response.status}`);
+    }
+    return response.blob();
+  }, []);
+
+  const loadDocumentPreview = useCallback(async (documentId) => {
+    if (!documentId) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const blob = await fetchDocumentBlob(documentId);
+      const objectUrl = URL.createObjectURL(blob);
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return objectUrl;
+      });
+      setPreviewMimeType(blob.type || "");
+    } catch {
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setPreviewMimeType("");
+      setPreviewError("미리보기를 불러오지 못했습니다.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [fetchDocumentBlob]);
+
+  const handleOpenOriginalFile = useCallback(async (documentId) => {
+    if (!documentId) return;
+    try {
+      const blob = await fetchDocumentBlob(documentId);
+      const objectUrl = URL.createObjectURL(blob);
+      const popup = window.open(objectUrl, "_blank", "noopener,noreferrer");
+      if (!popup) {
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = currentDoc?.original_filename || `document-${documentId}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    } catch (err) {
+      setError(err.message || "원본 파일을 열지 못했습니다.");
+    }
+  }, [currentDoc, fetchDocumentBlob]);
+
+  // 업로드: 목록 화면에서 처리 상태만 갱신
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!selectedFile) return;
+    if (!validateUploadFile(selectedFile)) return;
     setUploading(true);
     setError(null);
+    setUploadNotice(null);
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
       if (patientId) formData.append("patient_id", patientId);
+      if (documentTitle.trim()) formData.append("title", documentTitle.trim());
 
-      const token = localStorage.getItem("access_token");
-      const res = await fetch(`${API_PREFIX}/documents/upload`, {
+      const res = await authFetch(`${API_PREFIX}/documents/upload`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
         body: formData,
-        credentials: "include",
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || `status ${res.status}`);
       }
-      const result = await res.json();
+      await res.json();
       setSelectedFile(null);
+      setDocumentTitle("");
+      setPatientId("");
       if (document.getElementById("fileInput")) document.getElementById("fileInput").value = "";
-
-      // 업로드 완료 → OCR 결과 뷰로 이동
-      openOcrView({
-        document_id: result.document_id,
-        patient_id: result.patient_id,
-        original_filename: selectedFile.name,
-        created_at: result.created_at,
-        uploaded_by_user_id: result.uploaded_by_user_id,
-      });
+      setUploadNotice("업로드가 완료되었습니다. 문서 인식은 백그라운드에서 진행됩니다.");
+      loadDocuments();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -210,16 +309,22 @@ function DocumentManagement() {
 
   // OCR 뷰 열기
   const openOcrView = (doc) => {
+    if (pollingId) clearInterval(pollingId);
     setCurrentDoc(doc);
     setView("ocr");
     setDrugs([]);
     setOcrStatus(null);
     setSaveMsg(null);
+    setPreviewError(null);
+    setPreviewMimeType("");
+    setUploadNotice(null);
+    loadDocumentPreview(doc.document_id);
     pollOcrStatus(doc.document_id);
   };
 
   // OCR 상태 폴링
   const pollOcrStatus = async (docId) => {
+    if (pollingId) clearInterval(pollingId);
     const poll = async () => {
       try {
         const res = await authFetch(`${API_PREFIX}/documents/${docId}/status`);
@@ -353,10 +458,47 @@ function DocumentManagement() {
     } finally { setSaving(false); }
   };
 
+  const handleReupload = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !currentDoc) return;
+    if (!validateUploadFile(file)) return;
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (currentDoc.patient_id) formData.append("patient_id", String(currentDoc.patient_id));
+      if (currentDoc.original_filename) formData.append("title", currentDoc.original_filename);
+
+      const res = await authFetch(`${API_PREFIX}/documents/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `status ${res.status}`);
+      }
+
+      setUploadNotice("문서를 다시 업로드했습니다. 문서 인식은 백그라운드에서 진행됩니다.");
+      goBackToList();
+    } catch (err) {
+      setError(err.message || "재업로드에 실패했습니다.");
+    }
+  };
+
   const goBackToList = () => {
     setView("list");
     setCurrentDoc(null);
+    setOcrStatus(null);
+    setDrugs([]);
     if (pollingId) clearInterval(pollingId);
+    setPollingId(null);
+    setPreviewMimeType("");
+    setPreviewError(null);
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     loadDocuments();
   };
 
@@ -383,7 +525,7 @@ function DocumentManagement() {
             <h4 className="fw-bold mb-0">처방전 업로드</h4>
             {isSuccess && (
               <span className="badge bg-success-subtle text-success px-3 py-2" style={{ fontSize: "0.85rem" }}>
-                ✅ OCR 완료
+                ✅ 문서 인식 완료
               </span>
             )}
           </div>
@@ -392,14 +534,14 @@ function DocumentManagement() {
           {isProcessing && (
             <div className="text-center py-5">
               <div className="spinner-border text-primary mb-3" role="status" />
-              <div className="text-muted">OCR 처리 중입니다... 잠시만 기다려주세요.</div>
+              <div className="text-muted">문서 인식 처리 중입니다... 잠시만 기다려주세요.</div>
             </div>
           )}
 
           {/* OCR 실패 */}
           {isFailed && (
             <div className="alert alert-danger">
-              OCR 처리에 실패했습니다. {ocrStatus.error_message || ""}
+              문서 인식에 실패했습니다. {ocrStatus.error_message || ""}
               <button className="btn btn-warning btn-sm ms-3" onClick={() => {
                 authFetch(`${API_PREFIX}/documents/${currentDoc.document_id}/retry`, { method: "POST" })
                   .then(() => pollOcrStatus(currentDoc.document_id));
@@ -411,7 +553,7 @@ function DocumentManagement() {
           {isSuccess && (
             <>
               <div className="mb-3">
-                <h5 className="fw-bold">OCR 결과 확인</h5>
+                <h5 className="fw-bold">문서 인식 결과 확인</h5>
                 <p className="text-muted mb-0">추출된 약 정보를 확인하고 필요 시 수정한 뒤 확정해주세요.</p>
               </div>
 
@@ -423,10 +565,30 @@ function DocumentManagement() {
                     <strong>문서 정보</strong>
                   </div>
                   <div className="doc-preview-box">
-                    <div className="text-muted text-center py-4">
-                      <div style={{ fontSize: "2rem" }}>📋</div>
-                      <div className="small">문서 미리보기</div>
-                    </div>
+                    {previewLoading && (
+                      <div className="text-center py-4 text-muted">
+                        <div className="spinner-border spinner-border-sm text-primary mb-2" role="status" />
+                        <div className="small">문서 미리보기를 불러오는 중입니다.</div>
+                      </div>
+                    )}
+                    {!previewLoading && previewError && (
+                      <div className="text-center py-4 text-muted">
+                        <div style={{ fontSize: "1.5rem" }}>⚠️</div>
+                        <div className="small">{previewError}</div>
+                      </div>
+                    )}
+                    {!previewLoading && !previewError && previewUrl && previewMimeType.includes("pdf") && (
+                      <iframe title="문서 미리보기" src={previewUrl} className="doc-preview-frame" />
+                    )}
+                    {!previewLoading && !previewError && previewUrl && previewMimeType.startsWith("image/") && (
+                      <img src={previewUrl} alt="문서 미리보기" className="doc-preview-image" />
+                    )}
+                    {!previewLoading && !previewError && (!previewUrl || (!previewMimeType.includes("pdf") && !previewMimeType.startsWith("image/"))) && (
+                      <div className="text-muted text-center py-4">
+                        <div style={{ fontSize: "2rem" }}>📄</div>
+                        <div className="small">원본 보기로 확인해주세요.</div>
+                      </div>
+                    )}
                   </div>
                   <div className="mt-3 small">
                     <div className="d-flex justify-content-between mb-1">
@@ -447,26 +609,22 @@ function DocumentManagement() {
                     </div>
                   </div>
                   <div className="d-flex gap-2 mt-3">
-                    <button className="btn btn-outline-primary btn-sm flex-fill">👁 원본 보기</button>
+                    <button
+                      className="btn btn-outline-primary btn-sm flex-fill"
+                      onClick={() => handleOpenOriginalFile(currentDoc.document_id)}
+                    >
+                      👁 원본 보기
+                    </button>
                     <button className="btn btn-outline-secondary btn-sm flex-fill" onClick={() => {
                       document.getElementById("reuploadInput")?.click();
                     }}>↑ 다시 업로드</button>
-                    <input type="file" id="reuploadInput" className="d-none" accept="image/*,.pdf" onChange={async (e) => {
-                      const file = e.target.files[0];
-                      if (!file) return;
-                      const formData = new FormData();
-                      formData.append("file", file);
-                      if (currentDoc.patient_id) formData.append("patient_id", String(currentDoc.patient_id));
-                      const token = localStorage.getItem("access_token");
-                      const res = await fetch(`${API_PREFIX}/documents/upload`, {
-                        method: "POST", headers: { Authorization: `Bearer ${token}` },
-                        body: formData, credentials: "include",
-                      });
-                      if (res.ok) {
-                        const result = await res.json();
-                        openOcrView({ ...currentDoc, document_id: result.document_id, created_at: result.created_at, original_filename: file.name });
-                      }
-                    }} />
+                    <input
+                      type="file"
+                      id="reuploadInput"
+                      className="d-none"
+                      accept="image/*,.pdf"
+                      onChange={handleReupload}
+                    />
                   </div>
                 </div>
 
@@ -533,7 +691,7 @@ function DocumentManagement() {
                   📋 임시저장
                 </button>
                 <button className="btn btn-primary btn-lg px-5" onClick={handleConfirm} disabled={saving}>
-                  ✅ 확정하기
+                  확정하기
                 </button>
                 <button className="btn btn-outline-secondary" onClick={goBackToList}>
                   목록으로
@@ -561,6 +719,12 @@ function DocumentManagement() {
             <button type="button" className="btn-close" onClick={() => setError(null)} />
           </div>
         )}
+        {uploadNotice && (
+          <div className="alert alert-success alert-dismissible">
+            {uploadNotice}
+            <button type="button" className="btn-close" onClick={() => setUploadNotice(null)} />
+          </div>
+        )}
 
         {/* 업로드 폼 */}
         <div className="card border-0 shadow-sm mb-4">
@@ -568,15 +732,34 @@ function DocumentManagement() {
             <h6 className="fw-bold mb-3">처방전 업로드</h6>
             <form onSubmit={handleUpload}>
               <div className="row g-3 align-items-end">
-                <div className="col-md-5">
-                  <label className="form-label small">파일 선택</label>
-                  <input type="file" id="fileInput" className="form-control" onChange={(e) => setSelectedFile(e.target.files[0])} accept="image/*,.pdf" required />
-                </div>
                 <div className="col-md-4">
+                  <label className="form-label small">파일 선택</label>
+                  <input
+                    type="file"
+                    id="fileInput"
+                    className="form-control"
+                    onChange={handleFileChange}
+                    accept="image/*,.pdf"
+                    required
+                  />
+                  <div className="form-text">최대 10MB</div>
+                </div>
+                <div className="col-md-3">
+                  <label className="form-label small">문서명 (선택)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={documentTitle}
+                    onChange={(e) => setDocumentTitle(e.target.value)}
+                    placeholder="예: 3월 외래 처방전"
+                    maxLength={255}
+                  />
+                </div>
+                <div className="col-md-3">
                   <label className="form-label small">환자 ID (선택)</label>
                   <input type="number" className="form-control" value={patientId} onChange={(e) => setPatientId(e.target.value)} placeholder="본인이면 비워두세요" />
                 </div>
-                <div className="col-md-3">
+                <div className="col-md-2">
                   <button type="submit" className="btn btn-primary w-100" disabled={uploading || !selectedFile}>
                     {uploading ? "업로드 중..." : "업로드"}
                   </button>
@@ -629,7 +812,7 @@ function DocumentManagement() {
                               original_filename: doc.original_filename, created_at: doc.created_at,
                               uploaded_by_user_id: doc.uploaded_by_user_id,
                             })}>
-                              OCR 결과
+                              인식 결과
                             </button>
                           </td>
                         </tr>
