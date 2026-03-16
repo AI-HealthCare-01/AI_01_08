@@ -54,7 +54,9 @@ class MfdsService:
             for item in items
         ]
 
-        return MfdsDrugSearchResponse(query=normalized_query or drug_name, total=len(response_items), items=response_items)
+        return MfdsDrugSearchResponse(
+            query=normalized_query or drug_name, total=len(response_items), items=response_items
+        )
 
     # 식약처 e약은요 API 호출 - REQ-DRUG-001, REQ-DRUG-002
     async def _request_easy_drug_info(self, query: str, num_of_rows: int, query_field: str = "itemName") -> list[dict]:

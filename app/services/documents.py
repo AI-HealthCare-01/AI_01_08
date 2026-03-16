@@ -239,7 +239,9 @@ class DocumentService:
         return DocumentFileInfo(
             file_path=file_path,
             media_type=self._resolve_media_type(file_path=file_path),
-            download_name=self._resolve_download_name(original_filename=document.original_filename, file_path=file_path),
+            download_name=self._resolve_download_name(
+                original_filename=document.original_filename, file_path=file_path
+            ),
         )
 
     async def decode_barcodes(self, user: User, file: UploadFile) -> BarcodeDecodeResponse:
