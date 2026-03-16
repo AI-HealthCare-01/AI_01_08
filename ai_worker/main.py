@@ -11,19 +11,14 @@ from ai_worker.tasks.generate_guide import generate_guide
 from app.db.databases import TORTOISE_ORM
 from app.models.guides import Guide, GuideStatus
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 REDIS_URL = (os.getenv("REDIS_URL", "redis://localhost:6379/0") or "").strip()
 QUEUE_NAME = (os.getenv("AI_WORKER_QUEUE", "ai_tasks") or "").strip()
 
-GUIDE_GENERATING_TIMEOUT_MINUTES = int(
-    (os.getenv("GUIDE_GENERATING_TIMEOUT_MINUTES", "30") or "30").strip()
-)
-STALE_GUIDE_CHECK_INTERVAL_SECONDS = int(
-    (os.getenv("STALE_GUIDE_CHECK_INTERVAL_SECONDS", "60") or "60").strip()
-)
+GUIDE_GENERATING_TIMEOUT_MINUTES = int((os.getenv("GUIDE_GENERATING_TIMEOUT_MINUTES", "30") or "30").strip())
+STALE_GUIDE_CHECK_INTERVAL_SECONDS = int((os.getenv("STALE_GUIDE_CHECK_INTERVAL_SECONDS", "60") or "60").strip())
 
 
 # DB 연결 초기화
@@ -55,12 +50,8 @@ async def _fail_stale_generating_guides() -> None:
     for guide in stale_guides:
         guide.status = GuideStatus.FAILED
         guide.failure_code = "GUIDE_GENERATION_TIMEOUT"
-        guide.failure_message = (
-            f"Guide generation exceeded {GUIDE_GENERATING_TIMEOUT_MINUTES} minutes."
-        )
-        await guide.save(
-            update_fields=["status", "failure_code", "failure_message", "updated_at"]
-        )
+        guide.failure_message = f"Guide generation exceeded {GUIDE_GENERATING_TIMEOUT_MINUTES} minutes."
+        await guide.save(update_fields=["status", "failure_code", "failure_message", "updated_at"])
 
     logger.warning("worker: marked %s stale generating guide(s) as FAILED", len(stale_guides))
 
