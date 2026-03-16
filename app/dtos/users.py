@@ -1,3 +1,4 @@
+# app/dtos/users.py
 from datetime import date, datetime
 from typing import Annotated
 
@@ -39,3 +40,4 @@ class UserInfoResponse(BaseSerializerModel):
     birthday: date
     gender: Gender
     created_at: datetime
+    patient_id: int | None = None

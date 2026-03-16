@@ -1,15 +1,17 @@
-# app/apis/v1/hospital_calendar_api.py
-
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Response, status
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, Query, Response, status
+
+from app.dependencies.security import get_request_user
 from app.dtos.hospital_calendar_dtos import (
     HospitalScheduleCreateRequest,
     HospitalScheduleListResponse,
     HospitalScheduleResponse,
     HospitalScheduleUpdateRequest,
 )
+from app.models.users import User
 from app.services.hospital_calendar_service import HospitalCalendarService
 
 router = APIRouter(
@@ -25,6 +27,7 @@ router = APIRouter(
 )
 async def create_hospital_schedule(
     request: HospitalScheduleCreateRequest,
+    user: Annotated[User, Depends(get_request_user)],
 ) -> HospitalScheduleResponse:
     """
     병원 일정 생성
@@ -34,11 +37,9 @@ async def create_hospital_schedule(
     """
     service = HospitalCalendarService()
 
-    # 현재 인증 연동 전이므로 created_by_user_id 는 None 처리
-    # 나중에 인증 붙으면 get_request_user 등으로 current_user.id 넣으면 됨
     return await service.create_schedule(
         request=request,
-        created_by_user_id=None,
+        created_by_user_id=user.id,
     )
 
 

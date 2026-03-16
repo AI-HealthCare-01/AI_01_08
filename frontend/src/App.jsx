@@ -399,6 +399,32 @@ function App() {
     });
   }, [meState.data]);
 
+  const linkedPatients = useMemo(() => {
+    const links = linksState.data?.links || [];
+    const uniqueMap = new Map();
+
+    links.forEach((link) => {
+      if (!link.patient_id) return;
+
+      uniqueMap.set(Number(link.patient_id), {
+        id: Number(link.patient_id),
+        name: link.patient_name || `환자 ${link.patient_id}`,
+      });
+    });
+
+    return Array.from(uniqueMap.values());
+  }, [linksState.data]);
+
+  const myPatient = useMemo(() => {
+    if (loginRole !== "PATIENT") return null;
+    if (!meState.data?.patient_id) return null;
+
+    return {
+      id: Number(meState.data.patient_id),
+      name: meState.data.name || `환자 ${meState.data.patient_id}`,
+    };
+  }, [loginRole, meState.data]);
+
   const checkHealth = async () => {
     setHealthStatus({ loading: true, data: null, error: null });
     try {
@@ -1515,7 +1541,14 @@ function App() {
       window.location.href = "/auth-demo/login";
       return null;
     }
-    return <SchedulePage />;
+
+    return (
+      <SchedulePage
+        linkedPatients={linkedPatients}
+        myPatient={myPatient}
+        loginRole={loginRole}
+      />
+    );
   }
 
   if (isSettingsPage) {
