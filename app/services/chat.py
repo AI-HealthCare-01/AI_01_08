@@ -20,6 +20,7 @@ from app.dtos.chat import (
     RequesterRole,
 )
 from app.models.chat import ChatMessage, ChatSession
+from app.models.healthcare import UserRole
 from app.models.guides import Guide, GuideStatus
 from app.models.medications import PatientMed
 from app.models.patients import CaregiverPatientLink, Patient, PatientProfile
@@ -46,6 +47,9 @@ _EMERGENCY_KEYWORDS = [
     "숨이 차",
     "호흡곤란",
     "숨쉬기 힘들",
+    "숨쉬기가 힘들",
+    "숨을 쉬기 힘들",
+    "숨 못 쉬",
     "가슴 통증",
     "의식이 흐려",
     "실신",
@@ -63,6 +67,49 @@ _PROFILE_SLEEP_KEYWORDS = ["수면", "잠", "몇 시간"]
 _PROFILE_EXERCISE_KEYWORDS = ["운동", "몇 분", "운동량"]
 _SCHEDULE_KEYWORDS = ["복약스케줄", "복약 스케줄", "언제 먹", "언제 복용", "몇 시", "스케줄", "일정"]
 _GUIDE_SUMMARY_KEYWORDS = ["전반적", "가이드", "약 설명", "무슨 약"]
+_MED_LIST_KEYWORDS = [
+    "복용하고있는 약",
+    "복용하고 있는 약",
+    "먹고 있는 약",
+    "먹는 약",
+    "현재 약",
+    "약 목록",
+    "무슨 약을",
+]
+_MED_TIME_SPLIT_KEYWORDS = [
+    "아침, 저녁",
+    "아침, 저녁으로",
+    "아침 저녁",
+    "아침 저녁으로",
+    "아침과 저녁",
+    "아침/저녁",
+    "나눠서",
+    "구분해서",
+    "언제 먹는 약",
+]
+_PRN_KEYWORDS = ["매일 먹는 약이야", "열날 때만", "열 날 때만", "필요할 때만", "필요 시", "매일 먹어야 해"]
+_CAREGIVER_CHECK_KEYWORDS = [
+    "보호자가 꼭 확인",
+    "보호자가 확인",
+    "오늘 확인해야",
+    "관리 포인트",
+    "체크포인트",
+    "오늘 복약에서",
+]
+_ALLERGY_FOOD_KEYWORDS = [
+    "알레르기",
+    "음식으로 조심",
+    "음식 조심",
+    "먹지 않도록",
+    "음식으로 특히",
+    "조심해야 하는 음식",
+    "음식으로 특히 조심",
+    "먹으면 안",
+]
+_MISSED_DOSE_KEYWORDS = ["놓쳤다면", "놓쳤으면", "복약을 놓쳤", "지금 바로 먹여", "바로 먹여도", "깜빡", "복용을 놓쳤"]
+_LIFESTYLE_TOP_KEYWORDS = ["생활관리", "생활 관리", "생활관리에서", "생활 관리에서", "중요한 것 3가지", "중요한 것 세 가지", "세 가지만", "3가지만"]
+_SESSION_SUMMARY_KEYWORDS = ["한 줄로 요약", "지금까지 대화", "상태를 요약", "요약해줘"]
+_RASH_KEYWORDS = ["두드러기", "발진", "두드러기처럼", "발진이 생기", "약 먹고 나서 발진"]
 _MEDICATION_CAUTION_KEYWORDS = [
     "주의사항",
     "주의할 점",
@@ -113,16 +160,20 @@ class PatientChatContext:
 
 # 요청자 역할 판별
 async def _resolve_requester_role(user_id: int) -> RequesterRole:
+    # Louis수정(코드삭제): Patient row 존재 여부만으로 역할을 판별하면 보호자+본인프로필 계정이 PATIENT로 오인됨
+    if await UserRole.filter(user_id=user_id, role__name="ADMIN").exists():
+        return RequesterRole.ADMIN
+
+    # Louis수정(기능추가): 역할 테이블 기준으로 우선 판별해 보호자가 연동 환자에 정상 접근하도록 수정
+    if await UserRole.filter(user_id=user_id, role__name="CAREGIVER").exists():
+        return RequesterRole.CAREGIVER
+
+    if await UserRole.filter(user_id=user_id, role__name="PATIENT").exists():
+        return RequesterRole.PATIENT
+
     patient_exists = await Patient.filter(user_id=user_id).exists()
     if patient_exists:
         return RequesterRole.PATIENT
-
-    caregiver_exists = await CaregiverPatientLink.filter(
-        caregiver_user_id=user_id,
-        status="active",
-    ).exists()
-    if caregiver_exists:
-        return RequesterRole.CAREGIVER
 
     return RequesterRole.ADMIN
 
@@ -417,6 +468,7 @@ async def _get_active_meds(patient_id: int) -> list[dict[str, Any]]:
                 "display_name": row.display_name,
                 "dosage": row.dosage,
                 "route": row.route,
+                "notes": row.notes,
             }
         )
     return results
@@ -654,6 +706,10 @@ def _detect_intent(message: str) -> str:
 
     if any(k in normalized for k in _DAILY_CHAT_KEYWORDS):
         return "daily"
+    if ("두드러기" in normalized or "발진" in normalized) and ("약 먹고" in normalized or "복용" in normalized):
+        return "rash"
+    if any(k in normalized for k in _RASH_KEYWORDS):
+        return "rash"
     if any(k in normalized for k in _PROFILE_SMOKING_KEYWORDS):
         return "profile_smoking"
     if any(k in normalized for k in _PROFILE_ALCOHOL_KEYWORDS):
@@ -664,6 +720,28 @@ def _detect_intent(message: str) -> str:
         return "profile_exercise"
     if any(k in normalized for k in _SCHEDULE_KEYWORDS):
         return "schedule"
+    if ("아침" in normalized and "저녁" in normalized) and ("나눠" in normalized or "구분" in normalized):
+        return "med_time_split"
+    if any(k in normalized for k in _MED_TIME_SPLIT_KEYWORDS):
+        return "med_time_split"
+    if any(k in normalized for k in _PRN_KEYWORDS):
+        return "med_prn"
+    if ("음식" in normalized or "알레르기" in normalized) and ("조심" in normalized or "주의" in normalized):
+        return "allergy_food"
+    if any(k in normalized for k in _MED_LIST_KEYWORDS):
+        return "med_list"
+    if any(k in normalized for k in _CAREGIVER_CHECK_KEYWORDS):
+        return "caregiver_check"
+    if any(k in normalized for k in _ALLERGY_FOOD_KEYWORDS):
+        return "allergy_food"
+    if any(k in normalized for k in _MISSED_DOSE_KEYWORDS):
+        return "missed_dose"
+    if "3가지만" in normalized and "생활" in normalized:
+        return "lifestyle_top"
+    if any(k in normalized for k in _LIFESTYLE_TOP_KEYWORDS):
+        return "lifestyle_top"
+    if any(k in normalized for k in _SESSION_SUMMARY_KEYWORDS):
+        return "session_summary"
     if any(k in normalized for k in _MEDICATION_CAUTION_KEYWORDS):
         return "medication_caution"
     if "주의" in normalized and "약" in normalized:
@@ -749,6 +827,251 @@ def _answer_profile_intent(
     return None
 
 
+# 현재 복용 약 목록 직접 응답
+def _answer_med_list_intent(
+    *,
+    meds: list[dict[str, Any]],
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    if not meds:
+        base = f"{target_label} 기준으로 현재 확인되는 복용 약 정보가 없습니다."
+        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+    med_lines: list[str] = []
+    for med in meds:
+        name = med.get("display_name") or "약 이름 없음"
+        dosage = med.get("dosage")
+        notes = med.get("notes")
+        chunk = name
+        if dosage:
+            chunk += f" {dosage}"
+        if notes:
+            chunk += f" ({notes})"
+        med_lines.append(f"- {chunk}")
+
+    base = f"{target_label} 기준으로 현재 복용 중인 약은 다음과 같습니다.\n" + "\n".join(med_lines)
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _extract_target_med(*, message: str, meds: list[dict[str, Any]]) -> dict[str, Any] | None:
+    normalized = (message or "").strip()
+    for med in meds:
+        name = str(med.get("display_name") or "").strip()
+        if name and name in normalized:
+            return med
+    return meds[0] if meds else None
+
+
+def _answer_med_time_split_intent(
+    *,
+    meds: list[dict[str, Any]],
+    schedules: list[dict[str, Any]],
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    med_name_map = {int(med.get("patient_med_id")): med for med in meds if med.get("patient_med_id") is not None}
+    morning: list[str] = []
+    evening: list[str] = []
+    other: list[str] = []
+
+    for schedule in schedules:
+        patient_med_id = int(schedule.get("patient_med_id"))
+        med = med_name_map.get(patient_med_id, {})
+        label = med.get("display_name") or f"약 #{patient_med_id}"
+        dosage = med.get("dosage")
+        shown = f"{label} {dosage}".strip()
+        times = schedule.get("times") or []
+        if not times:
+            other.append(shown)
+            continue
+        for item in times:
+            time_of_day = str(item.get("time_of_day") or "")
+            hour = int(time_of_day.split(":")[0]) if ":" in time_of_day else -1
+            if 4 <= hour < 12:
+                morning.append(shown)
+            elif 17 <= hour <= 23:
+                evening.append(shown)
+            else:
+                other.append(f"{shown} ({_humanize_time(time_of_day)})")
+
+    parts = [f"{target_label} 기준으로 복약 시간을 나누면 다음과 같습니다."]
+    if morning:
+        parts.append("아침:")
+        parts.extend(f"- {item}" for item in list(dict.fromkeys(morning)))
+    if evening:
+        parts.append("저녁:")
+        parts.extend(f"- {item}" for item in list(dict.fromkeys(evening)))
+    if other:
+        parts.append("기타 시간:")
+        parts.extend(f"- {item}" for item in list(dict.fromkeys(other)))
+    if len(parts) == 1:
+        parts.append("- 등록된 복약 일정 정보가 충분하지 않습니다.")
+
+    base = "\n".join(parts)
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _answer_med_prn_intent(
+    *,
+    message: str,
+    meds: list[dict[str, Any]],
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str | None:
+    matched = _extract_target_med(message=message, meds=meds)
+
+    if not matched:
+        return None
+
+    notes = str(matched.get("notes") or "").strip()
+    name = matched.get("display_name") or "이 약"
+    if any(keyword in notes for keyword in ["필요", "열날", "증상", "통증 시"]):
+        base = f"{target_label} 기준으로 {name}은 매일 정해진 시간에 먹는 약이라기보다 증상이 있을 때 복용하는 약으로 보는 것이 더 자연스럽습니다."
+    elif notes:
+        base = f"{target_label} 기준으로 {name}은 메모상 `{notes}`로 기록되어 있습니다. 정시 복용 여부는 처방 의도와 문서 내용을 함께 확인하는 것이 좋습니다."
+    else:
+        base = f"{target_label} 기준으로 {name}의 매일 복용 여부를 단정할 근거는 부족합니다. 확정 문서와 처방 지시를 함께 확인해 주세요."
+
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+# 보호자 체크포인트 직접 응답
+def _answer_caregiver_check_intent(
+    *,
+    guide: Guide | None,
+    meds: list[dict[str, Any]],
+    schedules: list[dict[str, Any]],
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    points: list[str] = []
+
+    if guide and isinstance(guide.caregiver_summary, dict):
+        for key in ("today_checklist", "care_points", "warning_signs"):
+            value = guide.caregiver_summary.get(key) or []
+            if isinstance(value, list):
+                points.extend(str(item).strip() for item in value if str(item).strip())
+
+    if not points and schedules:
+        schedule_text = _build_schedule_text(schedules, meds)
+        points.append(f"오늘 복약 일정 확인: {schedule_text}")
+
+    if not points:
+        base = f"{target_label} 기준으로 오늘 보호자가 확인할 체크포인트 정보가 아직 충분하지 않습니다."
+    else:
+        deduped: list[str] = []
+        for point in points:
+            if point not in deduped:
+                deduped.append(point)
+        base = f"{target_label} 기준으로 오늘 보호자가 확인해야 할 내용은 다음과 같습니다.\n" + "\n".join(
+            f"- {point}" for point in deduped[:5]
+        )
+
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _answer_allergy_food_intent(
+    *,
+    profile: PatientProfile | None,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    allergies = []
+    if profile and getattr(profile, "allergies", None):
+        raw = str(profile.allergies)
+        allergies = [item.strip() for chunk in raw.splitlines() for item in chunk.split(",") if item.strip()]
+
+    if allergies:
+        base = f"{target_label} 기준으로 특히 조심해야 할 알레르기/음식 정보는 다음과 같습니다.\n" + "\n".join(
+            f"- {item}" for item in allergies
+        )
+    else:
+        base = f"{target_label} 기준으로 등록된 알레르기나 음식 주의 정보는 아직 없습니다."
+
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _answer_missed_dose_intent(
+    *,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    base = (
+        f"{target_label} 기준으로 복약을 놓쳤을 때는 바로 추가 복용을 단정하기보다, 처방 지시나 약 봉투 안내를 먼저 확인하는 것이 안전합니다.\n"
+        "- 다음 복용 시간이 매우 가까우면 임의로 두 번 먹이지 말고\n"
+        "- 현재 증상이나 이상 반응이 있으면 의료진이나 약사와 상담해 주세요."
+    )
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _answer_lifestyle_top_intent(
+    *,
+    guide: Guide | None,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    points: list[str] = []
+    if guide and isinstance(guide.content_json, dict):
+        for section in guide.content_json.get("sections") or []:
+            title = str(section.get("title") or "")
+            body = str(section.get("body") or "").strip()
+            if "생활" in title or "주의" in title:
+                for line in body.split("\n"):
+                    clean = line.strip().replace("- ", "")
+                    if clean:
+                        points.append(clean)
+    if not points and guide and guide.content_text:
+        points.extend([line.strip() for line in guide.content_text.split(".") if line.strip()])
+
+    base = f"{target_label} 기준으로 오늘 생활관리에서 중요한 점 3가지는 다음과 같습니다.\n" + "\n".join(
+        f"- {item}" for item in points[:3]
+    ) if points else f"{target_label} 기준 생활관리 요약 정보가 아직 충분하지 않습니다."
+
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _answer_session_summary_intent(
+    *,
+    meds: list[dict[str, Any]],
+    profile: PatientProfile | None,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    med_names = ", ".join([str(med.get("display_name")) for med in meds if med.get("display_name")]) or "복용 약 정보 없음"
+    conditions = []
+    if profile and getattr(profile, "conditions", None):
+        try:
+            conditions = _to_list(profile.conditions)
+        except Exception:
+            conditions = [str(profile.conditions)]
+    cond_text = ", ".join(conditions) if conditions else "기저질환 정보 확인 필요"
+    base = f"{target_label}는 {cond_text}가 있고 현재 {med_names} 중심으로 복약 관리가 필요한 상태로 요약할 수 있습니다."
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _answer_rash_intent(
+    *,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    base = (
+        f"{target_label} 기준으로 약 복용 후 두드러기나 발진이 생기면 추가 복용 전에 상태를 먼저 확인하는 것이 안전합니다.\n"
+        "- 숨쉬기 힘듦, 얼굴 붓기, 전신 두드러기가 함께 있으면 즉시 응급진료가 우선이고\n"
+        "- 가벼운 피부 발진이라도 복용 약 이름과 발생 시간을 기록해 의료진과 상담해 주세요."
+    )
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
 # 스케줄 기반 직접 응답
 def _answer_schedule_intent(
     *,
@@ -793,31 +1116,55 @@ def _answer_guide_intent(
 
 def _answer_medication_caution_intent(
     *,
+    message: str,
     guide: Guide | None,
+    meds: list[dict[str, Any]],
+    profile: PatientProfile | None,
     target_label: str,
     requester_role: RequesterRole,
     audience: str,
 ) -> str | None:
-    if not guide or not isinstance(guide.content_json, dict):
-        return None
+    matched_med = _extract_target_med(message=message, meds=meds)
+    points: list[str] = []
 
-    sections = guide.content_json.get("sections") or []
+    if matched_med:
+        med_name = str(matched_med.get("display_name") or "해당 약").strip()
+        med_notes = str(matched_med.get("notes") or "").strip()
+        if med_notes:
+            points.append(f"{med_name}: {med_notes}")
+        if "같이" in message or "상호작용" in message or "조심" in message:
+            points.append(f"{med_name} 복용 후 두통, 발진, 호흡 불편 같은 이상 반응이 있으면 추가 복용 전에 상태를 확인해 주세요.")
+
+    if profile and getattr(profile, "allergies", None):
+        raw_allergies = str(profile.allergies).strip()
+        if raw_allergies and ("음식" in message or "알레르기" in message):
+            points.append(f"등록된 알레르기 정보: {raw_allergies}")
+
     caution_body = ""
+    if guide and isinstance(guide.content_json, dict):
+        sections = guide.content_json.get("sections") or []
+        for section in sections:
+            title = str(section.get("title") or "")
+            body = str(section.get("body") or "")
+            if "주의" in title or "주의" in body or "신호" in title:
+                caution_body = body
+                break
 
-    for section in sections:
-        title = str(section.get("title") or "")
-        body = str(section.get("body") or "")
-        if "주의" in title or "주의" in body or "신호" in title:
-            caution_body = body
-            break
-
-    if not caution_body and guide.content_text:
+    if not caution_body and guide and guide.content_text:
         caution_body = guide.content_text
 
-    if not caution_body:
+    if caution_body:
+        for line in caution_body.split("\n"):
+            clean = line.strip().lstrip("-").strip()
+            if clean and clean not in points:
+                points.append(clean)
+
+    if not points:
         return None
 
-    base = f"{target_label} 기준으로 특히 주의해서 볼 점은 다음과 같습니다.\n{caution_body}"
+    base = f"{target_label} 기준으로 특히 주의해서 볼 점은 다음과 같습니다.\n" + "\n".join(
+        f"- {point}" for point in points[:4]
+    )
 
     if audience == "senior":
         base += "\n어지러움이 있으면 낙상 위험도 함께 조심해 주세요."
@@ -1066,6 +1413,72 @@ class ChatService:
                     requester_role=requester_role,
                     audience=audience,
                 )
+            elif intent == "med_time_split":
+                deterministic_answer = _answer_med_time_split_intent(
+                    meds=context.meds,
+                    schedules=context.schedules,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            elif intent == "med_prn":
+                deterministic_answer = _answer_med_prn_intent(
+                    message=stripped,
+                    meds=context.meds,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            elif intent == "med_list":
+                deterministic_answer = _answer_med_list_intent(
+                    meds=context.meds,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            elif intent == "caregiver_check":
+                deterministic_answer = _answer_caregiver_check_intent(
+                    guide=context.latest_guide,
+                    meds=context.meds,
+                    schedules=context.schedules,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            elif intent == "allergy_food":
+                deterministic_answer = _answer_allergy_food_intent(
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            elif intent == "missed_dose":
+                deterministic_answer = _answer_missed_dose_intent(
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            elif intent == "lifestyle_top":
+                deterministic_answer = _answer_lifestyle_top_intent(
+                    guide=context.latest_guide,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            elif intent == "session_summary":
+                deterministic_answer = _answer_session_summary_intent(
+                    meds=context.meds,
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            elif intent == "rash":
+                deterministic_answer = _answer_rash_intent(
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
             elif intent == "schedule":
                 deterministic_answer = _answer_schedule_intent(
                     meds=context.meds,
@@ -1076,7 +1489,10 @@ class ChatService:
                 )
             elif intent == "medication_caution":
                 deterministic_answer = _answer_medication_caution_intent(
+                    message=stripped,
                     guide=context.latest_guide,
+                    meds=context.meds,
+                    profile=context.profile,
                     target_label=target_label,
                     requester_role=requester_role,
                     audience=audience,

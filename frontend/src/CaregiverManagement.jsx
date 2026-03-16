@@ -9,6 +9,7 @@ function CaregiverManagement() {
   const [linkCode, setLinkCode] = useState("");
   const [linkingPatient, setLinkingPatient] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState(null);
+  const [selectedPatientMeta, setSelectedPatientMeta] = useState(null);
 
   const authFetch = async (url, options = {}) => {
     const token = localStorage.getItem("access_token");
@@ -94,12 +95,17 @@ function CaregiverManagement() {
   };
 
   const viewPatientProfile = async (linkId) => {
+    const currentLink = links.find((link) => link.link_id === linkId) || null;
     try {
       const res = await authFetch(`${API_PREFIX}/users/links/${linkId}/health-profile`);
       if (res.ok) {
         const data = await res.json();
         setSelectedPatient(data.data);
+        // Louis수정(기능추가): 모달에서도 어떤 복약자를 보고 있는지와 후속 동선을 함께 유지
+        setSelectedPatientMeta(currentLink);
       } else if (res.status === 404) {
+        setSelectedPatient(null);
+        setSelectedPatientMeta(null);
         alert("환자의 건강 프로필이 아직 등록되지 않았습니다.");
       } else {
         throw new Error(`status ${res.status}`);
@@ -113,11 +119,21 @@ function CaregiverManagement() {
     window.location.href = `/auth-demo/app/documents?patient_id=${patientId}`;
   };
 
+  // Louis수정(기능추가): 보호자가 연동 환자 건강 프로필 편집 화면으로 바로 진입할 수 있게 추가
+  const editPatientProfile = (linkId) => {
+    window.location.href = `/auth-demo/app/health-profile?link_id=${linkId}`;
+  };
+
+  // Louis수정(기능추가): 보호자가 연동 환자 기준 AI 상담으로 바로 이동할 수 있게 추가
+  const openPatientAi = (patientId) => {
+    window.location.href = `/auth-demo/app/ai?patient_id=${patientId}&open_chat=1`;
+  };
+
   return (
     <div className="container py-5">
       <div className="d-flex align-items-center mb-4">
         <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
-          <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
+          <img src="/mascot.png" alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
         </a>
         <h2 className="mb-0">보호자 관리</h2>
       </div>
@@ -211,10 +227,22 @@ function CaregiverManagement() {
                           건강 프로필 보기
                         </button>
                         <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => editPatientProfile(link.link_id)}
+                        >
+                          건강 프로필 수정
+                        </button>
+                        <button
                           className="btn btn-outline-secondary btn-sm"
                           onClick={() => viewPatientDocuments(link.patient_id)}
                         >
-                          처방전 관리
+                          문서 관리
+                        </button>
+                        <button
+                          className="btn btn-outline-dark btn-sm"
+                          onClick={() => openPatientAi(link.patient_id)}
+                        >
+                          AI 상담
                         </button>
                       </div>
                     </div>
@@ -232,11 +260,32 @@ function CaregiverManagement() {
           <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div className="modal-content">
               <div className="modal-header">
-                <h5 className="modal-title">환자 건강 프로필</h5>
-                <button type="button" className="btn-close" onClick={() => setSelectedPatient(null)}></button>
+                <h5 className="modal-title">
+                  {selectedPatientMeta?.patient_name || "환자"} 건강 프로필
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => {
+                    setSelectedPatient(null);
+                    setSelectedPatientMeta(null);
+                  }}
+                ></button>
               </div>
               <div className="modal-body">
                 <div className="row g-3">
+                  <div className="col-md-6">
+                    <div className="border rounded p-3">
+                      <div className="text-muted small">출생연도</div>
+                      <div className="fw-semibold">{selectedPatient.birth_year || "—"}</div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="border rounded p-3">
+                      <div className="text-muted small">성별</div>
+                      <div className="fw-semibold">{selectedPatient.sex || "—"}</div>
+                    </div>
+                  </div>
                   <div className="col-md-6">
                     <div className="border rounded p-3">
                       <div className="text-muted small">키</div>
@@ -273,6 +322,63 @@ function CaregiverManagement() {
                           : selectedPatient.is_smoker
                           ? "흡연"
                           : "비흡연"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="border rounded p-3">
+                      <div className="text-muted small">입원 여부</div>
+                      <div className="fw-semibold">
+                        {selectedPatient.is_hospitalized === null
+                          ? "—"
+                          : selectedPatient.is_hospitalized
+                          ? "현재 입원 중"
+                          : "현재 입원 상태는 아님"}
+                      </div>
+                      {selectedPatient.discharge_date && (
+                        <div className="small text-muted mt-1">퇴원 예정일 {selectedPatient.discharge_date}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="border rounded p-3">
+                      <div className="text-muted small">평균 수면 시간</div>
+                      <div className="fw-semibold">
+                        {selectedPatient.avg_sleep_hours_per_day
+                          ? `${selectedPatient.avg_sleep_hours_per_day}시간`
+                          : "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="border rounded p-3">
+                      <div className="text-muted small">하루 평균 운동 시간</div>
+                      <div className="fw-semibold">
+                        {selectedPatient.avg_exercise_minutes_per_day
+                          ? `${selectedPatient.avg_exercise_minutes_per_day}분`
+                          : "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="border rounded p-3">
+                      <div className="text-muted small">주간 흡연량</div>
+                      <div className="fw-semibold">
+                        {selectedPatient.avg_cig_packs_per_week !== null &&
+                        selectedPatient.avg_cig_packs_per_week !== undefined
+                          ? `${selectedPatient.avg_cig_packs_per_week}갑`
+                          : "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="border rounded p-3">
+                      <div className="text-muted small">주간 음주량</div>
+                      <div className="fw-semibold">
+                        {selectedPatient.avg_alcohol_bottles_per_week !== null &&
+                        selectedPatient.avg_alcohol_bottles_per_week !== undefined
+                          ? `${selectedPatient.avg_alcohol_bottles_per_week}병`
+                          : "—"}
                       </div>
                     </div>
                   </div>
@@ -315,7 +421,32 @@ function CaregiverManagement() {
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setSelectedPatient(null)}>
+                {selectedPatientMeta?.link_id && (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => editPatientProfile(selectedPatientMeta.link_id)}
+                  >
+                    건강 프로필 수정
+                  </button>
+                )}
+                {selectedPatientMeta?.patient_id && (
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={() => viewPatientDocuments(selectedPatientMeta.patient_id)}
+                  >
+                    문서 관리
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setSelectedPatient(null);
+                    setSelectedPatientMeta(null);
+                  }}
+                >
                   닫기
                 </button>
               </div>
