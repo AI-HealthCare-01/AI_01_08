@@ -23,3 +23,4 @@ app/ui/auth-demo/
 *.coverage
 .coverage.*
 site/
+frontend/.vite/

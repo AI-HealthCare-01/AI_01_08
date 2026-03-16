@@ -4,23 +4,12 @@ import HealthProfile from "./HealthProfile.jsx";
 import DocumentManagement from "./DocumentManagement.jsx";
 import CaregiverManagement from "./CaregiverManagement.jsx";
 import AiPage from "./AiPage.jsx";
+import SchedulePage from "./SchedulePage.jsx";
+import SettingsPage from "./SettingsPage.jsx";
 
 const API_PREFIX = "/api/v1";
 
-const features = [
-  {
-    title: "AI 상담",
-    description: "증상을 입력하면 요약과 추천 행동을 제공합니다."
-  },
-  {
-    title: "리스크 모니터링",
-    description: "지표를 추적하고 이상 징후를 빠르게 감지합니다."
-  },
-  {
-    title: "의료팀 협업",
-    description: "케이스 기록과 의사결정을 하나의 흐름으로 통합합니다."
-  }
-];
+
 
 const safeJson = async (res) => {
   try {
@@ -194,7 +183,7 @@ function App() {
     type: "intake_reminder",
     title: "복약 리마인드",
     message: "복약 시간이예요! 확인해 주세요.",
-    payload: ""
+    payload: '{"schedule_id":123}'
   });
   const [remindState, setRemindState] = useState({
     submitting: false,
@@ -226,6 +215,12 @@ function App() {
   }, [pathname]);
   const isAiPage = useMemo(() => {
     return pathname.startsWith("/auth-demo/ai") || pathname.startsWith("/auth-demo/app/ai");
+  }, [pathname]);
+  const isSchedulePage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/schedule") || pathname.startsWith("/auth-demo/app/schedule");
+  }, [pathname]);
+  const isSettingsPage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/settings") || pathname.startsWith("/auth-demo/app/settings");
   }, [pathname]);
 
   const persistAccessToken = (token) => {
@@ -941,30 +936,45 @@ function App() {
 
   const submitRemind = async (event) => {
     event.preventDefault();
+    
+    if (!remindForm.patient_id) {
+      setRemindState({ submitting: false, error: "환자를 선택해주세요.", success: null });
+      return;
+    }
+    
     setRemindState({ submitting: true, error: null, success: null });
     try {
       const payload = {
         patient_id: Number(remindForm.patient_id),
         type: remindForm.type,
-        title: remindForm.title || null,
-        message: remindForm.message || null
+        title: remindForm.title || "복약 리마인드",
+        message: remindForm.message || "복약 시간이예요! 확인해 주세요."
       };
-      if (remindForm.payload) {
+      
+      if (remindForm.payload && remindForm.payload.trim()) {
         try {
           payload.payload = JSON.parse(remindForm.payload);
         } catch {
-          throw new Error("payload는 JSON 형식이어야 합니다.");
+          throw new Error("payload는 유효한 JSON 형식이어야 합니다.");
         }
       }
+      
       const res = await authFetch(`${API_PREFIX}/notifications/remind`, {
         method: "POST",
         body: JSON.stringify(payload)
       });
+      
       if (!res.ok) {
         const body = await safeJson(res);
         throw new Error(formatApiError(body) || `status ${res.status}`);
       }
+      
       setRemindState({ submitting: false, error: null, success: "리마인드 전송 완료" });
+      
+      // 성공 후 폼 초기화
+      setTimeout(() => {
+        setRemindState({ submitting: false, error: null, success: null });
+      }, 3000);
     } catch (error) {
       setRemindState({ submitting: false, error: formatApiError(error?.message || error), success: null });
     }
@@ -1491,6 +1501,40 @@ function App() {
     return <AiPage />;
   }
 
+  if (isSchedulePage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <SchedulePage />;
+  }
+
+  if (isSettingsPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <SettingsPage />;
+  }
+
   if (isProfilePage) {
     return (
       <div className="app-shell">
@@ -1738,25 +1782,41 @@ function App() {
             <a className="navbar-brand fw-bold" href="#" style={{ fontSize: '1.5rem' }}>
               (주)케어브릿지
             </a>
-            <div className="ms-auto d-flex gap-2">
+            <div className="ms-auto d-flex align-items-center gap-3">
               {accessToken ? (
                 <>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/dashboard">
-                    대시보드
-                  </a>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/caregiver">
-                    보호자 관리
-                  </a>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/health-profile">
-                    건강 프로필
-                  </a>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/documents">
-                    문서 관리
-                  </a>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/profile">
-                    개인정보
-                  </a>
-                  <button className="btn btn-light btn-sm text-primary" onClick={handleLogout}>
+                  <div className="dropdown">
+                    <button className="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      대시보드
+                    </button>
+                    <ul className="dropdown-menu dropdown-menu-end">
+                      <li><a className="dropdown-item" href="/auth-demo/app/dashboard">대시보드</a></li>
+                      <li><a className="dropdown-item" href="/auth-demo/app/health-profile">건강 프로필</a></li>
+                      <li><a className="dropdown-item" href="/auth-demo/app/documents">문서 관리</a></li>
+                    </ul>
+                  </div>
+                  <div className="dropdown">
+                    <button className="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      보호자 관리
+                    </button>
+                    <ul className="dropdown-menu dropdown-menu-end">
+                      <li><a className="dropdown-item" href="/auth-demo/app/caregiver">보호자 관리</a></li>
+                      <li><a className="dropdown-item" href="/auth-demo/app/ai">AI 상담</a></li>
+                    </ul>
+                  </div>
+                  <div className="dropdown">
+                    <button className="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                      건강 프로필
+                    </button>
+                    <ul className="dropdown-menu dropdown-menu-end">
+                      <li><a className="dropdown-item" href="/auth-demo/app/health-profile">건강 프로필</a></li>
+                      <li><a className="dropdown-item" href="/auth-demo/app/schedule">스케줄</a></li>
+                    </ul>
+                  </div>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/documents">문서 관리</a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/schedule">스케줄</a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/settings">개인정보</a>
+                  <button className="btn btn-light btn-sm" onClick={handleLogout}>
                     로그아웃
                   </button>
                 </>
@@ -1765,7 +1825,6 @@ function App() {
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/login">
                     로그인
                   </a>
-                  <button className="btn btn-light btn-sm text-primary">데모 요청</button>
                 </>
               )}
             </div>
@@ -1774,10 +1833,6 @@ function App() {
             <div className="col-lg-7">
               <h1 className="display-5 fw-bold">나와 내 가족을 지켜주는 AI기반 의료 워크플로우</h1>
               <p className="lead mt-3">한 눈에 볼 수 있는 나의 의료서비스</p>
-              <div className="d-flex gap-2 mt-4">
-                <button className="btn btn-warning btn-lg">바로 시작</button>
-                <button className="btn btn-outline-light btn-lg">기능 살펴보기</button>
-              </div>
             </div>
             <div className="col-lg-5 mt-4 mt-lg-0">
               <div className="card shadow-lg border-0">
@@ -2257,37 +2312,9 @@ function App() {
           </div>
         </div>
 
-        <div className="row g-4">
-          {features.map((item) => (
-            <div className="col-md-4" key={item.title}>
-              <div className="card h-100 border-0 shadow-sm">
-                <div className="card-body">
-                  <h5 className="card-title">{item.title}</h5>
-                  <p className="card-text text-muted">{item.description}</p>
-                  {item.title === "AI 상담" ? (
-                    <a className="btn btn-outline-primary btn-sm" href="/auth-demo/app/ai">
-                      자세히 보기
-                    </a>
-                  ) : (
-                    <button className="btn btn-outline-primary btn-sm">자세히 보기</button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
 
-        <div className="cta-banner mt-5 p-4 p-lg-5 rounded-4">
-          <div className="row align-items-center">
-            <div className="col-lg-8">
-              <h2 className="fw-bold">팀 전체에 맞춘 통합 대시보드</h2>
-              <p className="mb-0">운영 지표와 임상 데이터를 하나의 화면에서 관리하고 공유하세요.</p>
-            </div>
-            <div className="col-lg-4 text-lg-end mt-3 mt-lg-0">
-              <button className="btn btn-dark btn-lg">대시보드 열기</button>
-            </div>
-          </div>
-        </div>
+
+
       </main>
     </div>
   );

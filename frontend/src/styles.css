@@ -13,16 +13,45 @@ body {
 }
 
 .hero {
-  background: linear-gradient(130deg, #0b3c5d 0%, #1d6fa5 45%, #6ab3d6 100%);
+  background: #000428;  /* fallback for old browsers */
+  background: -webkit-linear-gradient(to right, #004e92, #000428);  /* Chrome 10-25, Safari 5.1-6 */
+  background: linear-gradient(to right, #004e92, #000428); /* W3C, IE 10+/ Edge, Firefox 16+, Chrome 26+, Opera 12+, Safari 7+ */
   color: #ffffff;
 }
 
 .hero .navbar-brand {
   color: #ffffff;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.hero .navbar-brand:hover {
+  background: linear-gradient(to right, #004e92, #000428);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 20px rgba(0, 78, 146, 0.5);
+  transform: scale(1.05);
 }
 
 .hero .card {
   border-radius: 1.25rem;
+}
+
+.hero .dropdown-menu {
+  background-color: rgba(255, 255, 255, 0.95);
+  border: none;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.hero .dropdown-item {
+  color: #000428;
+  transition: all 0.2s;
+}
+
+.hero .dropdown-item:hover {
+  background-color: #004e92;
+  color: #ffffff;
 }
 
 .login-page {

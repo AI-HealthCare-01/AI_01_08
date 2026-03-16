@@ -12,6 +12,7 @@ from app.apis.v1.medication_intake_api import router as medication_router
 from app.apis.v1.notification_routers import notification_router
 from app.apis.v1.patient_profile_routers import router as patient_profile_router
 from app.apis.v1.public_routers import public_router
+from app.apis.v1.settings_routers import router as settings_router
 from app.apis.v1.user_routers import user_router
 from app.dependencies.security import get_request_user
 
@@ -26,6 +27,7 @@ v1_routers.include_router(dashboard_router, dependencies=[Depends(get_request_us
 v1_routers.include_router(document_router)
 v1_routers.include_router(medication_router)
 v1_routers.include_router(hospital_calendar_router)
+v1_routers.include_router(settings_router)
 v1_routers.include_router(guide_router)
 v1_routers.include_router(chat_router)
 v1_routers.include_router(ai_chat_router, dependencies=[Depends(get_request_user)])
