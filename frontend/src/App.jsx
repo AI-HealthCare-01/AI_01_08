@@ -6,6 +6,7 @@ import CaregiverManagement from "./CaregiverManagement.jsx";
 import AiPage from "./AiPage.jsx";
 import SchedulePage from "./SchedulePage.jsx";
 import SettingsPage from "./SettingsPage.jsx";
+import NotificationPage from "./NotificationPage.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -1507,7 +1508,15 @@ function App() {
       window.location.href = "/auth-demo/login";
       return null;
     }
-    return <CaregiverManagement />;
+
+    return (
+      <NotificationPage
+        linkedPatients={linkedPatients}
+        myPatient={myPatient}
+        loginRole={loginRole}
+        me={meState.data}
+      />
+    );
   }
 
   if (isAiPage) {
