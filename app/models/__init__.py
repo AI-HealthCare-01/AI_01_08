@@ -10,6 +10,7 @@ from app.models.notification_settings import NotificationSettings  # 20260303 �
 from app.models.notifications import Notification, UserDevice
 from app.models.patients import CaregiverPatientLink, InvitationCode, Patient, PatientProfile, PatientProfileHistory
 from app.models.schedules import IntakeLog, MedSchedule, MedScheduleTime, Reminder
+from app.models.user_settings import UserSettings
 from app.models.users import Gender, User
 
 __all__ = [
@@ -48,4 +49,5 @@ __all__ = [
     "UserRole",
     "NotificationSettings",  # 20260303 알림설정 HYJ
     "HospitalSchedule",  # 20260312 병원스케줄HYJ
+    "UserSettings",  # 20260313 사용자설정
 ]
