@@ -13,6 +13,7 @@ from app.dtos.documents import (
     DocumentListResponse,
     DocumentOcrRetryResponse,
     DocumentOcrStatusResponse,
+    DocumentOcrTextResponse,
     DocumentRenameRequest,
     DocumentRenameResponse,
     DocumentUploadResponse,
@@ -123,6 +124,17 @@ async def get_document_ocr_status(
     document_service: Annotated[DocumentService, Depends(DocumentService)],
 ) -> Response:
     result = await document_service.get_document_ocr_status(user=user, document_id=document_id)
+    return Response(result.model_dump(), status_code=status.HTTP_200_OK)
+
+
+# OCR 결과 원문 조회 - REQ-DOC-003
+@document_router.get("/{document_id}/ocr-text", response_model=DocumentOcrTextResponse, status_code=status.HTTP_200_OK)
+async def get_document_ocr_text(
+    document_id: Annotated[int, Path(ge=1)],
+    user: Annotated[User, Depends(get_request_user)],
+    document_service: Annotated[DocumentService, Depends(DocumentService)],
+) -> Response:
+    result = await document_service.get_document_ocr_text(user=user, document_id=document_id)
     return Response(result.model_dump(), status_code=status.HTTP_200_OK)
 
 

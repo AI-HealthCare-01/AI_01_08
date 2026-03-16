@@ -150,7 +150,7 @@ function HealthProfile() {
     <div className="container py-5">
       <div className="d-flex align-items-center justify-content-center mb-4">
         <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
-          <img src="/mascot.png" alt="약승이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
+          <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
         </a>
         <h2 className="mb-0">건강 프로필</h2>
       </div>
