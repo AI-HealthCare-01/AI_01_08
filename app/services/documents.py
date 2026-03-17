@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import mimetypes
 import re
 import uuid
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from tortoise.transactions import in_transaction
 
 from app.core import config
 from app.dtos.documents import (
+    BarcodeDecodeItemResponse,
+    BarcodeDecodeResponse,
     DocumentDeleteResponse,
     DocumentDrugPatchItemRequest,
     DocumentDrugPatchRequest,
@@ -40,12 +43,13 @@ from app.models.healthcare import UserRole
 from app.models.medications import DrugInfoCache, PatientMed
 from app.models.patients import CaregiverPatientLink, Patient
 from app.models.users import User
+from app.services.barcode import BarcodeService
 from app.services.mfds import MfdsService
 from app.services.ocr import OcrService
 
 ALLOWED_FILE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".heic", ".heif"}
 HEIC_FILE_EXTENSIONS = {".heic", ".heif"}
-MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
+MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 DRUG_FORM_SUFFIXES = ("장용캡슐", "연질캡슐", "서방정", "캡슐", "정", "액", "주", "겔", "시럽", "크림", "로션")
 
 
@@ -55,15 +59,25 @@ class DrugCacheResolution:
     name_match_status: str
 
 
+@dataclass(frozen=True)
+class DocumentFileInfo:
+    file_path: Path
+    media_type: str
+    download_name: str
+
+
 class DocumentService:
     def __init__(self):
         self.upload_root = Path(__file__).resolve().parents[2] / "uploads" / "documents"
         self.upload_root.mkdir(parents=True, exist_ok=True)
         self.ocr_service = OcrService()
         self.mfds_service = MfdsService()
+        self.barcode_service = BarcodeService()
 
     # 대상 patient 귀속 + 업로드/OCR 상태 생성 - REQ-USER-008, REQ-DOC-003
-    async def upload_document(self, user: User, file: UploadFile, patient_id: int | None) -> DocumentUploadResponse:
+    async def upload_document(
+        self, user: User, file: UploadFile, patient_id: int | None, title: str | None = None
+    ) -> DocumentUploadResponse:
         target_patient = await self._resolve_target_patient_for_upload(user=user, patient_id=patient_id)
 
         original_filename = Path(file.filename or "").name
@@ -87,13 +101,15 @@ class DocumentService:
         stored_path = self.upload_root / stored_name
         stored_path.write_bytes(file_bytes)
         file_url = f"uploads/documents/{stored_name}"
+        normalized_title = title.strip() if title else ""
+        display_filename = normalized_title or original_filename or None
 
         async with in_transaction() as conn:
             document = await Document.create(
                 patient_id=target_patient.id,
                 uploaded_by_user_id=user.id,
                 file_url=file_url,
-                original_filename=original_filename or None,
+                original_filename=display_filename,
                 file_type=self._normalize_file_type(stored_extension),
                 file_size=len(file_bytes),
                 checksum=checksum,
@@ -207,6 +223,57 @@ class DocumentService:
 
         await Document.filter(id=document_id).update(original_filename=normalized_title)
         return DocumentRenameResponse(document_id=document.id, original_filename=normalized_title)
+
+    async def get_document_file(self, user: User, document_id: int) -> DocumentFileInfo:
+        document = await Document.filter(id=document_id, status="uploaded").first()
+        if not document:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+
+        if not await self._has_patient_access(user=user, patient_id=document.patient_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
+
+        file_path = self._resolve_document_file_path(file_url=document.file_url)
+        if not file_path.exists() or not file_path.is_file():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+
+        return DocumentFileInfo(
+            file_path=file_path,
+            media_type=self._resolve_media_type(file_path=file_path),
+            download_name=self._resolve_download_name(
+                original_filename=document.original_filename, file_path=file_path
+            ),
+        )
+
+    async def decode_barcodes(self, user: User, file: UploadFile) -> BarcodeDecodeResponse:
+        _ = user
+        original_filename = Path(file.filename or "").name
+        extension = Path(original_filename).suffix.lower() or ".png"
+        if extension not in ALLOWED_FILE_EXTENSIONS and extension not in {".bmp", ".webp"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_INPUT")
+
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_INPUT")
+        if len(file_bytes) > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_INPUT")
+
+        temp_dir = self.upload_root / "_tmp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / f"barcode_{uuid.uuid4().hex}{extension}"
+        temp_path.write_bytes(file_bytes)
+        try:
+            detections = await asyncio.to_thread(self.barcode_service.extract_from_file, temp_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+        items = [
+            BarcodeDecodeItemResponse(
+                barcode_type=detection.barcode_type,
+                barcode_value=detection.barcode_value,
+            )
+            for detection in detections
+        ]
+        return BarcodeDecodeResponse(total=len(items), items=items)
 
     # OCR 처리 상태 조회(권한 검증 포함) - REQ-DOC-003
     async def get_document_ocr_status(self, user: User, document_id: int) -> DocumentOcrStatusResponse:
@@ -666,6 +733,34 @@ class DocumentService:
     @staticmethod
     def _normalize_file_type(extension: str) -> str:
         return "pdf" if extension == ".pdf" else "image"
+
+    def _resolve_document_file_path(self, file_url: str) -> Path:
+        relative_path = Path(file_url)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+
+        file_path = (Path(__file__).resolve().parents[2] / relative_path).resolve()
+        upload_root = self.upload_root.resolve()
+        if upload_root not in file_path.parents:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+        return file_path
+
+    @staticmethod
+    def _resolve_media_type(file_path: Path) -> str:
+        media_type = mimetypes.guess_type(file_path.name)[0]
+        return media_type or "application/octet-stream"
+
+    @staticmethod
+    def _resolve_download_name(original_filename: str | None, file_path: Path) -> str:
+        if not original_filename:
+            return file_path.name
+
+        filename = original_filename.strip()
+        if not filename:
+            return file_path.name
+        if Path(filename).suffix:
+            return filename
+        return f"{filename}{file_path.suffix}"
 
     # HEIC/HEIF -> JPEG 변환 - REQ-DOC-003
     @staticmethod

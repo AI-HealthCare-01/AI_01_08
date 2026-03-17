@@ -7,6 +7,7 @@ import AiPage from "./AiPage.jsx";
 import SchedulePage from "./SchedulePage.jsx";
 import SettingsPage from "./SettingsPage.jsx";
 import NotificationPage from "./NotificationPage.jsx";
+import DrugSearchPage from "./DrugSearchPage.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -216,6 +217,9 @@ function App() {
   }, [pathname]);
   const isAiPage = useMemo(() => {
     return pathname.startsWith("/auth-demo/ai") || pathname.startsWith("/auth-demo/app/ai");
+  }, [pathname]);
+  const isDrugSearchPage = useMemo(() => {
+    return pathname.startsWith("/auth-demo/drug-search") || pathname.startsWith("/auth-demo/app/drug-search");
   }, [pathname]);
   const isSchedulePage = useMemo(() => {
     return pathname.startsWith("/auth-demo/schedule") || pathname.startsWith("/auth-demo/app/schedule");
@@ -1536,6 +1540,23 @@ function App() {
     return <AiPage />;
   }
 
+  if (isDrugSearchPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
+    return <DrugSearchPage />;
+  }
+
   if (isSchedulePage) {
     if (!accessToken) {
       if (authChecking) {
@@ -1844,6 +1865,7 @@ function App() {
                     <ul className="dropdown-menu dropdown-menu-end">
                       <li><a className="dropdown-item" href="/auth-demo/app/caregiver">보호자 관리</a></li>
                       <li><a className="dropdown-item" href="/auth-demo/app/ai">AI 상담</a></li>
+                      <li><a className="dropdown-item" href="/auth-demo/app/drug-search">약 검색</a></li>
                     </ul>
                   </div>
                   <div className="dropdown">
@@ -1856,6 +1878,7 @@ function App() {
                     </ul>
                   </div>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/documents">처방전 관리</a>
+                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/drug-search">약 검색</a>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/schedule">스케줄</a>
                   <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/settings">개인정보</a>
                   <button className="btn btn-light btn-sm" onClick={handleLogout}>

@@ -757,6 +757,7 @@ function AiPage() {
           <nav className="d-grid gap-2">
             <a href="/auth-demo/app/dashboard" className="btn btn-outline-secondary text-start">대시보드</a>
             <a href="/auth-demo/app/documents" className="btn btn-outline-secondary text-start">문서 관리</a>
+            <a href="/auth-demo/app/drug-search" className="btn btn-outline-secondary text-start">약 검색</a>
             <a href="/auth-demo/app/health-profile" className="btn btn-outline-secondary text-start">건강 프로필</a>
             <a href="/auth-demo/app/ai" className="btn btn-primary text-start">맞춤 복약 가이드</a>
             <a href="/auth-demo/app/caregiver" className="btn btn-outline-secondary text-start">보호자 관리</a>
