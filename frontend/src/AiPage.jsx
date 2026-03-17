@@ -1382,6 +1382,7 @@ function AiPage() {
                     padding: "26px",
                     background: "linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%)",
                     border: "1px solid #d8e4f5",
+                    height: "100%",
                   }}
                 >
                   <div className="mb-4">
@@ -1401,33 +1402,38 @@ function AiPage() {
                           borderRadius: "20px",
                           background: "#ffffff",
                           border: "1px solid #d8e4f5",
-                          padding: "18px 18px 16px",
+                          padding: "18px",
                           height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "center",
                         }}
                       >
-                        <div className="small text-muted mb-2">빠른 질문</div>
-                        <div className="d-flex flex-wrap gap-2 mb-3">
+                        <div className="small text-muted mb-4" style={{ lineHeight: 1.8, fontSize: "0.95rem" }}>
+                          자주 묻는 질문으로 상담을 시작해보세요.
+                        </div>
+                        <div className="d-flex flex-wrap gap-2">
                           <button
-                            className="btn btn-outline-secondary btn-sm"
+                            className="btn btn-outline-secondary"
+                            style={{ fontSize: "0.95rem", padding: "10px 14px" }}
                             onClick={() => { setChatInput("복용할 때 주의할 점이 뭐야"); openChatPanel(); }}
                           >
                             주의사항 질문
                           </button>
                           <button
-                            className="btn btn-outline-secondary btn-sm"
+                            className="btn btn-outline-secondary"
+                            style={{ fontSize: "0.95rem", padding: "10px 14px" }}
                             onClick={() => { setChatInput("이 약은 어떤 약이야?"); openChatPanel(); }}
                           >
                             약 설명 질문
                           </button>
                           <button
-                            className="btn btn-outline-secondary btn-sm"
+                            className="btn btn-outline-secondary"
+                            style={{ fontSize: "0.95rem", padding: "10px 14px" }}
                             onClick={() => { setChatInput("생활 습관에서 조심할 점을 알려줘"); openChatPanel(); }}
                           >
                             생활 습관 질문
                           </button>
-                        </div>
-                        <div className="small text-muted" style={{ lineHeight: 1.8 }}>
-                          약 설명, 주의사항, 생활 관리처럼 필요한 내용을 자연스럽게 이어서 물어보세요.
                         </div>
                       </div>
                     </div>
@@ -1447,11 +1453,11 @@ function AiPage() {
                           flexDirection: "column",
                           justifyContent: "center",
                           alignItems: "center",
-                          gap: "10px",
+                          gap: "8px",
                           padding: "18px",
                         }}
                       >
-                        <img src="/mascot.png" alt="약속이 챗봇 열기" style={{ width: "92px", height: "auto" }} />
+                        <img src="/mascot.png" alt="약속이 챗봇 열기" style={{ width: "84px", height: "auto" }} />
                         <div className="fw-semibold" style={{ color: "#1d4ed8" }}>약속이 AI 상담</div>
                         <div className="small text-muted text-center">가이드 내용을 이어서 질문하고 답변을 확인하세요.</div>
                       </button>
@@ -1678,7 +1684,7 @@ function AiPage() {
                 </button>
               </div>
             </div>
-          </div>
+          </div>약 설명, 주의사항, 생활 관리처럼 필요한 내용을 자연스럽게 이어서 물어보세요.
         </div>
       )}
     </div>
