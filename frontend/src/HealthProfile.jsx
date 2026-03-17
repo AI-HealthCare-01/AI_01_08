@@ -2,6 +2,59 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const API_PREFIX = "/api/v1";
 
+const pageToneStyle = {
+  minHeight: "100vh",
+  background: "linear-gradient(145deg, #f8fbff 0%, #dfeafb 100%)",
+};
+
+const shellCardStyle = {
+  borderRadius: "28px",
+  background: "rgba(255, 255, 255, 0.96)",
+  border: "1px solid #d7e3f4",
+  boxShadow: "0 18px 42px rgba(37, 99, 235, 0.1)",
+};
+
+const softPanelStyle = {
+  border: "1px solid #d5e2f6",
+  borderRadius: "20px",
+  background: "linear-gradient(180deg, #f8fbff 0%, #edf4ff 100%)",
+  boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.7)",
+};
+
+const metricPanelStyle = {
+  border: "1px solid #dbe7f6",
+  borderRadius: "18px",
+  background: "linear-gradient(180deg, #ffffff 0%, #f7faff 100%)",
+  boxShadow: "0 8px 20px rgba(37, 99, 235, 0.05)",
+};
+
+const primaryButtonStyle = {
+  background: "#2563eb",
+  borderColor: "#2563eb",
+  color: "#ffffff",
+  boxShadow: "0 8px 18px rgba(37, 99, 235, 0.18)",
+};
+
+const secondaryButtonStyle = {
+  borderColor: "#cfddf1",
+  color: "#1d4ed8",
+  background: "#f7fbff",
+};
+
+const dangerButtonStyle = {
+  background: "#dc2626",
+  borderColor: "#dc2626",
+  color: "#ffffff",
+};
+
+const titleAccentStyle = {
+  borderRadius: "22px",
+  padding: "18px 22px",
+  background: "linear-gradient(135deg, #eff5ff 0%, #dfeafb 100%)",
+  border: "1px solid #d3e1f5",
+  boxShadow: "0 12px 24px rgba(37, 99, 235, 0.08)",
+};
+
 const emptyForm = {
   birth_year: "",
   sex: "",
@@ -283,50 +336,64 @@ function HealthProfile() {
 
   if (loading && !profile && !(loginRole === "CAREGIVER" && !selectedLinkId)) {
     return (
-      <div className="container py-5">
+      <div className="container py-5" style={pageToneStyle}>
         <div className="text-center">로딩 중...</div>
       </div>
     );
   }
 
   return (
-    <div className="container py-5">
+    <div className="container py-5" style={pageToneStyle}>
       <div className="d-flex align-items-center justify-content-center mb-4">
         <a href="/auth-demo/app" style={{ cursor: "pointer", textDecoration: "none" }}>
           <img src="/mascot.png" alt="약승이" style={{ width: "120px", height: "auto", marginRight: "20px" }} />
         </a>
-        <h2 className="mb-0">{title}</h2>
+        <h2 className="mb-0" style={{ color: "#1e3a8a", letterSpacing: "-0.02em" }}>{title}</h2>
       </div>
 
       <div className="row justify-content-center">
         <div className="col-lg-9">
-          <div className="card shadow-sm">
+          <div className="card shadow-sm" style={shellCardStyle}>
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-center mb-4">
                 <div>
-                  <h3 className="mb-1">{title}</h3>
+                  <h3 className="mb-1" style={{ color: "#1e40af" }}>{title}</h3>
                   <div className="text-muted small">
                     {loginRole === "CAREGIVER"
-                      ? "내 건강 프로필과 연동된 복약자 프로필을 선택해 등록, 수정, 삭제할 수 있습니다."
-                      : "본인 건강 정보를 등록하고 수정할 수 있습니다."}
+                      ? "내 정보와 연동된 복약자 프로필을 한 화면에서 관리할 수 있습니다."
+                      : "건강 정보를 정리하고 필요한 항목을 바로 수정할 수 있습니다."}
                   </div>
                 </div>
                 <div className="d-flex gap-2">
                   {profile && !editing && (
                     <>
-                      <button className="btn btn-primary btn-sm" onClick={() => setEditing(true)}>
+                      <button className="btn btn-primary btn-sm" style={primaryButtonStyle} onClick={() => setEditing(true)}>
                         수정
                       </button>
-                      <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={saving}>
+                      <button className="btn btn-danger btn-sm" style={dangerButtonStyle} onClick={handleDelete} disabled={saving}>
                         삭제
                       </button>
                     </>
                   )}
                   {editing && (
-                    <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}>
+                    <button className="btn btn-secondary btn-sm" style={secondaryButtonStyle} onClick={() => setEditing(false)}>
                       취소
                     </button>
                   )}
+                </div>
+              </div>
+
+              <div style={titleAccentStyle} className="mb-4">
+                <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                  <div>
+                    <div className="small" style={{ color: "#64748b" }}>프로필 활용 안내</div>
+                    <div className="fw-semibold" style={{ color: "#1e3a8a" }}>
+                      정리된 건강 정보는 가이드, 상담, 복약 관리 화면에서 공통으로 활용됩니다.
+                    </div>
+                  </div>
+                  <div className="small" style={{ color: "#475569" }}>
+                    수면 · 운동 · 알레르기 · 기저질환 · 복용약
+                  </div>
                 </div>
               </div>
 
@@ -360,6 +427,7 @@ function HealthProfile() {
                       <button
                         type="button"
                         className="btn btn-outline-primary w-100"
+                        style={secondaryButtonStyle}
                         onClick={() => {
                           loadLinks();
                           loadProfile();
@@ -380,7 +448,7 @@ function HealthProfile() {
               )}
 
               {loginRole === "CAREGIVER" && (isCaregiverOwnProfile || selectedLink) && (
-                <div className="border rounded p-3 mb-4 bg-light-subtle">
+                <div className="border rounded p-3 mb-4" style={softPanelStyle}>
                   <div className="d-flex flex-wrap justify-content-between align-items-start gap-3">
                     <div>
                       <div className="text-muted small">{isCaregiverOwnProfile ? "현재 선택된 프로필" : "현재 선택된 복약자"}</div>
@@ -400,7 +468,7 @@ function HealthProfile() {
                     </div>
                     <div className="d-flex flex-wrap gap-2">
                       {!isCaregiverOwnProfile && (
-                        <button type="button" className="btn btn-outline-secondary btn-sm" onClick={goToCaregiverManagement}>
+                        <button type="button" className="btn btn-outline-secondary btn-sm" style={secondaryButtonStyle} onClick={goToCaregiverManagement}>
                           보호자 관리
                         </button>
                       )}
@@ -408,6 +476,7 @@ function HealthProfile() {
                         <button
                           type="button"
                           className="btn btn-outline-primary btn-sm"
+                          style={secondaryButtonStyle}
                           onClick={goToSelectedPatientDocuments}
                           disabled={!selectedLink?.patient_id}
                         >
@@ -444,7 +513,7 @@ function HealthProfile() {
                     </div>
                   )}
                   {(loginRole !== "CAREGIVER" || selectedLinkId) && (
-                    <button className="btn btn-primary" onClick={() => setEditing(true)}>
+                    <button className="btn btn-primary" style={primaryButtonStyle} onClick={() => setEditing(true)}>
                       건강 프로필 등록
                     </button>
                   )}
@@ -614,7 +683,7 @@ function HealthProfile() {
                   </div>
 
                   <div className="d-grid gap-2 mt-4">
-                    <button type="submit" className="btn btn-primary" disabled={saving}>
+                    <button type="submit" className="btn btn-primary" style={primaryButtonStyle} disabled={saving}>
                       {saving ? "저장 중..." : profile ? "수정 완료" : "등록"}
                     </button>
                   </div>
@@ -622,7 +691,7 @@ function HealthProfile() {
               ) : (
                 <div className="row g-3">
                   <div className="col-md-6">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">기본 정보</div>
                       <div className="fw-semibold">
                         {profile.birth_year || "—"} / {profile.sex || "—"}
@@ -633,7 +702,7 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-md-6">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">입원 여부</div>
                       <div className="fw-semibold">
                         {profile.is_hospitalized === null
@@ -646,19 +715,19 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-md-6">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">키</div>
                       <div className="fw-semibold">{profile.height_cm ? `${profile.height_cm} cm` : "—"}</div>
                     </div>
                   </div>
                   <div className="col-md-6">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">몸무게</div>
                       <div className="fw-semibold">{profile.weight_kg ? `${profile.weight_kg} kg` : "—"}</div>
                     </div>
                   </div>
                   <div className="col-md-6">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">BMI</div>
                       <div className="fw-semibold">{profile.bmi ? profile.bmi.toFixed(1) : "—"}</div>
                       {profile.bmi_status && <div className="small text-muted">{profile.bmi_status}</div>}
@@ -666,7 +735,7 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-md-6">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">흡연 여부</div>
                       <div className="fw-semibold">
                         {profile.is_smoker === null ? "—" : profile.is_smoker ? "흡연" : "비흡연"}
@@ -674,7 +743,7 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-md-4">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">평균 수면 시간</div>
                       <div className="fw-semibold">
                         {profile.avg_sleep_hours_per_day ? `${profile.avg_sleep_hours_per_day}시간` : "—"}
@@ -682,7 +751,7 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-md-4">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">주간 흡연량</div>
                       <div className="fw-semibold">
                         {profile.avg_cig_packs_per_week !== null && profile.avg_cig_packs_per_week !== undefined
@@ -692,7 +761,7 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-md-4">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">주간 음주량</div>
                       <div className="fw-semibold">
                         {profile.avg_alcohol_bottles_per_week !== null && profile.avg_alcohol_bottles_per_week !== undefined
@@ -702,7 +771,7 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-md-6">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">하루 평균 운동 시간</div>
                       <div className="fw-semibold">
                         {profile.avg_exercise_minutes_per_day ? `${profile.avg_exercise_minutes_per_day}분` : "—"}
@@ -710,7 +779,7 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-md-6">
-                    <div className="border rounded p-3 h-100">
+                    <div className="border rounded p-3 h-100" style={metricPanelStyle}>
                       <div className="text-muted small">알레르기</div>
                       <div className="fw-semibold">
                         {profile.allergies?.length > 0 ? profile.allergies.join(", ") : "—"}
@@ -718,7 +787,7 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-12">
-                    <div className="border rounded p-3">
+                    <div className="border rounded p-3" style={metricPanelStyle}>
                       <div className="text-muted small">기저 질환</div>
                       <div className="fw-semibold">
                         {profile.conditions?.length > 0 ? profile.conditions.join(", ") : "—"}
@@ -726,14 +795,14 @@ function HealthProfile() {
                     </div>
                   </div>
                   <div className="col-12">
-                    <div className="border rounded p-3">
+                    <div className="border rounded p-3" style={metricPanelStyle}>
                       <div className="text-muted small">복용 중인 약</div>
                       <div className="fw-semibold">{profile.meds?.length > 0 ? profile.meds.join(", ") : "—"}</div>
                     </div>
                   </div>
                   {profile.notes && (
                     <div className="col-12">
-                      <div className="border rounded p-3">
+                      <div className="border rounded p-3" style={metricPanelStyle}>
                         <div className="text-muted small">메모</div>
                         <div className="fw-semibold">{profile.notes}</div>
                       </div>
