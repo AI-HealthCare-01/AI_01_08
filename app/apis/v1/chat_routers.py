@@ -35,13 +35,21 @@ def _raise_service_error(exc: ChatServiceError) -> NoReturn:
 # 환자 접근 권한 검사
 async def _assert_can_access_patient(*, requester: User, patient_id: int) -> None:
     role = await _resolve_requester_role(int(requester.id))
+    patient = await Patient.get_or_none(id=patient_id)
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "PATIENT_NOT_FOUND",
+                "message": "환자 정보를 찾을 수 없습니다.",
+            },
+        )
 
     if role == RequesterRole.ADMIN:
         return
 
     if role == RequesterRole.PATIENT:
-        exists = await Patient.filter(id=patient_id, user_id=int(requester.id)).exists()
-        if not exists:
+        if patient.user_id != int(requester.id) and patient.owner_user_id != int(requester.id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={
@@ -52,6 +60,8 @@ async def _assert_can_access_patient(*, requester: User, patient_id: int) -> Non
         return
 
     if role == RequesterRole.CAREGIVER:
+        if patient.user_id == int(requester.id) or patient.owner_user_id == int(requester.id):
+            return
         linked = await CaregiverPatientLink.filter(
             caregiver_user_id=int(requester.id),
             patient_id=patient_id,
