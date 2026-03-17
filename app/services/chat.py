@@ -28,7 +28,6 @@ from app.models.schedules import MedSchedule, MedScheduleTime
 from app.models.users import User
 from app.services.kids_client import KIDSClient
 from app.services.mfds import MfdsService
-from app.services.role_utils import user_has_role
 from app.services.rag import (
     build_rag_context,
     extract_external_blocks,
@@ -37,6 +36,7 @@ from app.services.rag import (
     extract_profile_blocks,
     extract_schedule_blocks,
 )
+from app.services.role_utils import user_has_role
 
 logger = logging.getLogger(__name__)
 
