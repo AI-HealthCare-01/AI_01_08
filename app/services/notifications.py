@@ -91,6 +91,7 @@ class NotificationService:
         cursor: int | None = None,
         limit: int = 20,
         unread_only: bool = False,
+        patient_id: int | None = None,
     ) -> tuple[list[Notification], int | None]:
         """
         GET /notifications
@@ -101,6 +102,10 @@ class NotificationService:
         limit = max(1, min(limit, 100))
 
         qs = Notification.filter(user_id=user_id)
+
+        if patient_id is not None:
+            await self._ensure_user_can_access_patient(user_id=user_id, patient_id=patient_id)
+            qs = qs.filter(patient_id=patient_id)
 
         if unread_only:
             qs = qs.filter(read_at__isnull=True)
@@ -141,22 +146,30 @@ class NotificationService:
     # -------------------------------------------------------------------------
     # 3) 전체 읽음 처리
     # -------------------------------------------------------------------------
-    async def mark_all_read(self, user_id: int) -> int:
+    async def mark_all_read(self, user_id: int, patient_id: int | None = None) -> int:
         """
         PATCH /notifications/read-all
         - 내 알림 중 unread(read_at is null)만 한번에 update
         - 반환값은 업데이트된 row count
         """
-        return await Notification.filter(user_id=user_id, read_at__isnull=True).update(read_at=now_utc_naive())
+        qs = Notification.filter(user_id=user_id, read_at__isnull=True)
+        if patient_id is not None:
+            await self._ensure_user_can_access_patient(user_id=user_id, patient_id=patient_id)
+            qs = qs.filter(patient_id=patient_id)
+        return await qs.update(read_at=now_utc_naive())
 
     # -------------------------------------------------------------------------
     # 4) 미읽음 개수
     # -------------------------------------------------------------------------
-    async def unread_count(self, user_id: int) -> int:
+    async def unread_count(self, user_id: int, patient_id: int | None = None) -> int:
         """
         GET /notifications/unread-count
         """
-        return await Notification.filter(user_id=user_id, read_at__isnull=True).count()
+        qs = Notification.filter(user_id=user_id, read_at__isnull=True)
+        if patient_id is not None:
+            await self._ensure_user_can_access_patient(user_id=user_id, patient_id=patient_id)
+            qs = qs.filter(patient_id=patient_id)
+        return await qs.count()
 
     # -------------------------------------------------------------------------
     # 5) 설정 조회/수정
@@ -294,4 +307,23 @@ class NotificationService:
                 detail="Caregiver cannot access this patient.",
             )
 
+        return patient
+
+    async def _ensure_user_can_access_patient(self, *, user_id: int, patient_id: int) -> Patient:
+        patient = await Patient.get_or_none(id=patient_id)
+        if patient is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found.")
+
+        if getattr(patient, "user_id", None) == user_id or getattr(patient, "owner_user_id", None) == user_id:
+            return patient
+
+        caregiver_patient_link_model = _resolve_caregiver_patient_link_model()
+        link = await caregiver_patient_link_model.get_or_none(
+            caregiver_user_id=user_id,
+            patient_id=patient_id,
+            status="active",
+            revoked_at=None,
+        )
+        if link is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
         return patient

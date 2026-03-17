@@ -444,6 +444,10 @@ function App() {
   const hasPatientMode = Boolean(ownedPatientProfile?.id);
   const hasCaregiverMode = isCaregiverRole || linksState.data?.role === "CAREGIVER";
   const hasAdminMode = normalizedLoginMode === "ADMIN";
+  const layoutUserName =
+    normalizedLoginMode === "PATIENT"
+      ? myPatient?.name || meState.data?.name
+      : meState.data?.name;
   const modeOptions = useMemo(() => {
     const options = [];
     if (hasPatientMode) {
@@ -463,12 +467,24 @@ function App() {
   const handleModeChange = (nextMode) => {
     if (!nextMode) return;
     if (nextMode === normalizedLoginMode) return;
-    persistLoginRole(nextMode);
-    if (nextMode === "ADMIN") {
-      window.location.href = "/auth-demo/app/dashboard";
-      return;
+
+    if (typeof window !== "undefined") {
+      const currentPath = window.location.pathname;
+      let nextPath = currentPath;
+
+      if (nextMode === "ADMIN") {
+        nextPath = "/auth-demo/app/dashboard";
+      } else if (currentPath.startsWith("/auth-demo/app/dashboard") || currentPath.startsWith("/auth-demo/dashboard")) {
+        nextPath = "/auth-demo/app";
+      }
+
+      if (nextPath !== currentPath) {
+        window.history.replaceState({}, "", nextPath);
+      }
     }
-    window.location.href = "/auth-demo/app";
+
+    setHomePatientId("");
+    persistLoginRole(nextMode);
   };
   const [homePatientId, setHomePatientId] = useState("");
 
@@ -1543,6 +1559,8 @@ function App() {
         modeOptions={modeOptions}
         currentMode={normalizedLoginMode}
         onModeChange={handleModeChange}
+        selfPatient={ownedPatientProfile}
+        userName={meState.data?.name}
       />
     );
   }
@@ -1565,7 +1583,9 @@ function App() {
       <DocumentManagement
         linkedPatients={linkedPatients}
         myPatient={myPatient}
+        selfPatient={ownedPatientProfile}
         loginRole={loginRole}
+        userName={meState.data?.name}
         modeOptions={modeOptions}
         currentMode={normalizedLoginMode}
         onModeChange={handleModeChange}
@@ -1592,8 +1612,10 @@ function App() {
       <NotificationPage
         linkedPatients={linkedPatients}
         myPatient={myPatient}
+        selfPatient={ownedPatientProfile}
         loginRole={loginRole}
         me={meState.data}
+        userName={meState.data?.name}
         modeOptions={modeOptions}
         currentMode={normalizedLoginMode}
         onModeChange={handleModeChange}
@@ -1617,6 +1639,7 @@ function App() {
     }
     return (
       <AiPage
+        userName={meState.data?.name}
         modeOptions={modeOptions}
         currentMode={normalizedLoginMode}
         onModeChange={handleModeChange}
@@ -1640,6 +1663,7 @@ function App() {
     }
     return (
       <DrugSearchPage
+        userName={meState.data?.name}
         modeOptions={modeOptions}
         currentMode={normalizedLoginMode}
         onModeChange={handleModeChange}
@@ -1668,6 +1692,7 @@ function App() {
         myPatient={myPatient}
         loginRole={loginRole}
         me={meState.data}
+        userName={meState.data?.name}
         modeOptions={modeOptions}
         currentMode={normalizedLoginMode}
         onModeChange={handleModeChange}
@@ -1695,6 +1720,7 @@ function App() {
         linkedPatients={linkedPatients}
         myPatient={myPatient}
         loginRole={loginRole}
+        userName={meState.data?.name}
         modeOptions={modeOptions}
         currentMode={normalizedLoginMode}
         onModeChange={handleModeChange}
@@ -1721,6 +1747,8 @@ function App() {
         modeOptions={modeOptions}
         currentMode={normalizedLoginMode}
         onModeChange={handleModeChange}
+        selfPatient={ownedPatientProfile}
+        userName={meState.data?.name}
       />
     );
   }
@@ -1732,7 +1760,7 @@ function App() {
         title="개인정보"
         description="계정 정보와 보안 설정을 관리하세요."
         loginRole={loginRole}
-        userName={meState.data?.name}
+        userName={layoutUserName}
         modeOptions={modeOptions}
         currentMode={normalizedLoginMode}
         onModeChange={handleModeChange}
@@ -2010,7 +2038,7 @@ function App() {
       title={homeTitle}
       description={homeDescription}
       loginRole={loginRole}
-      userName={meState.data?.name}
+      userName={layoutUserName}
       modeOptions={modeOptions}
       currentMode={normalizedLoginMode}
       onModeChange={handleModeChange}

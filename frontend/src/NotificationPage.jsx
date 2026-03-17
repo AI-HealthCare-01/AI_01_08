@@ -35,13 +35,16 @@ const REMIND_TEMPLATE = {
 const NotificationPage = ({
   linkedPatients = [],
   myPatient = null,
+  selfPatient = null,
   loginRole = "PATIENT",
   me = null,
+  userName = "사용자",
   modeOptions = [],
   currentMode = "PATIENT",
   onModeChange,
 }) => {
-  const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
+  const effectiveMode = currentMode || loginRole;
+  const isCaregiver = effectiveMode === "CAREGIVER" || effectiveMode === "GUARDIAN";
 
   const patientsSource = useMemo(() => {
     if (isCaregiver) {
@@ -133,6 +136,15 @@ const NotificationPage = ({
   };
 
   const loadNotifications = async (cursor = null, append = false) => {
+    if (!isCaregiver && !myPatient?.id) {
+      setNotifications([]);
+      setNextCursor(null);
+      setError(null);
+      setLoading(false);
+      setActionLoading(false);
+      return;
+    }
+
     if (!append) {
       setLoading(true);
     } else {
@@ -147,6 +159,9 @@ const NotificationPage = ({
       if (cursor) {
         params.set("cursor", String(cursor));
       }
+      if (!isCaregiver && myPatient?.id) {
+        params.set("patient_id", String(myPatient.id));
+      }
 
       const res = await authFetch(`${API_PREFIX}/notifications?${params.toString()}`);
       if (!res.ok) {
@@ -157,10 +172,17 @@ const NotificationPage = ({
       const body = await safeJson(res);
       const data = body?.data || body || {};
       const items = data?.items || [];
+      const visibleItems =
+        isCaregiver && selfPatient?.id
+          ? items.filter((item) => {
+              const payloadPatientId = item?.payload?.patient_id ?? item?.payload_json?.patient_id ?? item?.patient_id;
+              return String(payloadPatientId || "") !== String(selfPatient.id);
+            })
+          : items;
       const cursorValue = data?.next_cursor ?? null;
 
       setNotifications((prev) => {
-        const merged = append ? [...prev, ...items] : items;
+        const merged = append ? [...prev, ...visibleItems] : visibleItems;
         return merged.slice(-MAX_NOTIFICATION_CACHE);
       });
       setNextCursor(cursorValue);
@@ -173,8 +195,19 @@ const NotificationPage = ({
   };
 
   const loadUnreadCount = async () => {
+    if (!isCaregiver && !myPatient?.id) {
+      setUnreadCount(0);
+      return;
+    }
+
     try {
-      const res = await authFetch(`${API_PREFIX}/notifications/unread-count`);
+      const params = new URLSearchParams();
+      if (!isCaregiver && myPatient?.id) {
+        params.set("patient_id", String(myPatient.id));
+      }
+      const res = await authFetch(
+        `${API_PREFIX}/notifications/unread-count${params.toString() ? `?${params.toString()}` : ""}`
+      );
       if (!res.ok) return;
 
       const body = await safeJson(res);
@@ -207,7 +240,7 @@ const NotificationPage = ({
 
   useEffect(() => {
     loadAll();
-  }, []);
+  }, [isCaregiver, myPatient?.id, selfPatient?.id]);
 
   useEffect(() => {
     if (!isCaregiver || typeof window === "undefined") return;
@@ -260,7 +293,12 @@ const NotificationPage = ({
     const payloadPatientName = payload?.patient_name;
 
     if (payloadPatientName) return payloadPatientName;
-    if (payloadPatientId) return getPatientName(payloadPatientId) || `복약자 ${payloadPatientId}`;
+    if (payloadPatientId) {
+      if (!isCaregiver && myPatient?.id && Number(payloadPatientId) === Number(myPatient.id) && myPatient?.name) {
+        return myPatient.name;
+      }
+      return getPatientName(payloadPatientId) || `복약자 ${payloadPatientId}`;
+    }
     if (!isCaregiver && myPatient?.name) return myPatient.name;
 
     return null;
@@ -327,7 +365,11 @@ const NotificationPage = ({
   const markAllRead = async () => {
     setActionLoading(true);
     try {
-      const res = await authFetch(`${API_PREFIX}/notifications/read-all`, {
+      const params = new URLSearchParams();
+      if (!isCaregiver && myPatient?.id) {
+        params.set("patient_id", String(myPatient.id));
+      }
+      const res = await authFetch(`${API_PREFIX}/notifications/read-all${params.toString() ? `?${params.toString()}` : ""}`, {
         method: "PATCH",
       });
 
@@ -504,7 +546,7 @@ const NotificationPage = ({
       title="알림센터"
       description={isCaregiver ? "연동 복약자 기준 알림과 리마인드를 관리합니다." : "복약 알림을 한 화면에서 확인합니다."}
       loginRole={loginRole}
-      userName={me?.name}
+      userName={userName}
       modeOptions={modeOptions}
       currentMode={currentMode}
       onModeChange={onModeChange}

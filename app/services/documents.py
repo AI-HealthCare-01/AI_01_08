@@ -660,13 +660,12 @@ class DocumentService:
 
     # 대상 PATIENT 귀속 검증 - REQ-USER-008, REQ-DOC-003
     async def _resolve_target_patient_for_upload(self, user: User, patient_id: int | None) -> Patient:
-        is_patient = await user_has_role(user.id, "PATIENT")
         is_caregiver = await user_has_role(user.id, "CAREGIVER", "GUARDIAN")
 
         own_patient = await Patient.get_or_none(user_id=user.id)
 
         if patient_id is None:
-            if is_patient and own_patient:
+            if own_patient:
                 return own_patient
             if is_caregiver:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_INPUT")
@@ -676,7 +675,7 @@ class DocumentService:
         if not target_patient:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
 
-        if is_patient and own_patient and own_patient.id == patient_id:
+        if own_patient and own_patient.id == patient_id:
             return target_patient
 
         if is_caregiver and await self._is_active_link(caregiver_user_id=user.id, patient_id=patient_id):
@@ -686,10 +685,9 @@ class DocumentService:
 
     # 문서 조회 대상 환자 범위 계산 - REQ-DOC-002
     async def _resolve_accessible_patient_ids(self, user: User, requested_patient_id: int | None) -> list[int]:
-        is_patient = await user_has_role(user.id, "PATIENT")
         is_caregiver = await user_has_role(user.id, "CAREGIVER", "GUARDIAN")
 
-        own_patient = await Patient.get_or_none(user_id=user.id) if is_patient else None
+        own_patient = await Patient.get_or_none(user_id=user.id)
         own_patient_id = own_patient.id if own_patient else None
 
         linked_patient_ids: list[int] = []

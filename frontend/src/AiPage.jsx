@@ -363,6 +363,7 @@ function AiPage({
   modeOptions = [],
   currentMode = "PATIENT",
   onModeChange,
+  userName = "사용자",
 }) {
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const requestedPatientId = searchParams.get("patient_id");
@@ -404,6 +405,7 @@ function AiPage({
   const [selectedPatientId, setSelectedPatientId] = useState(requestedPatientId || "");
   const [selectedGuideId, setSelectedGuideId] = useState("");
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const effectiveMode = currentMode || loginRole;
 
   const chatContainerRef = useRef(null);
   const patientOptions = (linksState.data?.links || []).map((link) => ({
@@ -459,7 +461,7 @@ function AiPage({
   };
 
   const selectedLink = (linksState.data?.links || []).find((link) => String(link.patient_id) === String(selectedPatientId)) || null;
-  const isCaregiver = loginRole === "CAREGIVER";
+  const isCaregiver = effectiveMode === "CAREGIVER" || effectiveMode === "GUARDIAN";
   const activePatientLabel = isCaregiver
     ? selectedLink?.patient_name || (selectedPatientId ? `환자 #${selectedPatientId}` : "복약자 선택")
     : meState.data?.name || "내 프로필";
@@ -485,6 +487,28 @@ function AiPage({
     setLoginRole(localStorage.getItem("login_role") || "PATIENT");
   }, []);
 
+  useEffect(() => {
+    setSelectedGuideId("");
+    setSelectedDocumentId("");
+    setGuideActionState({ submitting: false, error: null, success: null });
+    setChatState((prev) => ({
+      ...prev,
+      sessionId: null,
+      messages: [],
+      error: null,
+    }));
+
+    if (!isCaregiver) {
+      setSelectedPatientId(meState.data?.patient_id ? String(meState.data.patient_id) : "");
+      return;
+    }
+
+    const links = linksState.data?.links || [];
+    const requestedMatch = links.find((link) => String(link.patient_id) === String(requestedPatientId));
+    const firstLink = requestedMatch || links[0];
+    setSelectedPatientId(firstLink?.patient_id ? String(firstLink.patient_id) : "");
+  }, [isCaregiver, linksState.data, meState.data?.patient_id, requestedPatientId]);
+
   const loadMe = async () => {
     setMeState({ loading: true, data: null, error: null });
     try {
@@ -498,21 +522,16 @@ function AiPage({
   };
 
   const loadLinks = async () => {
-    if (!isCaregiver) return;
+    if (!isCaregiver) {
+      setLinksState({ loading: false, data: null, error: null });
+      return;
+    }
     setLinksState({ loading: true, data: null, error: null });
     try {
       const res = await authFetch(`${API_PREFIX}/users/links`);
       if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
       const data = await res.json();
       setLinksState({ loading: false, data, error: null });
-
-      if (!selectedPatientId) {
-        const requestedMatch = data?.links?.find((link) => String(link.patient_id) === String(requestedPatientId));
-        const firstLink = requestedMatch || data?.links?.[0];
-        if (firstLink?.patient_id) {
-          setSelectedPatientId(String(firstLink.patient_id));
-        }
-      }
     } catch (error) {
       setLinksState({ loading: false, data: null, error: error?.message || String(error) });
     }
@@ -533,7 +552,9 @@ function AiPage({
       if (res.ok) {
         const body = await res.json();
         setProfileState({ loading: false, data: body?.data || null, error: null, missing: false });
-        if (!selectedPatientId && body?.data?.patient_id) {
+        if (!isCaregiver && body?.data?.patient_id) {
+          setSelectedPatientId(String(body.data.patient_id));
+        } else if (!selectedPatientId && body?.data?.patient_id) {
           setSelectedPatientId(String(body.data.patient_id));
         }
       } else if (res.status === 404) {
@@ -547,8 +568,9 @@ function AiPage({
   };
 
   const loadDocuments = async () => {
-    if (isCaregiver && !selectedPatientId) {
+    if (!selectedPatientId) {
       setDocumentsState({ loading: false, data: [], error: null });
+      setSelectedDocumentId("");
       return;
     }
 
@@ -569,10 +591,6 @@ function AiPage({
         setSelectedDocumentId(String(items[0].document_id));
       } else if (selectedDocumentId && !items.some((item) => String(item.document_id) === String(selectedDocumentId))) {
         setSelectedDocumentId(items[0] ? String(items[0].document_id) : "");
-      }
-
-      if (!selectedPatientId && items[0]?.patient_id) {
-        setSelectedPatientId(String(items[0].patient_id));
       }
     } catch (error) {
       setDocumentsState({ loading: false, data: [], error: error?.message || String(error) });
@@ -684,7 +702,7 @@ function AiPage({
       return chatState.sessionId;
     }
 
-    const storageKey = getChatStorageKey(loginRole, selectedPatientId);
+    const storageKey = getChatStorageKey(effectiveMode, selectedPatientId);
     const savedSessionId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
     if (savedSessionId) {
       try {
@@ -819,8 +837,10 @@ function AiPage({
     loadMe();
     if (isCaregiver) {
       loadLinks();
+    } else {
+      setLinksState({ loading: false, data: null, error: null });
     }
-  }, [accessToken, loginRole]);
+  }, [accessToken, isCaregiver]);
 
   useEffect(() => {
     if (isCaregiver) {
@@ -829,7 +849,7 @@ function AiPage({
     } else {
       loadProfile();
     }
-  }, [loginRole, selectedPatientId, linksState.data]);
+  }, [isCaregiver, selectedPatientId, linksState.data]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -849,14 +869,14 @@ function AiPage({
     if (!chatState.open) return;
     if (!selectedPatientId) return;
 
-    const storageKey = getChatStorageKey(loginRole, selectedPatientId);
+    const storageKey = getChatStorageKey(effectiveMode, selectedPatientId);
     const savedSessionId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
     if (savedSessionId) {
       loadChatMessages(savedSessionId);
     } else {
       setChatState((prev) => ({ ...prev, sessionId: null, messages: [] }));
     }
-  }, [chatState.open, selectedPatientId]);
+  }, [chatState.open, selectedPatientId, effectiveMode]);
 
   useEffect(() => {
     const currentStatus = guideDetailState.data?.status || selectedGuide?.status;
@@ -886,7 +906,7 @@ function AiPage({
         title="AI 가이드"
         description="복약 문서와 건강 정보를 바탕으로 맞춤 가이드를 확인하고 AI 상담을 이어갈 수 있습니다."
         loginRole={loginRole}
-        userName={meState.data?.name || "사용자"}
+        userName={userName}
         modeOptions={modeOptions}
         currentMode={currentMode}
         onModeChange={onModeChange}

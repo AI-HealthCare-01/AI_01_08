@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, status
+from fastapi import APIRouter, Depends, Path, Query, status
 from fastapi.responses import ORJSONResponse as Response
 
 from app.dependencies.security import get_request_user
@@ -65,8 +65,9 @@ async def link_by_invite_code(
 async def get_links(
     user: Annotated[User, Depends(get_request_user)],
     invitation_service: Annotated[InvitationService, Depends(InvitationService)],
+    mode: Annotated[str | None, Query()] = None,
 ) -> Response:
-    role, links = await invitation_service.get_links(user=user)
+    role, links = await invitation_service.get_links(user=user, mode=mode)
     response_items = []
 
     for link in links:
