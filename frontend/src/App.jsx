@@ -9,6 +9,7 @@ import SettingsPage from "./SettingsPage.jsx";
 import NotificationPage from "./NotificationPage.jsx";
 import DrugSearchPage from "./DrugSearchPage.jsx";
 import MedicationCheckPage from "./MedicationCheckPage.jsx";
+import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -223,7 +224,7 @@ function App() {
     return pathname.startsWith("/auth-demo/drug-search") || pathname.startsWith("/auth-demo/app/drug-search");
   }, [pathname]);
   const isMedicationCheckPage = useMemo(() => {
-    return (pathname.startsWith("/auth-demo/medication-check") || pathname.startsWith("/auth-demo/app/medication-check"));
+    return pathname.startsWith("/auth-demo/medication-check") || pathname.startsWith("/auth-demo/app/medication-check");
   }, [pathname]);
   const isSchedulePage = useMemo(() => {
     return pathname.startsWith("/auth-demo/schedule") || pathname.startsWith("/auth-demo/app/schedule");
@@ -417,22 +418,71 @@ function App() {
 
       uniqueMap.set(Number(link.patient_id), {
         id: Number(link.patient_id),
-        name: link.patient_name || `환자 ${link.patient_id}`,
+        name: link.patient_name || `복약자 ${link.patient_id}`,
       });
     });
 
     return Array.from(uniqueMap.values());
   }, [linksState.data]);
 
-  const myPatient = useMemo(() => {
-    if (loginRole !== "PATIENT") return null;
-    if (!meState.data?.patient_id) return null;
+  const normalizedLoginMode = loginRole === "GUARDIAN" ? "CAREGIVER" : loginRole;
 
+  const ownedPatientProfile = useMemo(() => {
+    if (!meState.data?.patient_id) return null;
     return {
       id: Number(meState.data.patient_id),
-      name: meState.data.name || `환자 ${meState.data.patient_id}`,
+      name: meState.data.name || `복약자 ${meState.data.patient_id}`,
     };
-  }, [loginRole, meState.data]);
+  }, [meState.data]);
+
+  const myPatient = useMemo(() => {
+    if (normalizedLoginMode !== "PATIENT") return null;
+    return ownedPatientProfile;
+  }, [normalizedLoginMode, ownedPatientProfile]);
+
+  const isCaregiverRole = normalizedLoginMode === "CAREGIVER";
+  const hasPatientMode = Boolean(ownedPatientProfile?.id);
+  const hasCaregiverMode = isCaregiverRole || linksState.data?.role === "CAREGIVER";
+  const hasAdminMode = normalizedLoginMode === "ADMIN";
+  const modeOptions = useMemo(() => {
+    const options = [];
+    if (hasPatientMode) {
+      options.push({ value: "PATIENT", label: "복약자모드" });
+    }
+    if (hasCaregiverMode) {
+      options.push({ value: "CAREGIVER", label: "보호자모드" });
+    }
+    if (hasAdminMode) {
+      options.push({ value: "ADMIN", label: "관리자모드" });
+    }
+    if (options.length === 0) {
+      options.push({ value: normalizedLoginMode || "PATIENT", label: `${normalizedLoginMode || "PATIENT"}모드` });
+    }
+    return options;
+  }, [hasAdminMode, hasCaregiverMode, hasPatientMode, normalizedLoginMode]);
+  const handleModeChange = (nextMode) => {
+    if (!nextMode) return;
+    if (nextMode === normalizedLoginMode) return;
+    persistLoginRole(nextMode);
+    if (nextMode === "ADMIN") {
+      window.location.href = "/auth-demo/app/dashboard";
+      return;
+    }
+    window.location.href = "/auth-demo/app";
+  };
+  const [homePatientId, setHomePatientId] = useState("");
+
+  useEffect(() => {
+    if (!isCaregiverRole) return;
+    if (homePatientId) return;
+    if (linkedPatients.length === 0) return;
+    setHomePatientId(String(linkedPatients[0].id));
+  }, [homePatientId, isCaregiverRole, linkedPatients]);
+
+  const activeHomePatient = useMemo(() => {
+    if (!isCaregiverRole) return myPatient;
+    return linkedPatients.find((patient) => String(patient.id) === String(homePatientId)) || linkedPatients[0] || null;
+  }, [homePatientId, isCaregiverRole, linkedPatients, myPatient]);
 
   const checkHealth = async () => {
     setHealthStatus({ loading: true, data: null, error: null });
@@ -482,7 +532,7 @@ function App() {
     const code = role.code || role.name || "";
     const normalized = code.toUpperCase();
     if (normalized === "PATIENT") {
-      return "환자";
+      return "복약자";
     }
     if (normalized === "CAREGIVER" || normalized === "GUARDIAN") {
       return "보호자";
@@ -973,7 +1023,7 @@ function App() {
     event.preventDefault();
     
     if (!remindForm.patient_id) {
-      setRemindState({ submitting: false, error: "환자를 선택해주세요.", success: null });
+      setRemindState({ submitting: false, error: "복약자를 선택해주세요.", success: null });
       return;
     }
     
@@ -1055,7 +1105,7 @@ function App() {
                             ))
                           ) : (
                             <>
-                              <option value="PATIENT">환자</option>
+                              <option value="PATIENT">복약자</option>
                               <option value="CAREGIVER">보호자</option>
                               <option value="ADMIN">관리자</option>
                             </>
@@ -1236,7 +1286,7 @@ function App() {
                         value={loginForm.role}
                         onChange={handleLoginChange}
                       >
-                        <option value="PATIENT">환자</option>
+                        <option value="PATIENT">복약자</option>
                         <option value="CAREGIVER">보호자</option>
                         <option value="GUARDIAN">보호자(보조)</option>
                       </select>
@@ -1465,7 +1515,13 @@ function App() {
       window.location.href = "/auth-demo/login";
       return null;
     }
-    return <AdminDashboard />;
+    return (
+      <AdminDashboard
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
+      />
+    );
   }
 
   if (isHealthProfilePage) {
@@ -1482,7 +1538,13 @@ function App() {
       window.location.href = "/auth-demo/login";
       return null;
     }
-    return <HealthProfile />;
+    return (
+      <HealthProfile
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
+      />
+    );
   }
 
   if (isDocumentsPage) {
@@ -1499,7 +1561,16 @@ function App() {
       window.location.href = "/auth-demo/login";
       return null;
     }
-    return <DocumentManagement />;
+    return (
+      <DocumentManagement
+        linkedPatients={linkedPatients}
+        myPatient={myPatient}
+        loginRole={loginRole}
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
+      />
+    );
   }
 
   if (isCaregiverPage) {
@@ -1523,6 +1594,9 @@ function App() {
         myPatient={myPatient}
         loginRole={loginRole}
         me={meState.data}
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
       />
     );
   }
@@ -1541,7 +1615,13 @@ function App() {
       window.location.href = "/auth-demo/login";
       return null;
     }
-    return <AiPage />;
+    return (
+      <AiPage
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
+      />
+    );
   }
 
   if (isDrugSearchPage) {
@@ -1558,8 +1638,15 @@ function App() {
       window.location.href = "/auth-demo/login";
       return null;
     }
-    return <DrugSearchPage />;
+    return (
+      <DrugSearchPage
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
+      />
+    );
   }
+
   if (isMedicationCheckPage) {
     if (!accessToken) {
       if (authChecking) {
@@ -1581,9 +1668,13 @@ function App() {
         myPatient={myPatient}
         loginRole={loginRole}
         me={meState.data}
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
       />
     );
   }
+
   if (isSchedulePage) {
     if (!accessToken) {
       if (authChecking) {
@@ -1604,6 +1695,9 @@ function App() {
         linkedPatients={linkedPatients}
         myPatient={myPatient}
         loginRole={loginRole}
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
       />
     );
   }
@@ -1622,37 +1716,28 @@ function App() {
       window.location.href = "/auth-demo/login";
       return null;
     }
-    return <SettingsPage />;
+    return (
+      <SettingsPage
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
+      />
+    );
   }
 
   if (isProfilePage) {
     return (
-      <div className="app-shell">
-        <header className="hero">
-          <div className="container py-5">
-            <nav className="navbar navbar-expand-lg">
-              <a className="navbar-brand fw-bold" href="/auth-demo/app" style={{ fontSize: '1.5rem' }}>
-                (주)케어브릿지
-              </a>
-              <div className="ms-auto d-flex gap-2">
-                <a className="btn btn-outline-light btn-sm" href="/auth-demo/app">
-                  대시보드
-                </a>
-                <button className="btn btn-light btn-sm text-primary" onClick={handleLogout}>
-                  로그아웃
-                </button>
-              </div>
-            </nav>
-            <div className="row align-items-center mt-4">
-              <div className="col-lg-8">
-                <h1 className="display-6 fw-bold">개인정보</h1>
-                <p className="lead mt-3">계정 정보와 보안 설정을 관리하세요.</p>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="container my-5">
+      <AppLayout
+        activeKey="settings"
+        title="개인정보"
+        description="계정 정보와 보안 설정을 관리하세요."
+        loginRole={loginRole}
+        userName={meState.data?.name}
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
+      >
+        <div className="container my-3">
           <div className="row g-4">
             <div className="col-lg-7">
               <div className="card border-0 shadow-sm">
@@ -1859,556 +1944,292 @@ function App() {
               </div>
             </div>
           </div>
-        </main>
-      </div>
+        </div>
+      </AppLayout>
     );
   }
 
+  if (normalizedLoginMode === "ADMIN") {
+    return (
+      <AdminDashboard
+        modeOptions={modeOptions}
+        currentMode={normalizedLoginMode}
+        onModeChange={handleModeChange}
+      />
+    );
+  }
+
+  const homeTitle = "홈";
+  const homeDescription = isCaregiverRole
+    ? "연결된 복약자의 복약 상태와 최근 안내를 확인하세요."
+    : "복약자 복약 현황과 문서 상태를 한눈에 확인하세요.";
+  const selectedHomePatientLabel = isCaregiverRole
+    ? activeHomePatient?.name || "복약자 선택 필요"
+    : meState.data?.name || "내 계정";
+  const heroTitle = isCaregiverRole ? "보호자 관리 홈" : "복약자 서비스 홈";
+  const heroSubtitle = isCaregiverRole
+    ? "오늘 확인이 필요한 관리 항목을 먼저 점검하세요."
+    : "지금 필요한 복약 관리 작업을 우선 확인해 주세요.";
+  const patientTodoCards = [
+    {
+      icon: "🗂",
+      title: "문서 점검",
+      desc: "최근 업로드 문서와 인식 상태를 확인하세요.",
+    },
+    {
+      icon: "🤖",
+      title: "가이드 확인",
+      desc: "최신 AI 복약 가이드를 확인하세요.",
+    },
+    {
+      icon: "💊",
+      title: "복약 체크",
+      desc: "오늘 복약 완료 여부를 확인하세요.",
+    },
+  ];
+  const patientQuickActions = [
+    { label: "처방전 업로드", href: "/auth-demo/app/documents", variant: "btn-primary" },
+    { label: "AI 가이드", href: "/auth-demo/app/ai", variant: "btn-outline-primary" },
+    { label: "알림센터", href: "/auth-demo/app/caregiver", variant: "btn-outline-secondary" },
+  ];
+  const caregiverPriorityCards = [
+    { icon: "💊", title: "오늘 복약 확인 필요", note: "복약 누락 여부 우선 확인", state: "우선 점검" },
+    { icon: "📄", title: "문서 검토 필요", note: "OCR/약 정보 검토", state: "확인 필요" },
+    { icon: "🤖", title: "가이드 확인 필요", note: "최신 안내 반영 여부 점검", state: "점검 예정" },
+  ];
+  const caregiverHomeSteps = [
+    "설정에서 복약자 연동 정보를 관리하세요.",
+    "현재 관리 대상을 먼저 선택하세요.",
+    "문서/가이드/알림 순서로 점검하세요.",
+    "복약 이슈가 있으면 즉시 리마인드하세요.",
+  ];
+
   return (
-    <div className="app-shell">
-      <header className="hero">
-        <div className="container py-5">
-          <nav className="navbar navbar-expand-lg">
-            <a className="navbar-brand fw-bold" href="#" style={{ fontSize: '1.5rem' }}>
-              (주)케어브릿지
-            </a>
-            <div className="ms-auto d-flex align-items-center gap-3">
-              {accessToken ? (
-                <>
-                  <div className="dropdown">
-                    <button className="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                      대시보드
-                    </button>
-                    <ul className="dropdown-menu dropdown-menu-end">
-                      <li><a className="dropdown-item" href="/auth-demo/app/dashboard">대시보드</a></li>
-                      <li><a className="dropdown-item" href="/auth-demo/app/health-profile">건강 프로필</a></li>
-                      <li><a className="dropdown-item" href="/auth-demo/app/documents">처방전 관리</a></li>
-                    </ul>
-                  </div>
-                  <div className="dropdown">
-                    <button className="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                      보호자 관리
-                    </button>
-                    <ul className="dropdown-menu dropdown-menu-end">
-                      <li><a className="dropdown-item" href="/auth-demo/app/caregiver">보호자 관리</a></li>
-                      <li><a className="dropdown-item" href="/auth-demo/app/ai">AI 상담</a></li>
-                      <li><a className="dropdown-item" href="/auth-demo/app/drug-search">약 검색</a></li>
-                    </ul>
-                  </div>
-                  <div className="dropdown">
-                    <button className="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                      건강 프로필
-                    </button>
-                    <ul className="dropdown-menu dropdown-menu-end">
-                      <li><a className="dropdown-item" href="/auth-demo/app/health-profile">건강 프로필</a></li>
-                      <li><a className="dropdown-item" href="/auth-demo/app/schedule">스케줄</a></li>
-                    </ul>
-                  </div>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/documents">처방전 관리</a>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/drug-search">약 검색</a>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/schedule">스케줄</a>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/settings">개인정보</a>
-                  <button className="btn btn-light btn-sm" onClick={handleLogout}>
-                    로그아웃
-                  </button>
-                </>
-              ) : (
-                <>
-                  <a className="btn btn-outline-light btn-sm" href="/auth-demo/login">
-                    로그인
-                  </a>
-                </>
-              )}
+    <AppLayout
+      activeKey="home"
+      title={homeTitle}
+      description={homeDescription}
+      loginRole={loginRole}
+      userName={meState.data?.name}
+      modeOptions={modeOptions}
+      currentMode={normalizedLoginMode}
+      onModeChange={handleModeChange}
+    >
+      <div className="home-hero-banner mb-4">
+        <div className="home-hero-brand">(주)케어브릿지</div>
+        <h1 className="home-hero-title">{heroTitle}</h1>
+        <p className="home-hero-subtitle mb-0">{heroSubtitle}</p>
+      </div>
+
+      {isCaregiverRole ? (
+        <div className="row g-4">
+          <div className="col-12">
+            <div className="home-priority-grid">
+              {caregiverPriorityCards.map((card) => (
+                <div className="home-priority-card" key={card.title}>
+                  <div className="home-priority-icon">{card.icon}</div>
+                  <div className="home-priority-title">{card.title}</div>
+                  <div className="home-priority-note">{card.note}</div>
+                  <div className="home-priority-state">{card.state}</div>
+                </div>
+              ))}
             </div>
-          </nav>
-          <div className="row align-items-center mt-4">
-            <div className="col-lg-7">
-              <h1 className="display-5 fw-bold">나와 내 가족을 지켜주는 AI기반 의료 워크플로우</h1>
-              <p className="lead mt-3">한 눈에 볼 수 있는 나의 의료서비스</p>
+          </div>
+
+          <div className="col-xl-8">
+            <div className="card home-info-card mb-3">
+              <div className="card-body">
+                <h6 className="card-title fw-semibold">📄 최근 문서 상태</h6>
+                <div className="home-action-grid">
+                  <div className="home-action-card">
+                    <div className="home-action-title">인식 대기 문서</div>
+                    <div className="home-action-desc">새 문서 업로드 후 OCR 완료 여부 확인</div>
+                  </div>
+                  <div className="home-action-card">
+                    <div className="home-action-title">약 정보 검토</div>
+                    <div className="home-action-desc">추출된 약 정보를 최종 확인</div>
+                  </div>
+                  <div className="home-action-card">
+                    <div className="home-action-title">가이드 반영</div>
+                    <div className="home-action-desc">문서 변경 시 최신 가이드 재확인</div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="col-lg-5 mt-4 mt-lg-0">
-              <div className="card shadow-lg border-0">
-                <div className="card-body">
-                  <h5 className="card-title">오늘의 시스템 상태</h5>
-                  <p className="text-muted">실시간 워크로드 모니터링</p>
-                  <div className="progress mb-3" role="progressbar" aria-valuenow="72" aria-valuemin="0" aria-valuemax="100">
-                    <div className="progress-bar" style={{ width: "72%" }}>
-                      72%
+
+            <div className="row g-3">
+              <div className="col-md-6">
+                <div className="card home-info-card">
+                  <div className="card-body">
+                    <h6 className="card-title fw-semibold">🏥 병원 일정</h6>
+                    <div className="home-kpi-list">
+                      <div className="home-kpi-item">
+                        <span className="home-kpi-label">이번 주 일정</span>
+                        <span className="home-kpi-value">확인 필요</span>
+                      </div>
+                      <div className="home-kpi-item">
+                        <span className="home-kpi-label">재진/검사 일정</span>
+                        <span className="home-kpi-value">놓치지 않기</span>
+                      </div>
                     </div>
                   </div>
-                  <ul className="list-group list-group-flush">
-                    <li className="list-group-item d-flex justify-content-between">
-                      <span>응답 지연</span>
-                      <span className="fw-semibold">120ms</span>
-                    </li>
-                    <li className="list-group-item d-flex justify-content-between">
-                      <span>활성 케이스</span>
-                      <span className="fw-semibold">38</span>
-                    </li>
-                    <li className="list-group-item d-flex justify-content-between">
-                      <span>자동 분류</span>
-                      <span className="fw-semibold">93%</span>
-                    </li>
-                  </ul>
+                </div>
+              </div>
+              <div className="col-md-6">
+                <div className="card home-info-card">
+                  <div className="card-body">
+                    <h6 className="card-title fw-semibold">🧭 보호자 이용 안내</h6>
+                    <div className="home-guide-list">
+                      {caregiverHomeSteps.map((step, index) => (
+                        <div key={step} className="home-guide-item">
+                          <span className="home-guide-index">{index + 1}</span>
+                          <span>{step}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </header>
 
-      <main className="container my-5">
-        <section id="profile" className="mb-5">
-          <div className="card border-0 shadow-sm">
-            <div className="card-body">
-              <div className="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3">
-                <div>
-                  <h4 className="fw-bold mb-1">개인정보</h4>
-                  <div className="text-muted">로그인 상태를 확인하고 계정 정보를 관리하세요.</div>
-                </div>
-                <div className="d-flex gap-2">
-                  <a className="btn btn-outline-primary btn-sm" href="/auth-demo/app/profile">
-                    정보 수정
-                  </a>
-                  <button className="btn btn-outline-secondary btn-sm">비밀번호 변경</button>
-                </div>
-              </div>
-              <div className="row g-3 mt-3">
-                <div className="col-md-4">
-                  <div className="border rounded-3 p-3 h-100">
-                    <div className="text-muted small">계정 상태</div>
-                    <div className="fw-semibold">활성</div>
-                  </div>
-                </div>
-                <div className="col-md-4">
-                  <div className="border rounded-3 p-3 h-100">
-                    <div className="text-muted small">역할</div>
-                    <div className="fw-semibold">{loginRole}</div>
-                  </div>
-                </div>
-                <div className="col-md-4">
-                  <div className="border rounded-3 p-3 h-100">
-                    <div className="text-muted small">로그인 방식</div>
-                    <div className="fw-semibold">이메일</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div className="row g-4 mb-4">
-          <div className="col-lg-6">
-            <div className="card h-100 border-0 shadow-sm">
+          <div className="col-xl-4">
+            <div className="card home-info-card mb-3">
               <div className="card-body">
-                <h5 className="card-title">API 연동 예제</h5>
-                <p className="text-muted mb-3">/api/health 엔드포인트 상태를 확인합니다.</p>
-                <div className="d-flex align-items-center gap-2">
-                  <button className="btn btn-primary" onClick={checkHealth} disabled={healthStatus.loading}>
-                    {healthStatus.loading ? "확인 중..." : "상태 확인"}
-                  </button>
-                  {healthStatus.data && (
-                    <span className="badge text-bg-success">
-                      {healthStatus.data.status} ({healthStatus.data.timestamp})
-                    </span>
-                  )}
-                  {healthStatus.error && <span className="badge text-bg-danger">{healthStatus.error}</span>}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="col-lg-6">
-            <div className="card h-100 border-0 shadow-sm">
-              <div className="card-body">
-                <h5 className="card-title">운영 지표</h5>
-                <p className="text-muted">팀 별 응답률과 처리 시간을 한눈에 확인하세요.</p>
-                <button className="btn btn-outline-primary btn-sm">리포트 다운로드</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="row g-4 mb-5">
-          <div className="col-lg-6">
-            <div className="card h-100 border-0 shadow-sm">
-              <div className="card-body">
-                <h5 className="card-title">초대 코드 관리</h5>
-                <p className="text-muted">환자 계정에서 보호자 초대 코드를 생성합니다.</p>
-                <div className="row g-2">
-                  <div className="col-md-6">
-                    <input
-                      type="number"
-                      min="1"
-                      className="form-control"
-                      value={inviteCodeForm.expires_in_minutes}
-                      onChange={(event) =>
-                        setInviteCodeForm({ expires_in_minutes: Number(event.target.value) || 1 })
-                      }
-                      placeholder="만료(분)"
-                    />
-                  </div>
-                  <div className="col-md-6 d-grid">
-                    <button className="btn btn-outline-primary" onClick={createInviteCode} disabled={inviteState.submitting}>
-                      {inviteState.submitting ? "생성 중..." : "초대 코드 생성"}
-                    </button>
-                  </div>
-                </div>
-                <div className="d-flex gap-2 mt-3">
-                  <button
-                    className="btn btn-outline-secondary btn-sm"
-                    onClick={deleteInviteCode}
-                    disabled={inviteDeleteState.submitting}
-                  >
-                    초대 코드 폐기
-                  </button>
-                </div>
-                {inviteState.data && (
-                  <div className="alert alert-success mt-3">
-                    코드: <strong>{inviteState.data.code}</strong>
-                    <br />
-                    만료: {formatDateTime(inviteState.data.expires_at)}
-                  </div>
-                )}
-                {inviteState.error && <div className="alert alert-danger mt-3">{inviteState.error}</div>}
-                {inviteDeleteState.error && <div className="alert alert-danger mt-3">{inviteDeleteState.error}</div>}
-                {inviteDeleteState.success && <div className="alert alert-success mt-3">삭제 완료</div>}
-              </div>
-            </div>
-          </div>
-          <div className="col-lg-6">
-            <div className="card h-100 border-0 shadow-sm">
-              <div className="card-body">
-                <h5 className="card-title">보호자 연동</h5>
-                <p className="text-muted">보호자 계정에서 초대 코드를 입력해 연동하세요.</p>
-                <form onSubmit={linkByInviteCode}>
-                  <div className="d-flex gap-2">
-                    <input
-                      className="form-control"
-                      value={linkForm.code}
-                      onChange={(event) => setLinkForm({ code: event.target.value })}
-                      placeholder="초대 코드 입력"
-                      required
-                    />
-                    <button className="btn btn-primary" type="submit" disabled={linkAction.submitting}>
-                      {linkAction.submitting ? "연동 중..." : "연동"}
-                    </button>
-                  </div>
-                </form>
-                {linkAction.error && <div className="alert alert-danger mt-3">{linkAction.error}</div>}
-                {linkAction.success && <div className="alert alert-success mt-3">{linkAction.success}</div>}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="card border-0 shadow-sm mb-5">
-          <div className="card-body">
-            <div className="d-flex flex-column flex-lg-row justify-content-between gap-3">
-              <div>
-                <h5 className="card-title">연동 목록</h5>
-                <p className="text-muted">환자-보호자 연동 상태를 확인하세요.</p>
-              </div>
-              <div className="d-flex gap-2">
-                <button
-                  className="btn btn-outline-primary btn-sm"
-                  onClick={async () => {
-                    setLinksState((prev) => ({ ...prev, loading: true, error: null }));
-                    try {
-                      const res = await authFetch(`${API_PREFIX}/users/links`);
-                      if (!res.ok) {
-                        const body = await safeJson(res);
-                        throw new Error(formatApiError(body) || `status ${res.status}`);
-                      }
-                      const data = await res.json();
-                      setLinksState({ loading: false, data, error: null });
-                    } catch (error) {
-                      setLinksState({ loading: false, data: null, error: error.message });
-                    }
-                  }}
-                  disabled={linksState.loading}
+                <h6 className="card-title fw-semibold">👤 현재 선택 복약자</h6>
+                <div className="fw-semibold">{selectedHomePatientLabel}</div>
+                <div className="home-info-note mt-1">연동 복약자 {linkedPatients.length}명</div>
+                <label className="form-label small mt-3 mb-1">관리 대상 선택</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={String(activeHomePatient?.id || "")}
+                  onChange={(event) => setHomePatientId(event.target.value)}
                 >
-                  {linksState.loading ? "갱신 중..." : "연동 목록 갱신"}
-                </button>
+                  {linkedPatients.length === 0 && <option value="">연동 복약자 없음</option>}
+                  {linkedPatients.map((patient) => (
+                    <option key={patient.id} value={String(patient.id)}>
+                      {patient.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-            {linksState.error && <div className="alert alert-danger mt-3">{linksState.error}</div>}
-            {linksState.data && linksState.data.links?.length > 0 ? (
-              <div className="table-responsive mt-3">
-                <table className="table table-sm align-middle">
-                  <thead>
-                    <tr>
-                      <th>환자</th>
-                      <th>보호자</th>
-                      <th>상태</th>
-                      <th>연동일</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {linksState.data.links.map((link) => (
-                      <tr key={link.link_id}>
-                        <td>{link.patient_name || link.patient_user_id || link.patient_id}</td>
-                        <td>{link.caregiver_name || link.caregiver_user_id}</td>
-                        <td>{link.status}</td>
-                        <td>{formatDateTime(link.linked_at)}</td>
-                        <td>
-                          <button
-                            className="btn btn-outline-danger btn-sm"
-                            onClick={() => unlinkPatient(link.link_id)}
-                            disabled={linkAction.submitting}
-                          >
-                            연동 해제
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-muted mt-3">연동된 사용자가 없습니다.</div>
-            )}
-          </div>
-        </div>
 
-        <div className="row g-4 mb-5">
-          <div className="col-lg-7">
-            <div className="card h-100 border-0 shadow-sm">
+            <div className="card home-info-card mb-3">
               <div className="card-body">
-                <div className="d-flex flex-column flex-lg-row justify-content-between gap-3">
-                  <div>
-                    <h5 className="card-title">알림 센터</h5>
-                    <p className="text-muted">최근 알림과 읽음 상태를 관리하세요.</p>
+                <h6 className="card-title fw-semibold">🔔 알림/리마인드</h6>
+                <div className="home-kpi-list">
+                  <div className="home-kpi-item">
+                    <span className="home-kpi-label">복약 리마인드</span>
+                    <span className="home-kpi-value">즉시 발송 가능</span>
                   </div>
-                  <div className="d-flex gap-2">
-                    <button
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={markAllNotificationsRead}
-                      disabled={notificationsAction.submitting}
-                    >
-                      모두 읽음 처리
-                    </button>
+                  <div className="home-kpi-item">
+                    <span className="home-kpi-label">누락 알림 점검</span>
+                    <span className="home-kpi-value">알림센터 확인</span>
                   </div>
                 </div>
-                {notificationsState.error && <div className="alert alert-danger mt-3">{notificationsState.error}</div>}
-                <div className="list-group mt-3">
-                  {notificationsState.items.length === 0 && (
-                    <div className="text-muted">알림이 없습니다.</div>
-                  )}
-                  {notificationsState.items.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`list-group-item d-flex justify-content-between align-items-start ${
-                        item.read_at ? "" : "list-group-item-warning"
-                      }`}
-                    >
-                      <div>
-                        <div className="fw-semibold">{item.title || item.type}</div>
-                        <div className="text-muted small">{item.body}</div>
-                        <div className="text-muted small">{formatDateTime(item.created_at)}</div>
+                <div className="home-link-stack mt-3">
+                  <a className="btn btn-primary btn-sm" href="/auth-demo/app/caregiver">알림센터 열기</a>
+                  <a className="btn btn-outline-secondary btn-sm" href="/auth-demo/app/settings">설정에서 연동 관리</a>
+                </div>
+              </div>
+            </div>
+
+            <div className="card home-info-card">
+              <div className="card-body">
+                <h6 className="card-title fw-semibold">🤖 최신 AI 가이드</h6>
+                <div className="home-info-note">복약자 상태 변화가 있다면 가이드를 다시 확인하세요.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="row g-4">
+          <div className="col-xl-8">
+            <div className="card home-info-card mb-3">
+              <div className="card-body">
+                <h5 className="fw-bold mb-3">🧭 오늘 해야 할 일</h5>
+                <div className="home-action-grid">
+                  {patientTodoCards.map((card) => (
+                    <div key={card.title} className="home-action-card">
+                      <div className="home-action-title">
+                        <span>{card.icon}</span> {card.title}
                       </div>
-                      <div className="d-flex flex-column align-items-end gap-2">
-                        <span className="badge text-bg-light">{item.read_at ? "읽음" : "미읽음"}</span>
-                        {!item.read_at && (
-                          <button
-                            className="btn btn-outline-primary btn-sm"
-                            onClick={() => markNotificationRead(item.id)}
-                            disabled={notificationsAction.submitting}
-                          >
-                            읽음 처리
-                          </button>
-                        )}
-                      </div>
+                      <div className="home-action-desc">{card.desc}</div>
                     </div>
                   ))}
                 </div>
-                {notificationsState.nextCursor && (
-                  <div className="d-grid mt-3">
-                    <button
-                      className="btn btn-outline-primary"
-                      onClick={loadMoreNotifications}
-                      disabled={notificationsState.loading}
-                    >
-                      {notificationsState.loading ? "불러오는 중..." : "더 보기"}
-                    </button>
+              </div>
+            </div>
+
+            <div className="row g-3">
+              <div className="col-md-4">
+                <div className="card home-info-card h-100">
+                  <div className="card-body">
+                    <h6 className="card-title fw-semibold">📄 최근 문서</h6>
+                    <div className="home-info-note">업로드 문서와 인식 상태를 빠르게 확인하세요.</div>
                   </div>
-                )}
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="card home-info-card h-100">
+                  <div className="card-body">
+                    <h6 className="card-title fw-semibold">🤖 최신 AI 가이드</h6>
+                    <div className="home-info-note">최신 안내를 확인하고 필요한 상담으로 이어가세요.</div>
+                  </div>
+                </div>
+              </div>
+              <div className="col-md-4">
+                <div className="card home-info-card h-100">
+                  <div className="card-body">
+                    <h6 className="card-title fw-semibold">🏥 병원 일정</h6>
+                    <div className="home-info-note">외래/검사 일정과 방문 계획을 확인하세요.</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <div className="col-lg-5">
-            <div className="card h-100 border-0 shadow-sm">
+
+          <div className="col-xl-4">
+            <div className="card home-info-card mb-3">
               <div className="card-body">
-                <h5 className="card-title">미읽음 알림</h5>
-                <p className="text-muted">현재 읽지 않은 알림 개수를 확인합니다.</p>
-                <div className="d-flex align-items-center gap-3">
-                  <span className="display-6 fw-bold">{unreadCountState.count}</span>
-                  <button
-                    className="btn btn-outline-primary btn-sm"
-                    onClick={async () => {
-                      setUnreadCountState((prev) => ({ ...prev, loading: true, error: null }));
-                      try {
-                        const res = await authFetch(`${API_PREFIX}/notifications/unread-count`);
-                        if (!res.ok) {
-                          const body = await safeJson(res);
-                          throw new Error(formatApiError(body) || `status ${res.status}`);
-                        }
-                        const body = await safeJson(res);
-                        const data = body?.data || body;
-                        setUnreadCountState({ loading: false, count: data?.count ?? 0, error: null });
-                      } catch (error) {
-                        setUnreadCountState({ loading: false, count: 0, error: error.message });
-                      }
-                    }}
-                    disabled={unreadCountState.loading}
-                  >
-                    {unreadCountState.loading ? "갱신 중..." : "갱신"}
-                  </button>
+                <h6 className="card-title fw-semibold">📊 복약 진행 상태</h6>
+                <div className="home-kpi-list">
+                  <div className="home-kpi-item">
+                    <span className="home-kpi-label">오늘 복약 체크</span>
+                    <span className="home-kpi-value">진행 중</span>
+                  </div>
+                  <div className="home-kpi-item">
+                    <span className="home-kpi-label">최근 문서 확인</span>
+                    <span className="home-kpi-value">확인 필요</span>
+                  </div>
+                  <div className="home-kpi-item">
+                    <span className="home-kpi-label">AI 가이드 확인</span>
+                    <span className="home-kpi-value">권장</span>
+                  </div>
                 </div>
-                {unreadCountState.error && <div className="alert alert-danger mt-3">{unreadCountState.error}</div>}
-                <hr />
-                <h6 className="fw-semibold">알림 설정</h6>
-                <form onSubmit={submitSettingsUpdate}>
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="intake_reminder_dash"
-                      name="intake_reminder"
-                      checked={settingsState.data?.intake_reminder ?? false}
-                      onChange={handleSettingsChange}
-                    />
-                    <label className="form-check-label" htmlFor="intake_reminder_dash">
-                      복약 리마인드
-                    </label>
-                  </div>
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="missed_alert_dash"
-                      name="missed_alert"
-                      checked={settingsState.data?.missed_alert ?? false}
-                      onChange={handleSettingsChange}
-                    />
-                    <label className="form-check-label" htmlFor="missed_alert_dash">
-                      미복용 알림
-                    </label>
-                  </div>
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="ocr_done_dash"
-                      name="ocr_done"
-                      checked={settingsState.data?.ocr_done ?? false}
-                      onChange={handleSettingsChange}
-                    />
-                    <label className="form-check-label" htmlFor="ocr_done_dash">
-                      OCR 결과 알림
-                    </label>
-                  </div>
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="guide_ready_dash"
-                      name="guide_ready"
-                      checked={settingsState.data?.guide_ready ?? false}
-                      onChange={handleSettingsChange}
-                    />
-                    <label className="form-check-label" htmlFor="guide_ready_dash">
-                      가이드 준비 완료
-                    </label>
-                  </div>
-                  <button className="btn btn-outline-primary btn-sm mt-3" type="submit" disabled={settingsState.submitting}>
-                    {settingsState.submitting ? "저장 중..." : "설정 저장"}
-                  </button>
-                  {settingsState.error && <div className="alert alert-danger mt-3">{settingsState.error}</div>}
-                  {settingsState.success && <div className="alert alert-success mt-3">저장 완료</div>}
-                </form>
+              </div>
+            </div>
+
+            <div className="card home-info-card">
+              <div className="card-body">
+                <h6 className="card-title fw-semibold">🚀 빠른 실행</h6>
+                <div className="home-link-stack">
+                  {patientQuickActions.map((button) => (
+                    <a key={button.href} className={`btn btn-sm ${button.variant}`} href={button.href}>
+                      {button.label}
+                    </a>
+                  ))}
+                </div>
+                <div className="home-info-note mt-3">
+                  문서 업로드 → AI 가이드 확인 → 알림센터 점검 순서로 이용하면 빠릅니다.
+                </div>
               </div>
             </div>
           </div>
         </div>
-
-        <div className="card border-0 shadow-sm mb-5">
-          <div className="card-body">
-            <h5 className="card-title">수동 리마인드 발송</h5>
-            <p className="text-muted">보호자가 환자에게 알림을 발송할 수 있습니다.</p>
-            <form onSubmit={submitRemind}>
-              <div className="row g-3">
-                <div className="col-md-4">
-                  <label className="form-label">환자 선택</label>
-                  <select
-                    className="form-select"
-                    name="patient_id"
-                    value={remindForm.patient_id}
-                    onChange={handleRemindChange}
-                    required
-                  >
-                    <option value="">환자 선택</option>
-                    {linksState.data?.links?.map((link) => (
-                      <option key={link.link_id} value={link.patient_id}>
-                        {link.patient_name || link.patient_user_id || link.patient_id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="col-md-4">
-                  <label className="form-label">타입</label>
-                  <input
-                    className="form-control"
-                    name="type"
-                    value={remindForm.type}
-                    onChange={handleRemindChange}
-                  />
-                </div>
-                <div className="col-md-4">
-                  <label className="form-label">제목</label>
-                  <input
-                    className="form-control"
-                    name="title"
-                    value={remindForm.title}
-                    onChange={handleRemindChange}
-                  />
-                </div>
-                <div className="col-md-8">
-                  <label className="form-label">메시지</label>
-                  <input
-                    className="form-control"
-                    name="message"
-                    value={remindForm.message}
-                    onChange={handleRemindChange}
-                  />
-                </div>
-                <div className="col-md-4">
-                  <label className="form-label">payload(JSON)</label>
-                  <input
-                    className="form-control"
-                    name="payload"
-                    value={remindForm.payload}
-                    onChange={handleRemindChange}
-                    placeholder='{"schedule_id":123}'
-                  />
-                </div>
-              </div>
-              <div className="d-flex gap-2 mt-3">
-                <button className="btn btn-primary" type="submit" disabled={remindState.submitting}>
-                  {remindState.submitting ? "전송 중..." : "리마인드 전송"}
-                </button>
-              </div>
-              {remindState.error && <div className="alert alert-danger mt-3">{remindState.error}</div>}
-              {remindState.success && <div className="alert alert-success mt-3">{remindState.success}</div>}
-            </form>
-          </div>
-        </div>
-
-
-
-
-      </main>
-    </div>
+      )}
+    </AppLayout>
   );
 }
 

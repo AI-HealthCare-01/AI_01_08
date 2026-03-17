@@ -68,7 +68,7 @@ function CaregiverManagement() {
       }
       setLinkCode("");
       await loadLinks();
-      alert("환자 연동이 완료되었습니다.");
+      alert("복약자 연동이 완료되었습니다.");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -106,7 +106,7 @@ function CaregiverManagement() {
       } else if (res.status === 404) {
         setSelectedPatient(null);
         setSelectedPatientMeta(null);
-        alert("환자의 건강 프로필이 아직 등록되지 않았습니다.");
+        alert("복약자의 건강 프로필이 아직 등록되지 않았습니다.");
       } else {
         throw new Error(`status ${res.status}`);
       }
@@ -119,12 +119,12 @@ function CaregiverManagement() {
     window.location.href = `/auth-demo/app/documents?patient_id=${patientId}`;
   };
 
-  // Louis수정(기능추가): 보호자가 연동 환자 건강 프로필 편집 화면으로 바로 진입할 수 있게 추가
+  // Louis수정(기능추가): 보호자가 연동 복약자 건강 프로필 편집 화면으로 바로 진입할 수 있게 추가
   const editPatientProfile = (linkId) => {
     window.location.href = `/auth-demo/app/health-profile?link_id=${linkId}`;
   };
 
-  // Louis수정(기능추가): 보호자가 연동 환자 기준 AI 상담으로 바로 이동할 수 있게 추가
+  // Louis수정(기능추가): 보호자가 연동 복약자 기준 AI 상담으로 바로 이동할 수 있게 추가
   const openPatientAi = (patientId) => {
     window.location.href = `/auth-demo/app/ai?patient_id=${patientId}&open_chat=1`;
   };
@@ -145,11 +145,11 @@ function CaregiverManagement() {
         </div>
       )}
 
-      {/* 환자 연동 */}
+      {/* 복약자 연동 */}
       <div className="card mb-4">
         <div className="card-body">
-          <h5 className="card-title">환자 연동</h5>
-          <p className="text-muted">환자가 생성한 초대 코드를 입력하여 연동하세요.</p>
+          <h5 className="card-title">복약자 연동</h5>
+          <p className="text-muted">복약자가 생성한 초대 코드를 입력하여 연동하세요.</p>
           <form onSubmit={handleLinkPatient}>
             <div className="row g-3">
               <div className="col-md-8">
@@ -172,11 +172,11 @@ function CaregiverManagement() {
         </div>
       </div>
 
-      {/* 연동된 환자 목록 */}
+      {/* 연동된 복약자 목록 */}
       <div className="card">
         <div className="card-body">
           <div className="d-flex justify-content-between align-items-center mb-3">
-            <h5 className="card-title mb-0">연동된 환자 목록</h5>
+            <h5 className="card-title mb-0">연동된 복약자 목록</h5>
             <button className="btn btn-outline-primary btn-sm" onClick={loadLinks} disabled={loading}>
               {loading ? "로딩 중..." : "새로고침"}
             </button>
@@ -185,7 +185,7 @@ function CaregiverManagement() {
           {loading && links.length === 0 ? (
             <div className="text-center py-5">로딩 중...</div>
           ) : links.length === 0 ? (
-            <div className="text-center py-5 text-muted">연동된 환자가 없습니다.</div>
+            <div className="text-center py-5 text-muted">연동된 복약자가 없습니다.</div>
           ) : (
             <div className="row g-3">
               {links.map((link) => (
@@ -195,7 +195,7 @@ function CaregiverManagement() {
                       <div className="d-flex justify-content-between align-items-start mb-3">
                         <div>
                           <h6 className="card-title mb-1">
-                            {link.patient_name || `환자 #${link.patient_id}`}
+                            {link.patient_name || `복약자 #${link.patient_id}`}
                           </h6>
                           <span className={`badge ${link.status === "active" ? "bg-success" : "bg-secondary"}`}>
                             {link.status === "active" ? "활성" : link.status}
@@ -210,7 +210,7 @@ function CaregiverManagement() {
                       </div>
 
                       <div className="mb-3">
-                        <div className="text-muted small">환자 ID</div>
+                        <div className="text-muted small">복약자 ID</div>
                         <div>{link.patient_id}</div>
                       </div>
 
@@ -254,14 +254,14 @@ function CaregiverManagement() {
         </div>
       </div>
 
-      {/* 환자 프로필 모달 */}
+      {/* 복약자 프로필 모달 */}
       {selectedPatient && (
         <div className="modal show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
           <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">
-                  {selectedPatientMeta?.patient_name || "환자"} 건강 프로필
+                  {selectedPatientMeta?.patient_name || "복약자"} 건강 프로필
                 </h5>
                 <button
                   type="button"

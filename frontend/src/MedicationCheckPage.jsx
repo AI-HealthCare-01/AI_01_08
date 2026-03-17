@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -16,6 +17,9 @@ const MedicationCheckPage = ({
   myPatient = null,
   loginRole = "PATIENT",
   me = null,
+  modeOptions = [],
+  currentMode = "PATIENT",
+  onModeChange,
 }) => {
   const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
 
@@ -169,7 +173,7 @@ const MedicationCheckPage = ({
       return items.map((item, index) => ({
         id: `${patientId}-${item.schedule_id}-${item.schedule_time_id}-${item.scheduled_at || index}`,
         patient_id: Number(patientId),
-        patient_name: patientInfo?.name || `환자 ${patientId}`,
+        patient_name: patientInfo?.name || `복약자 ${patientId}`,
         patient_age_label: patientInfo?.ageLabel || "",
         imageUrl: patientInfo?.imageUrl || "",
         day,
@@ -472,78 +476,29 @@ const MedicationCheckPage = ({
   );
 
   return (
-    <div className="app-shell">
-      <header className="hero">
-        <div className="container py-4">
-          <nav className="navbar navbar-expand-lg">
-            <a
-              className="navbar-brand fw-bold"
-              href="/auth-demo/app"
-              style={{ fontSize: "1.5rem" }}
-            >
-              복약관리시스템
-            </a>
-            <div className="ms-auto d-flex gap-2">
-              <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/dashboard">
-                대시보드
-              </a>
-              <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/caregiver">
-                알림센터
-              </a>
+    <AppLayout
+      activeKey="medication-check"
+      title="복약 체크"
+      description={isCaregiver ? "연동 복약자의 복약 상태를 확인하고 필요한 알림을 보낼 수 있습니다." : "오늘 복약 일정을 확인하고 상태를 기록하세요."}
+      loginRole={loginRole}
+      userName={me?.name}
+      modeOptions={modeOptions}
+      currentMode={currentMode}
+      onModeChange={onModeChange}
+    >
+      <div className="row g-4">
+        <div className="col-xl-4">
+          <div className="card border-0 shadow-sm mb-3">
+            <div className="card-body">
+              <h6 className="fw-bold mb-3">기준 날짜</h6>
+              <input
+                className="form-control"
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
             </div>
-          </nav>
-        </div>
-      </header>
-
-      <div className="container-fluid py-4">
-        <div className="row">
-          <div className="col-md-3">
-            <div className="card border-0 shadow-sm mb-3">
-              <div className="card-body">
-                <h5 className="fw-bold mb-3">
-                  복약관리시스템
-                  <div className="small text-primary mt-1">
-                    {isCaregiver ? "보호자 모드" : "복약자 모드"}
-                  </div>
-                </h5>
-
-                <div className="list-group list-group-flush">
-                  <a href="/auth-demo/app/dashboard" className="list-group-item list-group-item-action">
-                    대시보드
-                  </a>
-                  <a href="/auth-demo/app/health-profile" className="list-group-item list-group-item-action">
-                    처방전 업로드
-                  </a>
-                  <a href="/auth-demo/app/documents" className="list-group-item list-group-item-action">
-                    AI 가이드
-                  </a>
-                  <a href="/auth-demo/app/notifications" className="list-group-item list-group-item-action">
-                    알림센터
-                  </a>
-                  <a href="/auth-demo/app/schedule" className="list-group-item list-group-item-action">
-                    스케줄
-                  </a>
-                  <a href="/auth-demo/app/medication-check" className="list-group-item list-group-item-action active">
-                    복약 체크
-                  </a>
-                  <a href="/auth-demo/app/profile" className="list-group-item list-group-item-action">
-                    건강 프로필
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            <div className="card border-0 shadow-sm mb-3">
-              <div className="card-body">
-                <h6 className="fw-bold mb-3">기준 날짜</h6>
-                <input
-                  className="form-control"
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                />
-              </div>
-            </div>
+          </div>
 
             {isCaregiver && (
               <div className="card border-0 shadow-sm mb-3">
@@ -577,14 +532,14 @@ const MedicationCheckPage = ({
             <div className="card border-0 shadow-sm">
               <div className="card-body">
                 <h6 className="fw-bold mb-3">오늘 요약</h6>
-                <div className="mb-2 small text-muted">대상 환자 {summary.patientCount}명</div>
+                <div className="mb-2 small text-muted">대상 복약자 {summary.patientCount}명</div>
                 <div className="mb-2 small text-muted">복용 완료 {summary.takenCount}건</div>
                 <div className="small text-muted">미복용 {summary.missedCount}건</div>
               </div>
             </div>
           </div>
 
-          <div className="col-md-9">
+          <div className="col-xl-8">
             <div className="card border-0 shadow-sm">
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-4">
@@ -905,8 +860,7 @@ const MedicationCheckPage = ({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </AppLayout>
   );
 };
 

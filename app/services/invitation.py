@@ -21,7 +21,9 @@ class InvitationService:
 
         patient = await Patient.get_or_none(user_id=user.id)
         if not patient:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+            patient = await Patient.create(
+                user_id=user.id, owner_user_id=user.id, display_name=user.name
+            )
 
         now = datetime.now(config.TIMEZONE)
         expires_at = now + timedelta(minutes=expires_in_minutes)
@@ -44,7 +46,7 @@ class InvitationService:
 
         patient = await Patient.get_or_none(user_id=user.id)
         if not patient:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="활성 초대코드가 없습니다.")
 
         deleted_count = await InvitationCode.filter(patient_id=patient.id, used_at__isnull=True).delete()
         if deleted_count == 0:
@@ -126,7 +128,9 @@ class InvitationService:
         if is_patient:
             patient = await Patient.get_or_none(user_id=user.id)
             if not patient:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+                patient = await Patient.create(
+                    user_id=user.id, owner_user_id=user.id, display_name=user.name
+                )
 
             links = (
                 await CaregiverPatientLink.filter(

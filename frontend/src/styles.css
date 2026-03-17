@@ -176,6 +176,88 @@ body {
   overflow-y: auto;
 }
 
+.app-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.app-page-title {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.app-page-description {
+  margin: 0.35rem 0 0;
+  color: #6b7280;
+  font-size: 0.92rem;
+}
+
+.app-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-patient-select {
+  min-width: 210px;
+  border-color: #cfd8e3;
+}
+
+.app-selector-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  min-width: 210px;
+}
+
+.app-selector-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.01em;
+}
+
+.app-selector-readonly-wrap {
+  justify-content: center;
+}
+
+.app-selector-readonly {
+  min-height: 31px;
+  border: 1px solid #cfd8e3;
+  border-radius: 0.375rem;
+  background: #f8fafc;
+  color: #1f2937;
+  font-size: 0.86rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.72rem;
+}
+
+.app-profile-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid #cfd8e3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: #1f2937;
+  text-decoration: none;
+  background: #fff;
+}
+
+.app-profile-button:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
 .doc-header {
   display: flex;
   justify-content: space-between;
@@ -323,6 +405,222 @@ body {
   line-height: 1.55;
 }
 
+.home-hero-banner {
+  border-radius: 20px;
+  padding: 2rem 2.2rem;
+  background: linear-gradient(115deg, #0d3f8f 0%, #1e5dc0 50%, #3e7ee0 100%);
+  color: #ffffff;
+  box-shadow: 0 16px 34px rgba(30, 93, 192, 0.2);
+}
+
+.home-hero-brand {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.9;
+}
+
+.home-hero-title {
+  font-size: 1.95rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin: 0.55rem 0 0.75rem;
+}
+
+.home-hero-subtitle {
+  font-size: 1rem;
+  opacity: 0.92;
+}
+
+.home-info-card {
+  border: 1px solid #e5eaf3;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+  height: 100%;
+}
+
+.home-info-card .card-body {
+  padding: 1rem 1.05rem;
+}
+
+.home-info-card .card-title {
+  margin-bottom: 0.55rem;
+}
+
+.home-info-note {
+  color: #64748b;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.home-priority-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.home-priority-card {
+  border: 1px solid #d7e5fb;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+  padding: 0.9rem 0.95rem;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08);
+}
+
+.home-priority-icon {
+  font-size: 1rem;
+  line-height: 1;
+  margin-bottom: 0.45rem;
+}
+
+.home-priority-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1e3a8a;
+  margin-bottom: 0.2rem;
+}
+
+.home-priority-note {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.home-priority-state {
+  display: inline-flex;
+  margin-top: 0.45rem;
+  border-radius: 999px;
+  padding: 0.14rem 0.5rem;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.home-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.home-action-card {
+  border: 1px solid #e3eaf6;
+  border-radius: 12px;
+  padding: 0.75rem 0.8rem;
+  background: #f8fbff;
+}
+
+.home-action-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #1f3a8a;
+  margin-bottom: 0.18rem;
+}
+
+.home-action-desc {
+  font-size: 0.78rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.home-kpi-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.home-kpi-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid #e5ecf8;
+  background: #f9fbff;
+}
+
+.home-kpi-label {
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.home-kpi-value {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1e40af;
+}
+
+.home-link-stack {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.home-status-chip {
+  border: 1px solid #d7e5fb;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+  padding: 0.7rem 0.75rem;
+}
+
+.home-status-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #1e40af;
+}
+
+.home-status-desc {
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.home-guide-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.home-guide-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  color: #334155;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.home-guide-index {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid #c9dbf8;
+  background: #edf4ff;
+  color: #1d4ed8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.76rem;
+  font-weight: 700;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.doc-upload-grid {
+  align-items: end;
+}
+
+.doc-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.doc-list-filter {
+  min-width: 220px;
+}
+
 @media (max-width: 992px) {
   .doc-top-cards {
     grid-template-columns: 1fr 1fr;
@@ -330,11 +628,46 @@ body {
   .doc-sidebar {
     display: none;
   }
+  .doc-main {
+    padding: 1.25rem;
+  }
+  .app-page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .app-page-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .app-selector-group {
+    min-width: 100%;
+  }
+  .app-patient-select {
+    min-width: 100%;
+  }
   .drug-scan-video {
     min-height: 150px;
     max-height: 220px;
   }
   .drug-search-item-image {
     max-width: 240px;
+  }
+  .home-hero-banner {
+    padding: 1.4rem 1.3rem;
+  }
+  .home-hero-title {
+    font-size: 1.4rem;
+  }
+  .home-hero-subtitle {
+    font-size: 0.9rem;
+  }
+  .home-priority-grid {
+    grid-template-columns: 1fr;
+  }
+  .home-action-grid {
+    grid-template-columns: 1fr;
+  }
+  .doc-list-filter {
+    min-width: 100%;
   }
 }

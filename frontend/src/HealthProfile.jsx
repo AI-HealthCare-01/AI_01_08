@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -123,7 +124,7 @@ const buildPayload = (formData) => ({
   notes: formData.notes || null,
 });
 
-function HealthProfile() {
+function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange }) {
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const requestedLinkId = searchParams.get("link_id");
 
@@ -154,7 +155,7 @@ function HealthProfile() {
   const selectedLink =
     (linksState.data?.links || []).find((link) => String(link.link_id) === String(selectedLinkId)) || null;
   const selectedPatientLabel =
-    selectedLink?.patient_name || (selectedLink?.patient_id ? `환자 #${selectedLink.patient_id}` : null);
+    selectedLink?.patient_name || (selectedLink?.patient_id ? `복약자 #${selectedLink.patient_id}` : null);
   const isCaregiverOwnProfile = loginRole === "CAREGIVER" && selectedLinkId === "me";
 
   const hydrateForm = (data) => {
@@ -320,37 +321,43 @@ function HealthProfile() {
     }
   };
 
-  // Louis수정(기능추가): 건강 프로필 화면 안에서 보호자 관리 화면으로 바로 돌아갈 수 있게 추가
-  const goToCaregiverManagement = () => {
-    window.location.href = "/auth-demo/app/caregiver";
-  };
-
-  // Louis수정(기능추가): 현재 선택한 복약자의 문서 화면으로 바로 이동할 수 있게 추가
-  const goToSelectedPatientDocuments = () => {
-    if (!selectedLink?.patient_id) return;
-    window.location.href = `/auth-demo/app/documents?patient_id=${selectedLink.patient_id}`;
-  };
-
   const title =
     loginRole === "CAREGIVER" ? "건강 프로필 관리" : "건강 프로필";
 
+  const handleCaregiverPatientChange = (nextValue) => {
+    setSelectedLinkId(nextValue || "me");
+    setEditing(false);
+    setNotice(null);
+    setError(null);
+  };
+
   if (loading && !profile && !(loginRole === "CAREGIVER" && !selectedLinkId)) {
     return (
-      <div className="container py-5" style={pageToneStyle}>
-        <div className="text-center">로딩 중...</div>
-      </div>
+      <AppLayout
+        activeKey="health"
+        title={title}
+        description="건강 정보를 불러오는 중입니다."
+        loginRole={loginRole}
+        modeOptions={modeOptions}
+        currentMode={currentMode}
+        onModeChange={onModeChange}
+      >
+        <div className="text-center py-5">로딩 중...</div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="container py-5" style={pageToneStyle}>
-      <div className="d-flex align-items-center justify-content-center mb-4">
-        <a href="/auth-demo/app" style={{ cursor: "pointer", textDecoration: "none" }}>
-          <img src="/mascot.png" alt="약승이" style={{ width: "120px", height: "auto", marginRight: "20px" }} />
-        </a>
-        <h2 className="mb-0" style={{ color: "#1e3a8a", letterSpacing: "-0.02em" }}>{title}</h2>
-      </div>
-
+    <AppLayout
+      activeKey="health"
+      title={title}
+      description={loginRole === "CAREGIVER" ? "내 정보와 연동된 복약자 프로필을 함께 관리합니다." : "건강 정보를 정리하고 필요한 항목을 관리합니다."}
+      loginRole={loginRole}
+      modeOptions={modeOptions}
+      currentMode={currentMode}
+      onModeChange={onModeChange}
+    >
+      <div style={pageToneStyle} className="rounded-4 p-3">
       <div className="row justify-content-center">
         <div className="col-lg-9">
           <div className="card shadow-sm" style={shellCardStyle}>
@@ -399,18 +406,13 @@ function HealthProfile() {
 
               {loginRole === "CAREGIVER" && (
                 <div className="mb-4">
-                  <label className="form-label">복약자 선택</label>
+                  <label className="form-label">관리 프로필 선택</label>
                   <div className="row g-2">
                     <div className="col-md-8">
                       <select
                         className="form-select"
                         value={selectedLinkId}
-                        onChange={(event) => {
-                          setSelectedLinkId(event.target.value);
-                          setEditing(false);
-                          setNotice(null);
-                          setError(null);
-                        }}
+                        onChange={(event) => handleCaregiverPatientChange(event.target.value)}
                       >
                         <option value="me">내 건강 프로필</option>
                         {(!linksState.data?.links || linksState.data.links.length === 0) && (
@@ -418,7 +420,7 @@ function HealthProfile() {
                         )}
                         {(linksState.data?.links || []).map((link) => (
                           <option key={link.link_id} value={link.link_id}>
-                            {link.patient_name || `환자 #${link.patient_id}`}
+                            {link.patient_name || `복약자 #${link.patient_id}`}
                           </option>
                         ))}
                       </select>
@@ -466,23 +468,10 @@ function HealthProfile() {
                         </div>
                       )}
                     </div>
-                    <div className="d-flex flex-wrap gap-2">
-                      {!isCaregiverOwnProfile && (
-                        <button type="button" className="btn btn-outline-secondary btn-sm" style={secondaryButtonStyle} onClick={goToCaregiverManagement}>
-                          보호자 관리
-                        </button>
-                      )}
-                      {!isCaregiverOwnProfile && (
-                        <button
-                          type="button"
-                          className="btn btn-outline-primary btn-sm"
-                          style={secondaryButtonStyle}
-                          onClick={goToSelectedPatientDocuments}
-                          disabled={!selectedLink?.patient_id}
-                        >
-                          문서 보기
-                        </button>
-                      )}
+                    <div className="small text-muted">
+                      {!isCaregiverOwnProfile && "보호자 연동 정보는 설정에서 관리할 수 있습니다."}
+                      {!isCaregiverOwnProfile && <br />}
+                      {!isCaregiverOwnProfile && "문서 확인은 처방전 업로드 메뉴에서 할 수 있습니다."}
                     </div>
                   </div>
                 </div>
@@ -814,7 +803,8 @@ function HealthProfile() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </AppLayout>
   );
 }
 
