@@ -728,6 +728,24 @@ function App() {
     }
   };
 
+  const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false);
+  const [withdrawState, setWithdrawState] = useState({ submitting: false, error: null });
+
+  const handleWithdraw = async () => {
+    setWithdrawState({ submitting: true, error: null });
+    try {
+      const res = await authFetch(`${API_PREFIX}/users/me`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await safeJson(res);
+        throw new Error(formatApiError(body) || `status ${res.status}`);
+      }
+      persistAccessToken(null);
+      window.location.href = "/auth-demo/login";
+    } catch (error) {
+      setWithdrawState({ submitting: false, error: error.message || "탈퇴 처리 중 오류가 발생했습니다." });
+    }
+  };
+
   const submitProfileUpdate = async (event) => {
     event.preventDefault();
     setProfileState({ submitting: true, error: null, success: false });
@@ -1638,11 +1656,33 @@ function App() {
                 <a className="btn btn-outline-light btn-sm" href="/auth-demo/app">
                   대시보드
                 </a>
+                <button className="btn btn-outline-danger btn-sm" onClick={() => setShowWithdrawConfirm(true)}>
+                  회원 탈퇴
+                </button>
                 <button className="btn btn-light btn-sm text-primary" onClick={handleLogout}>
                   로그아웃
                 </button>
               </div>
             </nav>
+            {showWithdrawConfirm && (
+              <div className="mt-3">
+                <div className="alert alert-danger d-flex align-items-center justify-content-between mb-0">
+                  <div>
+                    <strong>정말 탈퇴하시겠습니까?</strong>
+                    <span className="ms-2 small">이 작업은 되돌릴 수 없습니다.</span>
+                  </div>
+                  <div className="d-flex gap-2">
+                    <button className="btn btn-danger btn-sm" onClick={handleWithdraw} disabled={withdrawState.submitting}>
+                      {withdrawState.submitting ? "처리 중..." : "탈퇴 확인"}
+                    </button>
+                    <button className="btn btn-outline-light btn-sm" onClick={() => setShowWithdrawConfirm(false)} disabled={withdrawState.submitting}>
+                      취소
+                    </button>
+                  </div>
+                </div>
+                {withdrawState.error && <div className="alert alert-warning mt-2 mb-0">{withdrawState.error}</div>}
+              </div>
+            )}
             <div className="row align-items-center mt-4">
               <div className="col-lg-8">
                 <h1 className="display-6 fw-bold">개인정보</h1>
@@ -1764,6 +1804,13 @@ function App() {
                       >
                         초기화
                       </button>
+                      <button
+                        className="btn btn-outline-danger"
+                        type="button"
+                        onClick={() => setShowWithdrawConfirm(true)}
+                      >
+                        회원탈퇴
+                      </button>
                     </div>
                     {profileState.error && <div className="alert alert-danger mt-3">{profileState.error}</div>}
                     {profileState.success && <div className="alert alert-success mt-3">저장 완료</div>}
@@ -1855,6 +1902,44 @@ function App() {
                     {settingsState.error && <div className="alert alert-danger mt-3">{settingsState.error}</div>}
                     {settingsState.success && <div className="alert alert-success mt-3">설정 저장 완료</div>}
                   </form>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="row mt-4">
+            <div className="col-12">
+              <div className="card border-danger border-0 shadow-sm">
+                <div className="card-body">
+                  <h5 className="card-title text-danger">회원 탈퇴</h5>
+                  <p className="text-muted">탈퇴 시 계정이 비활성화되며, 모든 서비스 이용이 중단됩니다.</p>
+                  {!showWithdrawConfirm ? (
+                    <button className="btn btn-outline-danger btn-sm" onClick={() => setShowWithdrawConfirm(true)}>
+                      회원 탈퇴
+                    </button>
+                  ) : (
+                    <div className="border border-danger rounded-3 p-3">
+                      <p className="fw-semibold text-danger mb-2">정말 탈퇴하시겠습니까?</p>
+                      <p className="text-muted small mb-3">이 작업은 되돌릴 수 없습니다.</p>
+                      <div className="d-flex gap-2">
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={handleWithdraw}
+                          disabled={withdrawState.submitting}
+                        >
+                          {withdrawState.submitting ? "처리 중..." : "탈퇴 확인"}
+                        </button>
+                        <button
+                          className="btn btn-outline-secondary btn-sm"
+                          onClick={() => setShowWithdrawConfirm(false)}
+                          disabled={withdrawState.submitting}
+                        >
+                          취소
+                        </button>
+                      </div>
+                      {withdrawState.error && <div className="alert alert-danger mt-3">{withdrawState.error}</div>}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1971,6 +2056,9 @@ function App() {
                     정보 수정
                   </a>
                   <button className="btn btn-outline-secondary btn-sm">비밀번호 변경</button>
+                  <button className="btn btn-outline-danger btn-sm" onClick={() => setShowWithdrawConfirm(true)}>
+                    회원 탈퇴
+                  </button>
                 </div>
               </div>
               <div className="row g-3 mt-3">
@@ -1993,6 +2081,23 @@ function App() {
                   </div>
                 </div>
               </div>
+              {showWithdrawConfirm && (
+                <div className="alert alert-danger d-flex align-items-center justify-content-between mt-3 mb-0">
+                  <div>
+                    <strong>정말 탈퇴하시겠습니까?</strong>
+                    <span className="ms-2 small">탈퇴 시 계정이 비활성화되며 되돌릴 수 없습니다.</span>
+                  </div>
+                  <div className="d-flex gap-2">
+                    <button className="btn btn-danger btn-sm" onClick={handleWithdraw} disabled={withdrawState.submitting}>
+                      {withdrawState.submitting ? "처리 중..." : "탈퇴 확인"}
+                    </button>
+                    <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowWithdrawConfirm(false)} disabled={withdrawState.submitting}>
+                      취소
+                    </button>
+                  </div>
+                </div>
+              )}
+              {withdrawState.error && <div className="alert alert-warning mt-2">{withdrawState.error}</div>}
             </div>
           </div>
         </section>

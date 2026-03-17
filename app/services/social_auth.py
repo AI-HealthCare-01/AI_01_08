@@ -60,6 +60,7 @@ class SocialAuthService:
                 }
                 token_res = await client.post("https://kauth.kakao.com/oauth/token", data=token_payload)
                 if token_res.status_code >= 400:
+                    print(f"[KAKAO ERROR] status={token_res.status_code}, body={token_res.text}")
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Kakao token exchange failed.")
                 token_data = token_res.json()
                 access_token = token_data.get("access_token", "")
@@ -78,7 +79,7 @@ class SocialAuthService:
                 return {
                     "provider_user_id": str(profile_data.get("id", "")) or None,
                     "email": kakao_account.get("email"),
-                    "name": properties.get("nickname") or "kakao-user",
+                    "name": kakao_account.get("name") or properties.get("nickname") or "kakao-user",
                 }
 
             token_params = {
@@ -163,6 +164,12 @@ class SocialAuthService:
                 code=LoginRole.PATIENT.value, defaults={"name": LoginRole.PATIENT.value}
             )
             await UserRole.get_or_create(user=user, role=default_role)
+
+            from app.models.patients import Patient
+            await Patient.get_or_create(
+                user_id=user.id,
+                defaults={"owner_user_id": user.id, "display_name": user.name},
+            )
 
         await AuthAccount.create(user=user, provider=provider.value, provider_user_id=provider_user_id)
         return user
