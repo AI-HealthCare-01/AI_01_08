@@ -12,6 +12,8 @@ from app.dtos.medication_intake_dtos import (
     IntakeCheckRequest,
     IntakeCheckResponse,
     IntakeItem,
+    IntakeSkipRequest,
+    IntakeSkipResponse,
     IntakeStatusResponse,
     IntakeUndoRequest,
     IntakeUndoResponse,
@@ -234,6 +236,99 @@ class MedicationIntakeService:
             scheduled_at=scheduled_at,
             taken_at=actual_taken_at,
             status="taken",
+            note=request.note,
+        )
+
+    async def skip_medication(
+        self,
+        schedule_id: int,
+        request: IntakeSkipRequest,
+    ) -> IntakeSkipResponse:
+        """
+        복약 건너뛰기 처리
+
+        처리 순서:
+        1. schedule 존재 확인
+        2. schedule_time 존재/활성 여부 확인
+        3. schedule_time 이 해당 schedule 소속인지 확인
+        4. scheduled_date 와 days_of_week 규칙이 맞는지 확인
+        5. 동일 슬롯 로그 중복 체크
+        6. intake_log 생성 (status='skipped')
+        """
+        schedule = await self.schedule_repo.get_schedule_by_id(schedule_id)
+        if schedule is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="복약 스케줄을 찾을 수 없습니다.",
+            )
+
+        schedule_time = await self.schedule_repo.get_active_schedule_time_by_id(request.schedule_time_id)
+        if schedule_time is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="복약 시간 정보를 찾을 수 없습니다.",
+            )
+
+        if schedule_time.schedule_id != schedule.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="해당 복약 시간은 요청한 스케줄에 속하지 않습니다.",
+            )
+
+        if schedule.start_date and request.scheduled_date < schedule.start_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="복약 날짜가 스케줄 시작일보다 이전입니다.",
+            )
+
+        if schedule.end_date and request.scheduled_date > schedule.end_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="복약 날짜가 스케줄 종료일보다 이후입니다.",
+            )
+
+        allowed_days = _parse_days_of_week(schedule_time.days_of_week)
+        if allowed_days is not None and request.scheduled_date.weekday() not in allowed_days:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="해당 날짜는 이 복약 시간의 허용 요일이 아닙니다.",
+            )
+
+        slot_time = _normalize_time_of_day(schedule_time.time_of_day)
+        scheduled_at = datetime.combine(request.scheduled_date, slot_time)
+
+        existing_log = await self.intake_repo.get_exact_log(
+            schedule_id=schedule.id,
+            schedule_time_id=schedule_time.id,
+            scheduled_at=scheduled_at,
+        )
+        if existing_log is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="이미 처리된 복약 슬롯입니다.",
+            )
+
+        created_log = await self.intake_repo.create_intake_log(
+            patient_id=schedule.patient_id,
+            patient_med_id=schedule.patient_med_id,
+            schedule_id=schedule.id,
+            schedule_time_id=schedule_time.id,
+            scheduled_at=scheduled_at,
+            taken_at=None,
+            status="skipped",
+            note=request.note,
+            recorded_by_user_id=request.recorded_by_user_id,
+        )
+
+        return IntakeSkipResponse(
+            message="복약 건너뛰기가 기록되었습니다.",
+            intake_log_id=created_log.id,
+            patient_id=created_log.patient_id,
+            patient_med_id=created_log.patient_med_id,
+            schedule_id=schedule.id,
+            schedule_time_id=schedule_time.id,
+            scheduled_at=scheduled_at,
+            status="skipped",
             note=request.note,
         )
 

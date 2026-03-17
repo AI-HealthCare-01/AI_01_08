@@ -105,3 +105,28 @@ class IntakeUndoResponse(BaseModel):
     schedule_id: int
     schedule_time_id: int
     scheduled_at: datetime
+
+
+# ----------------------------
+# 복약 체크 / skip
+# ----------------------------
+class IntakeSkipRequest(BaseModel):
+    schedule_time_id: int = Field(..., description="복약 시간 슬롯 ID")
+    scheduled_date: date = Field(..., description="해당 복약 슬롯 날짜")
+    note: str | None = Field(None, description="건너뛴 사유 메모")
+    recorded_by_user_id: int | None = Field(
+        None,
+        description="기록한 사용자 ID(임시 개발용)",
+    )
+
+
+class IntakeSkipResponse(BaseModel):
+    message: str
+    intake_log_id: int
+    patient_id: int
+    patient_med_id: int
+    schedule_id: int
+    schedule_time_id: int
+    scheduled_at: datetime
+    status: IntakeStatus
+    note: str | None = None

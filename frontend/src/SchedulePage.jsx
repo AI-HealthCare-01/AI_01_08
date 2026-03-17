@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from "react";
 const API_PREFIX = "/api/v1";
 
 const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CAREGIVER" }) => {
+  const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
+
   const patientsSource = useMemo(() => {
     if (loginRole === "PATIENT") {
       return myPatient ? [myPatient] : [];
@@ -18,18 +20,16 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
   }, [patientsSource]);
 
   const defaultPatientId = normalizedPatients[0]?.id ?? "";
-  const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
   const initialSelectedPatientId = isCaregiver ? "all" : String(defaultPatientId || "");
 
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState("month");
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
-
   const [selectedPatientId, setSelectedPatientId] = useState(initialSelectedPatientId);
-
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [showModal, setShowModal] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState(null);
+  const [errorMessage, setErrorMessage] = useState(null);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -40,14 +40,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
     patient_id: defaultPatientId || "",
   });
 
-  const PATIENT_COLORS = [
-    "#6c5ce7",
-    "#00b894",
-    "#e17055",
-    "#0984e3",
-    "#fdcb6e",
-    "#d63031",
-  ];
+  const PATIENT_COLORS = ["#6c5ce7", "#00b894", "#e17055", "#0984e3", "#fdcb6e", "#d63031"];
 
   useEffect(() => {
     if (!defaultPatientId) return;
@@ -99,6 +92,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
     }
 
     setLoading(true);
+    setErrorMessage(null);
 
     try {
       const responses = await Promise.all(
@@ -110,7 +104,6 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
       const jsonList = await Promise.all(
         responses.map(async (res) => {
           if (!res.ok) {
-            console.error("Failed to load schedules:", res.status);
             return { items: [] };
           }
           return res.json();
@@ -118,8 +111,8 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
       );
 
       const merged = jsonList.flatMap((data) => data.items || []);
-
       const dedupedMap = new Map();
+
       merged.forEach((item) => {
         dedupedMap.set(item.id, item);
       });
@@ -132,6 +125,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
     } catch (error) {
       console.error("Failed to load schedules:", error);
       setSchedules([]);
+      setErrorMessage("일정을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -148,9 +142,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
-
     const startingDayOfWeek = (firstDay.getDay() + 6) % 7;
-
     const days = [];
 
     for (let i = 0; i < startingDayOfWeek; i++) {
@@ -171,17 +163,10 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
   };
 
   const filteredSchedules = useMemo(() => {
-    if (selectedPatientId === "all") {
-      return schedules;
-    }
+    if (selectedPatientId === "all") return schedules;
+    if (!selectedPatientId) return [];
 
-    if (!selectedPatientId) {
-      return [];
-    }
-
-    return schedules.filter(
-      (schedule) => schedule.patient_id === Number(selectedPatientId)
-    );
+    return schedules.filter((schedule) => schedule.patient_id === Number(selectedPatientId));
   }, [schedules, selectedPatientId]);
 
   const getSchedulesForDate = (date) => {
@@ -196,19 +181,29 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
     });
   };
 
+  const selectedDateSchedules = useMemo(() => {
+    return getSchedulesForDate(selectedDate).sort(
+      (a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)
+    );
+  }, [filteredSchedules, selectedDate]);
+
   const getPatientName = (patientId) => {
     const patient = normalizedPatients.find((p) => p.id === Number(patientId));
     return patient?.name || `환자 ${patientId}`;
   };
 
   const getPatientColor = (patientId) => {
-    const index = normalizedPatients.findIndex(
-      (p) => p.id === Number(patientId)
-    );
-
+    const index = normalizedPatients.findIndex((p) => p.id === Number(patientId));
     if (index === -1) return "#6c5ce7";
-
     return PATIENT_COLORS[index % PATIENT_COLORS.length];
+  };
+
+  const isSameDay = (left, right) => {
+    return (
+      left.getFullYear() === right.getFullYear() &&
+      left.getMonth() === right.getMonth() &&
+      left.getDate() === right.getDate()
+    );
   };
 
   const handlePrevMonth = () => {
@@ -220,21 +215,35 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
   };
 
   const handleToday = () => {
-    setCurrentDate(new Date());
+    const today = new Date();
+    setCurrentDate(today);
+    setSelectedDate(today);
+  };
+
+  const moveToScheduleDate = (schedule) => {
+    const scheduleDate = new Date(schedule.scheduled_at);
+    setCurrentDate(new Date(scheduleDate.getFullYear(), scheduleDate.getMonth(), 1));
+    setSelectedDate(scheduleDate);
+  };
+
+  const handleSelectDate = (date) => {
+    setSelectedDate(date);
+    if (!isSameDay(currentDate, date)) {
+      setCurrentDate(new Date(date.getFullYear(), date.getMonth(), 1));
+    }
   };
 
   const handleAddSchedule = () => {
-    const targetPatientId =
-      selectedPatientId === "all"
-        ? defaultPatientId
-        : Number(selectedPatientId);
+    const targetPatientId = selectedPatientId === "all" ? defaultPatientId : Number(selectedPatientId);
+    const prefilledDate = selectedDate ? new Date(selectedDate) : new Date();
+    prefilledDate.setHours(9, 0, 0, 0);
 
     setSelectedSchedule(null);
     setFormData({
       title: "",
       hospital_name: "",
       location: "",
-      scheduled_at: "",
+      scheduled_at: prefilledDate.toISOString().slice(0, 16),
       description: "",
       patient_id: targetPatientId || "",
     });
@@ -242,6 +251,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
   };
 
   const handleEditSchedule = (schedule) => {
+    moveToScheduleDate(schedule);
     setSelectedSchedule(schedule);
     setFormData({
       title: schedule.title || "",
@@ -256,19 +266,17 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setErrorMessage(null);
 
     try {
       if (selectedSchedule) {
-        const res = await authFetch(
-          `${API_PREFIX}/calendar/hospital/${selectedSchedule.id}`,
-          {
-            method: "PATCH",
-            body: JSON.stringify(formData),
-          }
-        );
+        const res = await authFetch(`${API_PREFIX}/calendar/hospital/${selectedSchedule.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(formData),
+        });
 
         if (!res.ok) {
-          console.error("Failed to update schedule:", res.status);
+          setErrorMessage("일정 수정에 실패했습니다.");
           return;
         }
       } else {
@@ -278,15 +286,21 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
         });
 
         if (!res.ok) {
-          console.error("Failed to create schedule:", res.status);
+          setErrorMessage("일정 등록에 실패했습니다.");
           return;
         }
       }
 
       await loadSchedules();
+      if (formData.scheduled_at) {
+        const savedDate = new Date(formData.scheduled_at);
+        setCurrentDate(new Date(savedDate.getFullYear(), savedDate.getMonth(), 1));
+        setSelectedDate(savedDate);
+      }
       setShowModal(false);
     } catch (error) {
       console.error("Failed to save schedule:", error);
+      setErrorMessage("일정 저장 중 오류가 발생했습니다.");
     }
   };
 
@@ -299,13 +313,15 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
       });
 
       if (!res.ok) {
-        console.error("Failed to delete schedule:", res.status);
+        setErrorMessage("일정 삭제에 실패했습니다.");
         return;
       }
 
       await loadSchedules();
+      setSelectedSchedule(null);
     } catch (error) {
       console.error("Failed to delete schedule:", error);
+      setErrorMessage("일정 삭제 중 오류가 발생했습니다.");
     }
   };
 
@@ -313,6 +329,12 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
   const monthYear = currentDate.toLocaleDateString("ko-KR", {
     year: "numeric",
     month: "long",
+  });
+  const selectedDateLabel = selectedDate.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
   });
 
   return (
@@ -328,65 +350,57 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
               복약관리시스템
             </a>
             <div className="ms-auto d-flex gap-2">
-              <a className="btn btn-outline-light btn-sm" href="/auth-demo/app">
+              <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/dashboard">
                 대시보드
               </a>
-              <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/caregiver">
-                보호자 모드
-              </a>
+              {isCaregiver && (
+                <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/caregiver">
+                  보호자 모드
+                </a>
+              )}
             </div>
           </nav>
         </div>
       </header>
 
       <div className="container-fluid py-4">
-        <div className="row">
+        <div className="row g-3">
           <div className="col-md-3">
             <div className="card border-0 shadow-sm mb-3">
               <div className="card-body">
-                <h5 className="fw-bold mb-3">복약관리시스템</h5>
+                <h5 className="fw-bold mb-3">
+                  복약관리시스템
+                  <div className="small text-primary mt-1">
+                    {isCaregiver ? "보호자 모드" : "복약자 모드"}
+                  </div>
+                </h5>
                 <div className="list-group list-group-flush">
-                  <a
-                    href="/auth-demo/app/dashboard"
-                    className="list-group-item list-group-item-action"
-                  >
+                  <a href="/auth-demo/app/dashboard" className="list-group-item list-group-item-action">
                     대시보드
                   </a>
-                  <a
-                    href="/auth-demo/app/health-profile"
-                    className="list-group-item list-group-item-action"
-                  >
+                  <a href="/auth-demo/app/health-profile" className="list-group-item list-group-item-action">
                     처방전 업로드
                   </a>
-                  <a
-                    href="/auth-demo/app/documents"
-                    className="list-group-item list-group-item-action"
-                  >
+                  <a href="/auth-demo/app/documents" className="list-group-item list-group-item-action">
                     맞춤 복약 가이드
                   </a>
-                  <a
-                    href="/auth-demo/app/caregiver"
-                    className="list-group-item list-group-item-action"
-                  >
+                  <a href="/auth-demo/app/caregiver" className="list-group-item list-group-item-action">
                     알림 센터
                   </a>
-                  <a
-                    href="/auth-demo/app/schedule"
-                    className="list-group-item list-group-item-action active"
-                  >
+                  <a href="/auth-demo/app/medication-check" className="list-group-item list-group-item-action">
+                    복약 체크
+                  </a>
+                  <a href="/auth-demo/app/schedule" className="list-group-item list-group-item-action active">
                     스케줄
                   </a>
-                  <a
-                    href="/auth-demo/app/profile"
-                    className="list-group-item list-group-item-action"
-                  >
+                  <a href="/auth-demo/app/profile" className="list-group-item list-group-item-action">
                     건강 프로필
                   </a>
                 </div>
               </div>
             </div>
 
-            <div className="card border-0 shadow-sm">
+            <div className="card border-0 shadow-sm mb-3">
               <div className="card-body">
                 {isCaregiver && (
                   <div className="mb-3">
@@ -400,7 +414,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                       <option value="all">모두 보기</option>
                       {normalizedPatients.map((patient) => (
                         <option key={patient.id} value={String(patient.id)}>
-                          {patient.name} ({patient.id})
+                          {patient.name}
                         </option>
                       ))}
                     </select>
@@ -415,27 +429,86 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                   + Add New Event
                 </button>
 
-                <h6 className="fw-bold mb-3">스케줄 요약 정보</h6>
+                <h6 className="fw-bold mb-2">스케줄 요약</h6>
                 <div className="small text-muted">
                   {isCaregiver
                     ? selectedPatientId === "all"
-                      ? `전체 환자의 등록된 병원 진료 예약 ${filteredSchedules.length}건`
-                      : `선택한 환자의 등록된 병원 진료 예약 ${filteredSchedules.length}건`
-                    : `내 등록된 병원 진료 예약 ${filteredSchedules.length}건`}
+                      ? "전체 환자의 예정 일정 미리보기"
+                      : "선택한 환자의 예정 일정 미리보기"
+                    : "내 예정 일정 미리보기"}
                 </div>
 
+                <div className="small text-muted mt-2 mb-2">최근 일정 3건</div>
+
                 {filteredSchedules.slice(0, 3).map((schedule) => (
-                  <div
+                  <button
                     key={schedule.id}
-                    className="border-start border-3 border-primary ps-3 py-2 mt-2"
+                    type="button"
+                    className="border-0 bg-transparent w-100 text-start p-0"
+                    onClick={() => handleEditSchedule(schedule)}
                   >
-                    <div className="d-flex align-items-start">
-                      <div className="flex-grow-1">
-                        <div className="fw-semibold">{schedule.title}</div>
+                    <div
+                      className="border-start border-3 ps-3 py-2 mt-2 rounded-end"
+                      style={{ borderColor: getPatientColor(schedule.patient_id) }}
+                    >
+                      <div className="fw-semibold">{schedule.title}</div>
+                      {isCaregiver && (
+                        <div className="small text-muted">{getPatientName(schedule.patient_id)}</div>
+                      )}
+                      <div className="small text-muted">{schedule.hospital_name || "-"}</div>
+                      <div className="small text-muted">{schedule.location || "-"}</div>
+                      <div className="small text-muted">
+                        {new Date(schedule.scheduled_at).toLocaleString("ko-KR")}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+
+                {filteredSchedules.length > 3 && (
+                  <div className="small text-primary mt-2">
+                    외 {filteredSchedules.length - 3}건의 일정이 더 있습니다.
+                  </div>
+                )}
+
+                {!loading && filteredSchedules.length === 0 && (
+                  <div className="small text-muted mt-3">등록된 일정이 없습니다.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="card border-0 shadow-sm">
+              <div className="card-body">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <h6 className="fw-bold mb-0">선택한 날짜 일정</h6>
+                  <span className="badge text-bg-light">{selectedDateSchedules.length}건</span>
+                </div>
+                <div className="small text-muted mb-3">{selectedDateLabel}</div>
+
+                {selectedDateSchedules.length === 0 ? (
+                  <div className="small text-muted">선택한 날짜에 등록된 일정이 없습니다.</div>
+                ) : (
+                  selectedDateSchedules.map((schedule) => (
+                    <button
+                      key={schedule.id}
+                      type="button"
+                      className="border-0 bg-transparent w-100 text-start p-0"
+                      onClick={() => handleEditSchedule(schedule)}
+                    >
+                      <div className="rounded-3 border px-3 py-2 mb-2">
+                        <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                          <span
+                            className="rounded-pill"
+                            style={{
+                              width: 10,
+                              height: 10,
+                              backgroundColor: getPatientColor(schedule.patient_id),
+                              display: "inline-block",
+                            }}
+                          />
+                          <span className="fw-semibold">{schedule.title}</span>
+                        </div>
                         {isCaregiver && (
-                          <div className="small text-muted">
-                            {getPatientName(schedule.patient_id)}
-                          </div>
+                          <div className="small text-muted">{getPatientName(schedule.patient_id)}</div>
                         )}
                         <div className="small text-muted">{schedule.hospital_name || "-"}</div>
                         <div className="small text-muted">{schedule.location || "-"}</div>
@@ -443,12 +516,8 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                           {new Date(schedule.scheduled_at).toLocaleString("ko-KR")}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
-
-                {!loading && filteredSchedules.length === 0 && (
-                  <div className="small text-muted mt-3">등록된 일정이 없습니다.</div>
+                    </button>
+                  ))
                 )}
               </div>
             </div>
@@ -458,7 +527,10 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
             <div className="card border-0 shadow-sm">
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-                  <h4 className="fw-bold mb-0">스케줄</h4>
+                  <div>
+                    <h4 className="fw-bold mb-1">스케줄</h4>
+                    <div className="small text-muted">월별 캘린더 기준으로 일정을 확인할 수 있습니다.</div>
+                  </div>
 
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <button className="btn btn-sm btn-outline-secondary" onClick={handleToday}>
@@ -471,35 +543,10 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                     <button className="btn btn-sm btn-outline-secondary" onClick={handleNextMonth}>
                       &gt;
                     </button>
-
-                    <div className="btn-group" role="group">
-                      <button
-                        className={`btn btn-sm ${
-                          viewMode === "day" ? "btn-primary" : "btn-outline-secondary"
-                        }`}
-                        onClick={() => setViewMode("day")}
-                      >
-                        Day
-                      </button>
-                      <button
-                        className={`btn btn-sm ${
-                          viewMode === "week" ? "btn-primary" : "btn-outline-secondary"
-                        }`}
-                        onClick={() => setViewMode("week")}
-                      >
-                        Week
-                      </button>
-                      <button
-                        className={`btn btn-sm ${
-                          viewMode === "month" ? "btn-primary" : "btn-outline-secondary"
-                        }`}
-                        onClick={() => setViewMode("month")}
-                      >
-                        Month
-                      </button>
-                    </div>
                   </div>
                 </div>
+
+                {errorMessage && <div className="alert alert-danger py-2">{errorMessage}</div>}
 
                 {loading ? (
                   <div className="text-center py-5">
@@ -508,11 +555,8 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                     </div>
                   </div>
                 ) : (
-                  <div className="calendar-grid">
-                    <div
-                      className="row g-0 border-bottom fw-semibold text-center"
-                      style={{ backgroundColor: "#f8f9fa" }}
-                    >
+                  <div className="calendar-grid border rounded-4 overflow-hidden">
+                    <div className="row g-0 border-bottom fw-semibold text-center" style={{ backgroundColor: "#f8f9fa" }}>
                       <div className="col p-2">MON</div>
                       <div className="col p-2">TUE</div>
                       <div className="col p-2">WED</div>
@@ -523,41 +567,58 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                     </div>
 
                     {Array.from({ length: 6 }).map((_, weekIndex) => (
-                      <div
-                        key={weekIndex}
-                        className="row g-0 border-bottom"
-                        style={{ minHeight: "110px" }}
-                      >
+                      <div key={weekIndex} className="row g-0 border-bottom" style={{ minHeight: "110px" }}>
                         {days.slice(weekIndex * 7, (weekIndex + 1) * 7).map((day, dayIndex) => {
                           const daySchedules = getSchedulesForDate(day.date);
+                          const isSelected = isSameDay(day.date, selectedDate);
+                          const isToday = isSameDay(day.date, new Date());
 
                           return (
                             <div
                               key={dayIndex}
-                              className={`col border-end p-2 ${
-                                !day.isCurrentMonth ? "text-muted" : ""
-                              }`}
+                              className={`col border-end p-2 ${!day.isCurrentMonth ? "text-muted" : ""}`}
                               style={{
-                                backgroundColor: day.isCurrentMonth ? "#fff" : "#f8f9fa",
+                                backgroundColor: isSelected
+                                  ? "#eef6ff"
+                                  : day.isCurrentMonth
+                                  ? "#fff"
+                                  : "#f8f9fa",
+                                cursor: "pointer",
                               }}
+                              onClick={() => handleSelectDate(day.date)}
                             >
-                              <div className="text-end small mb-1">{day.date.getDate()}</div>
+                              <div className="d-flex justify-content-end mb-1">
+                                <span
+                                  className="small px-2 py-1 rounded-pill"
+                                  style={{
+                                    backgroundColor: isToday ? "#dbeafe" : "transparent",
+                                    color: isToday ? "#2563eb" : "inherit",
+                                    fontWeight: isSelected ? 700 : 500,
+                                  }}
+                                >
+                                  {day.date.getDate()}
+                                </span>
+                              </div>
 
                               {daySchedules.map((schedule) => (
-                                <div
+                                <button
                                   key={schedule.id}
-                                  className="small p-1 mb-1 rounded text-white"
+                                  type="button"
+                                  className="small p-1 mb-1 rounded text-white border-0 w-100 text-start"
                                   style={{
                                     backgroundColor: getPatientColor(schedule.patient_id),
                                     cursor: "pointer",
                                   }}
-                                  onClick={() => handleEditSchedule(schedule)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditSchedule(schedule);
+                                  }}
                                   title={`${getPatientName(schedule.patient_id)} / ${schedule.title}`}
                                 >
                                   {isCaregiver && selectedPatientId === "all"
                                     ? `[${getPatientName(schedule.patient_id)}] ${schedule.title}`
                                     : schedule.title}
-                                </div>
+                                </button>
                               ))}
                             </div>
                           );
@@ -578,11 +639,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
             <div className="modal-content">
               <div className="modal-header">
                 <h5 className="modal-title">{selectedSchedule ? "일정 수정" : "일정 추가"}</h5>
-                <button
-                  type="button"
-                  className="btn-close"
-                  onClick={() => setShowModal(false)}
-                ></button>
+                <button type="button" className="btn-close" onClick={() => setShowModal(false)}></button>
               </div>
 
               <form onSubmit={handleSubmit}>
@@ -600,7 +657,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                       >
                         {normalizedPatients.map((patient) => (
                           <option key={patient.id} value={patient.id}>
-                            {patient.name} ({patient.id})
+                            {patient.name}
                           </option>
                         ))}
                       </select>
@@ -624,9 +681,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                       type="text"
                       className="form-control"
                       value={formData.hospital_name}
-                      onChange={(e) =>
-                        setFormData({ ...formData, hospital_name: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, hospital_name: e.target.value })}
                     />
                   </div>
 
@@ -646,9 +701,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                       type="datetime-local"
                       className="form-control"
                       value={formData.scheduled_at}
-                      onChange={(e) =>
-                        setFormData({ ...formData, scheduled_at: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, scheduled_at: e.target.value })}
                       required
                     />
                   </div>
@@ -659,9 +712,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                       className="form-control"
                       rows="3"
                       value={formData.description}
-                      onChange={(e) =>
-                        setFormData({ ...formData, description: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     ></textarea>
                   </div>
                 </div>
@@ -680,11 +731,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowModal(false)}
-                  >
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
                     취소
                   </button>
 
