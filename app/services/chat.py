@@ -22,13 +22,13 @@ from app.dtos.chat import (
 )
 from app.models.chat import ChatMessage, ChatSession
 from app.models.guides import Guide, GuideStatus
-from app.models.healthcare import UserRole
 from app.models.medications import PatientMed
 from app.models.patients import Patient, PatientProfile
 from app.models.schedules import MedSchedule, MedScheduleTime
 from app.models.users import User
 from app.services.kids_client import KIDSClient
 from app.services.mfds import MfdsService
+from app.services.role_utils import user_has_role
 from app.services.rag import (
     build_rag_context,
     extract_external_blocks,
@@ -411,14 +411,14 @@ class QuestionAnalysis:
 # 요청자 역할 판별
 async def _resolve_requester_role(user_id: int) -> RequesterRole:
     # Louis수정(코드삭제): Patient row 존재 여부만으로 역할을 판별하면 보호자+본인프로필 계정이 PATIENT로 오인됨
-    if await UserRole.filter(user_id=user_id, role__name="ADMIN").exists():
+    if await user_has_role(user_id, "ADMIN"):
         return RequesterRole.ADMIN
 
     # Louis수정(기능추가): 역할 테이블 기준으로 우선 판별해 보호자가 연동 환자에 정상 접근하도록 수정
-    if await UserRole.filter(user_id=user_id, role__name="CAREGIVER").exists():
+    if await user_has_role(user_id, "CAREGIVER", "GUARDIAN"):
         return RequesterRole.CAREGIVER
 
-    if await UserRole.filter(user_id=user_id, role__name="PATIENT").exists():
+    if await user_has_role(user_id, "PATIENT"):
         return RequesterRole.PATIENT
 
     patient_exists = await Patient.filter(user_id=user_id).exists()

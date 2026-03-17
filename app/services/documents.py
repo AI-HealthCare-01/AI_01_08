@@ -39,13 +39,13 @@ from app.dtos.documents import (
 )
 from app.models.documents import Document, ExtractedMed, OcrJob, OcrRawText
 from app.models.dur import DurAlert
-from app.models.healthcare import UserRole
 from app.models.medications import DrugInfoCache, PatientMed
 from app.models.patients import CaregiverPatientLink, Patient
 from app.models.users import User
 from app.services.barcode import BarcodeService
 from app.services.mfds import MfdsService
 from app.services.ocr import OcrService
+from app.services.role_utils import user_has_role
 
 ALLOWED_FILE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".heic", ".heif"}
 HEIC_FILE_EXTENSIONS = {".heic", ".heif"}
@@ -660,8 +660,8 @@ class DocumentService:
 
     # 대상 PATIENT 귀속 검증 - REQ-USER-008, REQ-DOC-003
     async def _resolve_target_patient_for_upload(self, user: User, patient_id: int | None) -> Patient:
-        is_patient = await UserRole.filter(user_id=user.id, role__name="PATIENT").exists()
-        is_caregiver = await UserRole.filter(user_id=user.id, role__name="CAREGIVER").exists()
+        is_patient = await user_has_role(user.id, "PATIENT")
+        is_caregiver = await user_has_role(user.id, "CAREGIVER", "GUARDIAN")
 
         own_patient = await Patient.get_or_none(user_id=user.id)
 
@@ -686,8 +686,8 @@ class DocumentService:
 
     # 문서 조회 대상 환자 범위 계산 - REQ-DOC-002
     async def _resolve_accessible_patient_ids(self, user: User, requested_patient_id: int | None) -> list[int]:
-        is_patient = await UserRole.filter(user_id=user.id, role__name="PATIENT").exists()
-        is_caregiver = await UserRole.filter(user_id=user.id, role__name="CAREGIVER").exists()
+        is_patient = await user_has_role(user.id, "PATIENT")
+        is_caregiver = await user_has_role(user.id, "CAREGIVER", "GUARDIAN")
 
         own_patient = await Patient.get_or_none(user_id=user.id) if is_patient else None
         own_patient_id = own_patient.id if own_patient else None
