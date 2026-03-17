@@ -1159,7 +1159,7 @@ class DocumentService:
         normalized_text = normalized_text.replace("\r", "\n")
         normalized_text = re.sub(r"[ \t]+", " ", normalized_text).strip()
 
-        raw_chunks = re.split(r"[\n•·]+|(?<=[.!?])\s+|(?:\d+\.)\s*", normalized_text)
+        raw_chunks = re.split(r"[\n•·]+|(?<=[.!?。])(?=\s|[가-힣A-Za-z0-9])|(?:\d+\.)\s*", normalized_text)
         bullets: list[str] = []
         seen_bullets: set[str] = set()
         for chunk in raw_chunks:
@@ -1169,7 +1169,7 @@ class DocumentService:
             if len(candidate_text) < 3:
                 continue
             if len(candidate_text) > 140:
-                candidate_text = f"{candidate_text[:137]}..."
+                candidate_text = DocumentService._trim_bullet_to_sentence(candidate_text, max_length=140)
             if candidate_text in seen_bullets:
                 continue
             seen_bullets.add(candidate_text)
@@ -1177,6 +1177,20 @@ class DocumentService:
             if len(bullets) >= 4:
                 break
         return bullets
+
+    @staticmethod
+    def _trim_bullet_to_sentence(text: str, max_length: int = 140) -> str:
+        if len(text) <= max_length:
+            return text
+
+        clipped = text[:max_length].rstrip()
+        sentence_matches = list(re.finditer(r"[.!?。]\s*", clipped))
+        if sentence_matches:
+            sentence_end = sentence_matches[-1].end()
+            if sentence_end >= max(30, max_length // 2):
+                return clipped[:sentence_end].rstrip()
+
+        return text
 
     # 확정 약 메모 생성(OCR fallback 용도) - REQ-DOC-007
     def _build_confirmed_med_note(self, extracted_med: ExtractedMed) -> str:
