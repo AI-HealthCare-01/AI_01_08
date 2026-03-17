@@ -778,6 +778,24 @@ function App() {
     }
   };
 
+  const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false);
+  const [withdrawState, setWithdrawState] = useState({ submitting: false, error: null });
+
+  const handleWithdraw = async () => {
+    setWithdrawState({ submitting: true, error: null });
+    try {
+      const res = await authFetch(`${API_PREFIX}/users/me`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await safeJson(res);
+        throw new Error(formatApiError(body) || `status ${res.status}`);
+      }
+      persistAccessToken(null);
+      window.location.href = "/auth-demo/login";
+    } catch (error) {
+      setWithdrawState({ submitting: false, error: error.message || "탈퇴 처리 중 오류가 발생했습니다." });
+    }
+  };
+
   const submitProfileUpdate = async (event) => {
     event.preventDefault();
     setProfileState({ submitting: true, error: null, success: false });
@@ -1848,6 +1866,13 @@ function App() {
                         }}
                       >
                         초기화
+                      </button>
+                      <button
+                        className="btn btn-outline-danger"
+                        type="button"
+                        onClick={() => setShowWithdrawConfirm(true)}
+                      >
+                        회원탈퇴
                       </button>
                     </div>
                     {profileState.error && <div className="alert alert-danger mt-3">{profileState.error}</div>}
