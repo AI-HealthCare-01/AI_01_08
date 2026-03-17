@@ -1,6 +1,80 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const API_PREFIX = "/api/v1";
+
+const pageStyle = {
+  minHeight: "100vh",
+  background: "linear-gradient(145deg, #f8fbff 0%, #dfeafb 100%)",
+};
+
+const shellStyle = {
+  maxWidth: "1440px",
+  margin: "0 auto",
+  display: "grid",
+  gridTemplateColumns: "240px minmax(0, 1fr)",
+  gap: "28px",
+  padding: "28px",
+};
+
+const sidebarCardStyle = {
+  position: "sticky",
+  top: "24px",
+  borderRadius: "24px",
+  background: "rgba(255, 255, 255, 0.96)",
+  border: "1px solid #d7e3f4",
+  boxShadow: "0 18px 40px rgba(37, 99, 235, 0.1)",
+  padding: "24px 18px",
+  height: "calc(100vh - 56px)",
+};
+
+const mainCardStyle = {
+  borderRadius: "28px",
+  background: "rgba(255, 255, 255, 0.96)",
+  border: "1px solid #d7e3f4",
+  boxShadow: "0 18px 40px rgba(37, 99, 235, 0.1)",
+};
+
+const blockCardStyle = {
+  borderRadius: "22px",
+  background: "#ffffff",
+  border: "1px solid #dbe7f6",
+  boxShadow: "0 12px 28px rgba(37, 99, 235, 0.07)",
+};
+
+const metricCardStyle = {
+  borderRadius: "18px",
+  background: "linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%)",
+  border: "1px solid #d7e3f4",
+  padding: "20px",
+  height: "100%",
+};
+
+const chipStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  borderRadius: "999px",
+  padding: "6px 12px",
+  border: "1px solid #cfe0fb",
+  background: "#eaf2ff",
+  color: "#1d4ed8",
+  fontSize: "0.88rem",
+  fontWeight: 600,
+};
+
+const statusColorMap = {
+  DONE: { bg: "#eef6ff", color: "#1d4ed8", label: "가이드 준비 완료" },
+  GENERATING: { bg: "#f8fafc", color: "#475569", label: "가이드 생성 중" },
+  FAILED: { bg: "#fef2f2", color: "#b91c1c", label: "가이드 생성 실패" },
+};
+
+const heroBannerStyle = {
+  borderRadius: "24px",
+  padding: "28px",
+  marginBottom: "28px",
+  background: "linear-gradient(135deg, #0f3d91 0%, #2563eb 58%, #4f8df7 100%)",
+  color: "#ffffff",
+  boxShadow: "0 18px 40px rgba(37, 99, 235, 0.22)",
+};
 
 const safeJson = async (res) => {
   try {
@@ -16,25 +90,145 @@ const formatDateTime = (value) => {
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("ko-KR", {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
+  }).format(date);
+};
+
+const formatDate = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ko-KR", {
+    dateStyle: "medium",
   }).format(date);
 };
 
 const formatApiError = (value) => {
   if (!value) return "알 수 없는 오류가 발생했습니다.";
   if (typeof value === "string") return value;
-  if (Array.isArray(value)) {
-    return value.map((item) => item?.msg || JSON.stringify(item)).join(", ");
-  }
+  if (Array.isArray(value)) return value.map((item) => item?.msg || JSON.stringify(item)).join(", ");
   if (typeof value === "object") {
     if (value.detail) return formatApiError(value.detail);
     if (value.message) return formatApiError(value.message);
+    if (value.code && value.message) return `${value.message}`;
     return JSON.stringify(value);
   }
   return String(value);
 };
 
+const toArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === "string") return value.split("\n").map((item) => item.trim()).filter(Boolean);
+  return [];
+};
+
+const normalizeGuideSections = (guideDetail) => {
+  const jsonSections = guideDetail?.content_json?.sections;
+  if (Array.isArray(jsonSections) && jsonSections.length > 0) {
+    return jsonSections.map((section, index) => ({
+      id: `${section.title || "section"}-${index}`,
+      title: section.title || `섹션 ${index + 1}`,
+      body: section.body || "",
+      bullets: Array.isArray(section.bullets) ? section.bullets.filter(Boolean) : [],
+    }));
+  }
+
+  const text = guideDetail?.content_text || "";
+  if (!text.trim()) return [];
+
+  return text
+    .split(/\n{2,}/)
+    .map((chunk, index) => chunk.trim())
+    .filter(Boolean)
+    .map((chunk, index) => {
+      const lines = chunk.split("\n").map((line) => line.trim()).filter(Boolean);
+      if (lines.length === 0) {
+        return null;
+      }
+      const [titleLine, ...rest] = lines;
+      return {
+        id: `fallback-${index}`,
+        title: titleLine.length <= 24 ? titleLine : `가이드 ${index + 1}`,
+        body: chunk,
+        bullets: (rest.length > 0 ? rest : [chunk]).map((line) => line.replace(/^[-•]\s*/, "")),
+      };
+    })
+    .filter(Boolean);
+};
+
+const normalizeCaregiverPoints = (guideDetail) => {
+  const summary = guideDetail?.caregiver_summary;
+  if (!summary) return [];
+  if (Array.isArray(summary?.care_points)) return summary.care_points.filter(Boolean);
+  if (Array.isArray(summary?.today_checklist) || Array.isArray(summary?.warning_signs)) {
+    return [...(summary.today_checklist || []), ...(summary.warning_signs || [])].filter(Boolean);
+  }
+  if (Array.isArray(summary?.items)) return summary.items.filter(Boolean);
+  if (typeof summary === "string") return [summary];
+  return [];
+};
+
+const renderChatContent = (content) => {
+  const lines = String(content || "").split("\n");
+  const blocks = [];
+  let listBuffer = [];
+
+  const flushList = () => {
+    if (listBuffer.length > 0) {
+      blocks.push({ type: "list", items: listBuffer });
+      listBuffer = [];
+    }
+  };
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) {
+      flushList();
+      return;
+    }
+
+    if (line.startsWith("- ")) {
+      listBuffer.push(line.slice(2).trim());
+      return;
+    }
+
+    flushList();
+    blocks.push({ type: "paragraph", text: line });
+  });
+
+  flushList();
+
+  return blocks.map((block, index) => {
+    if (block.type === "list") {
+      return (
+        <ul key={`list-${index}`} className="mb-2 ps-3" style={{ lineHeight: 1.8 }}>
+          {block.items.map((item, itemIndex) => (
+            <li key={`item-${itemIndex}`} style={{ marginBottom: "4px" }}>
+              {item}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    return (
+      <p key={`paragraph-${index}`} className="mb-2" style={{ lineHeight: 1.8 }}>
+        {block.text}
+      </p>
+    );
+  });
+};
+
+const getGuideStatusMeta = (status) => statusColorMap[status] || { bg: "#f1f5f9", color: "#475569", label: status || "상태 미확인" };
+
+const getChatStorageKey = (role, patientId) => `ai-chat-session:${role || "UNKNOWN"}:${patientId || "unknown"}`;
+
 function AiPage() {
+  const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const requestedPatientId = searchParams.get("patient_id");
+  const shouldOpenChat = searchParams.get("open_chat") === "1";
+
   const readCookie = (name) => {
     if (typeof document === "undefined") return null;
     const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
@@ -45,60 +239,39 @@ function AiPage() {
     if (typeof window === "undefined") return null;
     return window.localStorage.getItem("access_token") || readCookie("access_token");
   });
-
   const [loginRole, setLoginRole] = useState(() => {
     if (typeof window === "undefined") return "PATIENT";
     return window.localStorage.getItem("login_role") || "PATIENT";
   });
 
-  const [meState, setMeState] = useState({
+  const [meState, setMeState] = useState({ loading: false, data: null, error: null });
+  const [linksState, setLinksState] = useState({ loading: false, data: null, error: null });
+  const [profileState, setProfileState] = useState({ loading: false, data: null, error: null, missing: false });
+  const [documentsState, setDocumentsState] = useState({ loading: false, data: [], error: null });
+  const [medGuideState, setMedGuideState] = useState({ loading: false, data: [], error: null });
+  const [guidesState, setGuidesState] = useState({ loading: false, data: [], error: null });
+  const [guideDetailState, setGuideDetailState] = useState({ loading: false, data: null, error: null });
+  const [guideActionState, setGuideActionState] = useState({ submitting: false, error: null, success: null });
+  const [guideUpdatedAt, setGuideUpdatedAt] = useState(null);
+  const [chatState, setChatState] = useState({
+    open: shouldOpenChat,
+    sessionId: null,
     loading: false,
-    data: null,
-    error: null
+    sending: false,
+    messages: [],
+    error: null,
   });
-
-  const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatContainerRef = React.useRef(null);
+  const [selectedPatientId, setSelectedPatientId] = useState(requestedPatientId || "");
+  const [selectedGuideId, setSelectedGuideId] = useState("");
+  const [selectedDocumentId, setSelectedDocumentId] = useState("");
 
-  // 챗 메시지가 추가될 때마다 스크롤 하단으로 이동
-  React.useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [chatMessages, chatLoading]);
-
-  const [inviteState, setInviteState] = useState({
-    submitting: false,
-    error: null,
-    data: null
-  });
-
-  const [inviteCodeForm, setInviteCodeForm] = useState({
-    expires_in_minutes: 10080
-  });
-
-  const [linkForm, setLinkForm] = useState({
-    code: ""
-  });
-
-  const [linksState, setLinksState] = useState({
-    loading: false,
-    data: null,
-    error: null
-  });
-
-  const [linkAction, setLinkAction] = useState({
-    submitting: false,
-    error: null,
-    success: null
-  });
+  const chatContainerRef = useRef(null);
 
   const refreshAccessToken = async () => {
     const res = await fetch(`${API_PREFIX}/auth/token/refresh`, {
       method: "GET",
-      credentials: "include"
+      credentials: "include",
     });
     if (!res.ok) return null;
     const body = await safeJson(res);
@@ -120,11 +293,13 @@ function AiPage() {
     if (accessToken) {
       headers.set("Authorization", `Bearer ${accessToken}`);
     }
+
     const res = await fetch(path, {
       ...options,
       headers,
-      credentials: "include"
+      credentials: "include",
     });
+
     if (res.status === 401 && retryOnUnauthorized) {
       const newToken = await refreshAccessToken();
       if (newToken) {
@@ -132,12 +307,37 @@ function AiPage() {
         return fetch(path, {
           ...options,
           headers,
-          credentials: "include"
+          credentials: "include",
         });
       }
     }
+
     return res;
   };
+
+  const selectedLink = (linksState.data?.links || []).find((link) => String(link.patient_id) === String(selectedPatientId)) || null;
+  const isCaregiver = loginRole === "CAREGIVER";
+  const isPatient = loginRole === "PATIENT";
+  const activePatientLabel = isCaregiver
+    ? selectedLink?.patient_name || (selectedPatientId ? `환자 #${selectedPatientId}` : "복약자 선택")
+    : meState.data?.name || "내 프로필";
+  const selectedGuide = guidesState.data.find((guide) => String(guide.guide_id) === String(selectedGuideId)) || null;
+  const selectedDocument = documentsState.data.find((document) => String(document.document_id) === String(selectedDocumentId)) || null;
+  const guideStatusMeta = getGuideStatusMeta(guideDetailState.data?.status || selectedGuide?.status);
+  const guideSections = normalizeGuideSections(guideDetailState.data);
+  const caregiverPoints = normalizeCaregiverPoints(guideDetailState.data);
+  const primaryGuideSection = guideSections[0] || null;
+  const visibleGuideSections = primaryGuideSection ? guideSections.slice(1) : guideSections;
+
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [chatState.messages, chatState.sending, chatState.open]);
+
+  useEffect(() => {
+    setLoginRole(localStorage.getItem("login_role") || "PATIENT");
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -152,167 +352,392 @@ function AiPage() {
     }
   };
 
-  const sendChatMessage = async () => {
-    if (!chatInput.trim() || chatLoading) return;
-
-    const userMessage = chatInput.trim();
-    setChatInput("");
-    setChatMessages((prev) => [...prev, { role: "user", content: userMessage }]);
-    setChatLoading(true);
-
+  const loadMe = async () => {
+    setMeState({ loading: true, data: null, error: null });
     try {
-      console.log("Sending message to AI...", userMessage);
-      const res = await authFetch(`${API_PREFIX}/ai-chat`, {
-        method: "POST",
-        body: JSON.stringify({
-          message: userMessage,
-          patient_context: meState.data ? `이름: ${meState.data.name}, 역할: ${loginRole}` : null
-        })
-      });
+      const res = await authFetch(`${API_PREFIX}/users/me`);
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const data = await res.json();
+      setMeState({ loading: false, data, error: null });
+    } catch (error) {
+      setMeState({ loading: false, data: null, error: error?.message || String(error) });
+    }
+  };
 
-      console.log("Response status:", res.status);
+  const loadLinks = async () => {
+    if (!isCaregiver) return;
+    setLinksState({ loading: true, data: null, error: null });
+    try {
+      const res = await authFetch(`${API_PREFIX}/users/links`);
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const data = await res.json();
+      setLinksState({ loading: false, data, error: null });
 
-      if (!res.ok) {
-        const body = await safeJson(res);
-        console.error("API Error:", body);
-        throw new Error(formatApiError(body) || `HTTP ${res.status}`);
+      if (!selectedPatientId) {
+        const requestedMatch = data?.links?.find((link) => String(link.patient_id) === String(requestedPatientId));
+        const firstLink = requestedMatch || data?.links?.[0];
+        if (firstLink?.patient_id) {
+          setSelectedPatientId(String(firstLink.patient_id));
+        }
+      }
+    } catch (error) {
+      setLinksState({ loading: false, data: null, error: error?.message || String(error) });
+    }
+  };
+
+  const loadProfile = async () => {
+    if (isCaregiver && !selectedLink) {
+      setProfileState({ loading: false, data: null, error: null, missing: false });
+      return;
+    }
+
+    setProfileState((prev) => ({ ...prev, loading: true, error: null, missing: false }));
+    try {
+      const endpoint = isCaregiver
+        ? `${API_PREFIX}/users/links/${selectedLink.link_id}/health-profile`
+        : `${API_PREFIX}/users/me/health-profile`;
+      const res = await authFetch(endpoint);
+      if (res.ok) {
+        const body = await res.json();
+        setProfileState({ loading: false, data: body?.data || null, error: null, missing: false });
+        if (!selectedPatientId && body?.data?.patient_id) {
+          setSelectedPatientId(String(body.data.patient_id));
+        }
+      } else if (res.status === 404) {
+        setProfileState({ loading: false, data: null, error: null, missing: true });
+      } else {
+        throw new Error(formatApiError(await safeJson(res)));
+      }
+    } catch (error) {
+      setProfileState({ loading: false, data: null, error: error?.message || String(error), missing: false });
+    }
+  };
+
+  const loadDocuments = async () => {
+    if (isCaregiver && !selectedPatientId) {
+      setDocumentsState({ loading: false, data: [], error: null });
+      return;
+    }
+
+    setDocumentsState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const params = new URLSearchParams();
+      params.set("document_status", "uploaded");
+      if (selectedPatientId) {
+        params.set("patient_id", selectedPatientId);
+      }
+      const res = await authFetch(`${API_PREFIX}/documents?${params.toString()}`);
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const body = await res.json();
+      const items = body?.items || [];
+      setDocumentsState({ loading: false, data: items, error: null });
+
+      if (!selectedDocumentId && items.length > 0) {
+        setSelectedDocumentId(String(items[0].document_id));
+      } else if (selectedDocumentId && !items.some((item) => String(item.document_id) === String(selectedDocumentId))) {
+        setSelectedDocumentId(items[0] ? String(items[0].document_id) : "");
       }
 
-      const data = await res.json();
-      console.log("AI Response:", data);
-      setChatMessages((prev) => [...prev, { role: "assistant", content: data.response }]);
+      if (!selectedPatientId && items[0]?.patient_id) {
+        setSelectedPatientId(String(items[0].patient_id));
+      }
     } catch (error) {
-      console.error("Chat error:", error);
-      const errorMessage = error?.message || String(error);
-      setChatMessages((prev) => [
+      setDocumentsState({ loading: false, data: [], error: error?.message || String(error) });
+    }
+  };
+
+  const loadMedicationGuide = async () => {
+    if (!selectedPatientId) {
+      setMedGuideState({ loading: false, data: [], error: null });
+      return;
+    }
+
+    setMedGuideState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const params = new URLSearchParams();
+      params.set("patient_id", selectedPatientId);
+      if (selectedDocumentId) {
+        params.set("document_id", selectedDocumentId);
+      }
+      const res = await authFetch(`${API_PREFIX}/documents/medication-guide?${params.toString()}`);
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const body = await res.json();
+      setMedGuideState({ loading: false, data: body?.items || [], error: null });
+    } catch (error) {
+      setMedGuideState({ loading: false, data: [], error: error?.message || String(error) });
+    }
+  };
+
+  const loadGuides = async () => {
+    if (!selectedPatientId) {
+      setGuidesState({ loading: false, data: [], error: null });
+      return;
+    }
+
+    setGuidesState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const params = new URLSearchParams({ patient_id: selectedPatientId });
+      const res = await authFetch(`${API_PREFIX}/guides?${params.toString()}`);
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const body = await res.json();
+      const items = body?.data?.items || [];
+      setGuidesState({ loading: false, data: items, error: null });
+      setGuideUpdatedAt(new Date().toISOString());
+
+      const latestGuide = items[0] || null;
+      if (!selectedGuideId && latestGuide) {
+        setSelectedGuideId(String(latestGuide.guide_id));
+      } else if (selectedGuideId && !items.some((item) => String(item.guide_id) === String(selectedGuideId))) {
+        setSelectedGuideId(latestGuide ? String(latestGuide.guide_id) : "");
+      }
+    } catch (error) {
+      setGuidesState({ loading: false, data: [], error: error?.message || String(error) });
+    }
+  };
+
+  const loadGuideDetail = async (guideId) => {
+    if (!guideId) {
+      setGuideDetailState({ loading: false, data: null, error: null });
+      return;
+    }
+
+    setGuideDetailState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const res = await authFetch(`${API_PREFIX}/guides/${guideId}`);
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const body = await res.json();
+      setGuideDetailState({ loading: false, data: body?.data || null, error: null });
+      setGuideUpdatedAt(new Date().toISOString());
+    } catch (error) {
+      setGuideDetailState({ loading: false, data: null, error: error?.message || String(error) });
+    }
+  };
+
+  const loadChatMessages = async (sessionId) => {
+    if (!sessionId) {
+      setChatState((prev) => ({ ...prev, sessionId: null, messages: [] }));
+      return;
+    }
+
+    setChatState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const res = await authFetch(`${API_PREFIX}/chat/sessions/${sessionId}/messages`);
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const body = await res.json();
+      setChatState((prev) => ({
         ...prev,
-        { 
-          role: "assistant", 
-          content: `죄송합니다. 오류가 발생했습니다: ${errorMessage}\n\n다시 시도해주세요.` 
+        sessionId,
+        loading: false,
+        error: null,
+        messages: body?.data?.items || [],
+      }));
+    } catch (error) {
+      setChatState((prev) => ({
+        ...prev,
+        loading: false,
+        error: error?.message || String(error),
+        messages: [],
+        sessionId: null,
+      }));
+    }
+  };
+
+  const ensureChatSession = async () => {
+    if (!selectedPatientId) {
+      throw new Error("먼저 환자를 선택해 주세요.");
+    }
+
+    if (chatState.sessionId) {
+      return chatState.sessionId;
+    }
+
+    const storageKey = getChatStorageKey(loginRole, selectedPatientId);
+    const savedSessionId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
+    if (savedSessionId) {
+      try {
+        await loadChatMessages(savedSessionId);
+        return savedSessionId;
+      } catch {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(storageKey);
         }
-      ]);
-    } finally {
-      setChatLoading(false);
+      }
+    }
+
+    const res = await authFetch(`${API_PREFIX}/chat/sessions`, {
+      method: "POST",
+      body: JSON.stringify({
+        patient_id: Number(selectedPatientId),
+        mode: isCaregiver ? "caregiver" : "general",
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(formatApiError(await safeJson(res)));
+    }
+    const body = await res.json();
+    const sessionId = String(body?.data?.session_id || "");
+    if (!sessionId) {
+      throw new Error("채팅 세션을 생성하지 못했습니다.");
+    }
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(storageKey, sessionId);
+    }
+    setChatState((prev) => ({ ...prev, sessionId, messages: [] }));
+    return sessionId;
+  };
+
+  const openChatPanel = async () => {
+    setChatState((prev) => ({ ...prev, open: true, error: null }));
+    try {
+      await ensureChatSession();
+    } catch (error) {
+      setChatState((prev) => ({ ...prev, error: error?.message || String(error) }));
+    }
+  };
+
+  const closeChatPanel = () => {
+    setChatState((prev) => ({ ...prev, open: false }));
+  };
+
+  const sendChatMessage = async () => {
+    if (!chatInput.trim() || chatState.sending) return;
+
+    setChatState((prev) => ({ ...prev, sending: true, error: null }));
+    try {
+      const sessionId = await ensureChatSession();
+      const content = chatInput.trim();
+      setChatInput("");
+      const res = await authFetch(`${API_PREFIX}/chat/sessions/${sessionId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const body = await res.json();
+      const userMessage = body?.data?.user_message;
+      const assistantMessage = body?.data?.assistant_message;
+      setChatState((prev) => ({
+        ...prev,
+        sending: false,
+        sessionId,
+        messages: [...prev.messages, userMessage, assistantMessage].filter(Boolean),
+      }));
+    } catch (error) {
+      setChatState((prev) => ({
+        ...prev,
+        sending: false,
+        error: error?.message || String(error),
+      }));
+    }
+  };
+
+  const handleGenerateGuide = async () => {
+    if (!selectedDocumentId) {
+      setGuideActionState({ submitting: false, error: "먼저 문서를 선택해 주세요.", success: null });
+      return;
+    }
+
+    setGuideActionState({ submitting: true, error: null, success: null });
+    try {
+      const res = await authFetch(`${API_PREFIX}/guides/generate`, {
+        method: "POST",
+        body: JSON.stringify({ document_id: Number(selectedDocumentId) }),
+      });
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const body = await res.json();
+      const guideId = body?.data?.guide_id;
+      setGuideActionState({ submitting: false, error: null, success: "가이드 생성을 요청했습니다." });
+      if (guideId) {
+        setSelectedGuideId(String(guideId));
+      }
+      await loadGuides();
+      if (guideId) {
+        await loadGuideDetail(guideId);
+      }
+    } catch (error) {
+      setGuideActionState({ submitting: false, error: error?.message || String(error), success: null });
+    }
+  };
+
+  const handleRegenerateGuide = async () => {
+    if (!selectedGuideId) return;
+    setGuideActionState({ submitting: true, error: null, success: null });
+    try {
+      const res = await authFetch(`${API_PREFIX}/guides/${selectedGuideId}/regenerate`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      const body = await res.json();
+      const guideId = body?.data?.guide_id;
+      setGuideActionState({ submitting: false, error: null, success: "가이드 재생성을 요청했습니다." });
+      if (guideId) {
+        setSelectedGuideId(String(guideId));
+      }
+      await loadGuides();
+      if (guideId) {
+        await loadGuideDetail(guideId);
+      }
+    } catch (error) {
+      setGuideActionState({ submitting: false, error: error?.message || String(error), success: null });
     }
   };
 
   useEffect(() => {
     if (!accessToken) return;
-
-    const loadMe = async () => {
-      setMeState({ loading: true, data: null, error: null });
-      try {
-        const res = await authFetch(`${API_PREFIX}/users/me`);
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw new Error(body?.detail || `status ${res.status}`);
-        }
-        const data = await res.json();
-        setMeState({ loading: false, data, error: null });
-      } catch (error) {
-        setMeState({ loading: false, data: null, error: error.message });
-      }
-    };
-
-    const loadLinks = async () => {
-      setLinksState((prev) => ({ ...prev, loading: true, error: null }));
-      try {
-        const res = await authFetch(`${API_PREFIX}/users/links`);
-        if (!res.ok) {
-          const body = await safeJson(res);
-          throw new Error(body?.detail || `status ${res.status}`);
-        }
-        const data = await res.json();
-        setLinksState({ loading: false, data, error: null });
-      } catch (error) {
-        setLinksState({ loading: false, data: null, error: error.message });
-      }
-    };
-
     loadMe();
-    loadLinks();
-  }, [accessToken]);
-
-  const createInviteCode = async () => {
-    setInviteState({ submitting: true, error: null, data: null });
-    try {
-      const payload = {
-        expires_in_minutes: Number(inviteCodeForm.expires_in_minutes) || 10080
-      };
-      const res = await authFetch(`${API_PREFIX}/users/invite-code`, {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const body = await safeJson(res);
-        throw new Error(formatApiError(body) || `status ${res.status}`);
-      }
-      const data = await res.json();
-      setInviteState({ submitting: false, error: null, data });
-    } catch (error) {
-      setInviteState({ submitting: false, error: formatApiError(error?.message || error), data: null });
+    if (isCaregiver) {
+      loadLinks();
     }
-  };
+  }, [accessToken, loginRole]);
 
-  const deleteInviteCode = async () => {
-    try {
-      const res = await authFetch(`${API_PREFIX}/users/invite-code`, { method: "DELETE" });
-      if (!res.ok) {
-        const body = await safeJson(res);
-        throw new Error(formatApiError(body) || `status ${res.status}`);
-      }
-      setInviteState((prev) => ({ ...prev, data: null }));
-    } catch (error) {
-      alert(formatApiError(error?.message || error));
+  useEffect(() => {
+    if (isCaregiver) {
+      if (!selectedLink && !selectedPatientId) return;
+      loadProfile();
+    } else {
+      loadProfile();
     }
-  };
+  }, [loginRole, selectedPatientId, linksState.data]);
 
-  const linkByInviteCode = async (event) => {
-    event.preventDefault();
-    setLinkAction({ submitting: true, error: null, success: null });
-    try {
-      const payload = { code: linkForm.code };
-      const res = await authFetch(`${API_PREFIX}/users/link`, {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const body = await safeJson(res);
-        throw new Error(formatApiError(body) || `status ${res.status}`);
-      }
-      await res.json();
-      setLinkAction({ submitting: false, error: null, success: "연동 완료" });
-      const reload = await authFetch(`${API_PREFIX}/users/links`);
-      if (reload.ok) {
-        const data = await reload.json();
-        setLinksState({ loading: false, data, error: null });
-      }
-    } catch (error) {
-      setLinkAction({ submitting: false, error: formatApiError(error?.message || error), success: null });
-    }
-  };
+  useEffect(() => {
+    if (!accessToken) return;
+    loadDocuments();
+    loadGuides();
+  }, [accessToken, selectedPatientId]);
 
-  const unlinkPatient = async (linkId) => {
-    setLinkAction({ submitting: true, error: null, success: null });
-    try {
-      const res = await authFetch(`${API_PREFIX}/users/links/${linkId}`, {
-        method: "DELETE"
-      });
-      if (!res.ok) {
-        const body = await safeJson(res);
-        throw new Error(formatApiError(body) || `status ${res.status}`);
-      }
-      await res.json();
-      setLinkAction({ submitting: false, error: null, success: "연동 해제 완료" });
-      const reload = await authFetch(`${API_PREFIX}/users/links`);
-      if (reload.ok) {
-        const data = await reload.json();
-        setLinksState({ loading: false, data, error: null });
-      }
-    } catch (error) {
-      setLinkAction({ submitting: false, error: formatApiError(error?.message || error), success: null });
+  useEffect(() => {
+    loadMedicationGuide();
+  }, [selectedPatientId, selectedDocumentId]);
+
+  useEffect(() => {
+    loadGuideDetail(selectedGuideId);
+  }, [selectedGuideId]);
+
+  useEffect(() => {
+    if (!chatState.open) return;
+    if (!selectedPatientId) return;
+
+    const storageKey = getChatStorageKey(loginRole, selectedPatientId);
+    const savedSessionId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
+    if (savedSessionId) {
+      loadChatMessages(savedSessionId);
+    } else {
+      setChatState((prev) => ({ ...prev, sessionId: null, messages: [] }));
     }
-  };
+  }, [chatState.open, selectedPatientId]);
+
+  useEffect(() => {
+    const currentStatus = guideDetailState.data?.status || selectedGuide?.status;
+    if (currentStatus !== "GENERATING") return undefined;
+
+    const interval = window.setInterval(() => {
+      loadGuides();
+      if (selectedGuideId) {
+        loadGuideDetail(selectedGuideId);
+      }
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, [guideDetailState.data?.status, selectedGuide?.status, selectedGuideId]);
 
   if (!accessToken) {
     if (typeof window !== "undefined") {
@@ -322,243 +747,716 @@ function AiPage() {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
-      {/* 좌측 사이드바 */}
-      <aside style={{ width: '240px', backgroundColor: '#fff', borderRight: '1px solid #e0e0e0', padding: '20px' }}>
-        <div style={{ marginBottom: '30px' }}>
-          <h5 style={{ color: '#4a90e2', fontSize: '16px', fontWeight: 'bold' }}>복약관리시스템</h5>
-          <div style={{ fontSize: '14px', color: '#666' }}>보호자 모드</div>
-        </div>
-        
-        <nav>
-          <a href="/auth-demo/app/dashboard" style={{ display: 'block', padding: '12px 16px', color: '#333', textDecoration: 'none', borderRadius: '8px', marginBottom: '4px' }}>
-            대시보드
-          </a>
-          <a href="/auth-demo/app/health-profile" style={{ display: 'block', padding: '12px 16px', color: '#333', textDecoration: 'none', borderRadius: '8px', marginBottom: '4px' }}>
-            처방전 업로드
-          </a>
-          <a href="/auth-demo/app/ai" style={{ display: 'block', padding: '12px 16px', backgroundColor: '#4a90e2', color: '#fff', textDecoration: 'none', borderRadius: '8px', marginBottom: '4px', fontWeight: '600' }}>
-            맞춤 복약 가이드
-          </a>
-          <a href="/auth-demo/app/caregiver" style={{ display: 'block', padding: '12px 16px', color: '#333', textDecoration: 'none', borderRadius: '8px', marginBottom: '4px' }}>
-            알림센터
-          </a>
-          <a href="/auth-demo/app/documents" style={{ display: 'block', padding: '12px 16px', color: '#333', textDecoration: 'none', borderRadius: '8px', marginBottom: '4px' }}>
-            스케줄
-          </a>
-          <a href="/auth-demo/app/profile" style={{ display: 'block', padding: '12px 16px', color: '#333', textDecoration: 'none', borderRadius: '8px', marginBottom: '4px' }}>
-            건강 프로필
-          </a>
-        </nav>
-        
-        <div style={{ position: 'absolute', bottom: '20px', left: '20px', right: '20px' }}>
-          <a href="#" style={{ display: 'block', padding: '12px 16px', color: '#333', textDecoration: 'none', borderRadius: '8px', marginBottom: '4px' }}>
-            Settings
-          </a>
-          <a href="#" onClick={handleLogout} style={{ display: 'block', padding: '12px 16px', color: '#333', textDecoration: 'none', borderRadius: '8px' }}>
-            Logout
-          </a>
-        </div>
-      </aside>
-
-      {/* 우측 메인 콘텐츠 */}
-      <main style={{ flex: 1, padding: '40px' }}>
-        {/* 헤더 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
-          <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: 0 }}>AI 가이드</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="프로필" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
-            <div>
-              <div style={{ fontSize: '14px', fontWeight: '600' }}>{meState.data?.name || '옥영향'}</div>
-              <div style={{ fontSize: '12px', color: '#666' }}>보호자</div>
-            </div>
-          </div>
-        </div>
-
-        {/* 메인 카드 */}
-        <div style={{ backgroundColor: '#f0f4f8', padding: '40px', borderRadius: '12px', marginBottom: '40px' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '12px' }}>AI 복약 및 생활습관 가이드</h2>
-          <p style={{ color: '#666', marginBottom: 0 }}>처방 정보를 바탕으로 AI가 생성한 맞춤형 가이드입니다.</p>
-        </div>
-
-        {/* 환자 요약 정보 */}
-        <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', marginBottom: '30px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>환자 요약 정보</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-            <div style={{ padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
-              <div style={{ fontSize: '14px', color: '#666', marginBottom: '8px' }}>김영희</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>여성나 72세 여성</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>고혈압, 당뇨</div>
-              <div style={{ fontSize: '12px', color: '#999', marginTop: '8px' }}>처방일 2026.02.20</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>처방 약품 3종</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>복용기간 00 일</div>
-            </div>
-            <div style={{ padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
-              <div style={{ fontSize: '14px', color: '#666', marginBottom: '8px' }}>이철수</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>여성나 75세 남성</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>고지혈증</div>
-              <div style={{ fontSize: '12px', color: '#999', marginTop: '8px' }}>처방일 2026.01.05</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>처방 약품 2종</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>복용기간 00 일</div>
-            </div>
-            <div style={{ padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
-              <div style={{ fontSize: '14px', color: '#666', marginBottom: '8px' }}>박지민</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>남 5세 여성</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>특이</div>
-              <div style={{ fontSize: '12px', color: '#999', marginTop: '8px' }}>처방일 2026.01.21</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>처방 약품 4종</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>복용기간 00 일</div>
-            </div>
-          </div>
-          <button style={{ marginTop: '20px', padding: '8px 16px', backgroundColor: '#e0e0e0', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>See More</button>
-        </div>
-
-        {/* 복약안내 섹션 */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '30px' }}>
-          <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>복약안내</h3>
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: '600' }}>아모디핀 5mg</div>
-                  <div style={{ fontSize: '12px', color: '#666' }}>고혈압 치료제</div>
-                </div>
-                <div style={{ fontSize: '12px', color: '#666' }}>주의사항</div>
+    <div style={pageStyle}>
+      <div style={shellStyle}>
+        <aside style={sidebarCardStyle}>
+          <div className="mb-4">
+            <div className="d-flex align-items-center gap-3 mb-3">
+              <img src="/mascot.png" alt="약속이" style={{ width: "56px", height: "56px" }} />
+              <div>
+                <div style={{ fontSize: "0.9rem", color: "#5d6d7e", fontWeight: 700 }}>복약 도우미</div>
+                <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#16324f" }}>AI Guide Center</div>
               </div>
-              <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>복용 방법</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 아침 식후 30분 이내</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 물과 함께 복용</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 발치 말고 삼킬 것</div>
-              <div style={{ fontSize: '12px', color: '#666', marginTop: '12px' }}>주의사항</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 자몽주스와 함께 복용 금지</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 어지러움 주의</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 갑자기 일어나지 말 것</div>
-              <button style={{ marginTop: '16px', padding: '8px 24px', backgroundColor: '#e8f0fe', color: '#4a90e2', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>1일 1회</button>
             </div>
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: '600' }}>아모디핀 5mg</div>
-                  <div style={{ fontSize: '12px', color: '#666' }}>고혈압 치료제</div>
-                </div>
-                <div style={{ fontSize: '12px', color: '#666' }}>주의사항</div>
-              </div>
-              <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>복용 방법</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 아침 식후 30분 이내</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 물과 함께 복용</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 발치 말고 삼킬 것</div>
-              <div style={{ fontSize: '12px', color: '#666', marginTop: '12px' }}>주의사항</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 자몽주스와 함께 복용 금지</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 어지러움 주의</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 갑자기 일어나지 말 것</div>
-              <button style={{ marginTop: '16px', padding: '8px 24px', backgroundColor: '#e8f0fe', color: '#4a90e2', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>1일 1회</button>
-            </div>
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <div>
-                  <div style={{ fontSize: '14px', fontWeight: '600' }}>아모디핀 5mg</div>
-                  <div style={{ fontSize: '12px', color: '#666' }}>고혈압 치료제</div>
-                </div>
-                <div style={{ fontSize: '12px', color: '#666' }}>주의사항</div>
-              </div>
-              <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>복용 방법</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 아침 식후 30분 이내</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 물과 함께 복용</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 발치 말고 삼킬 것</div>
-              <div style={{ fontSize: '12px', color: '#666', marginTop: '12px' }}>주의사항</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 자몽주스와 함께 복용 금지</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 어지러움 주의</div>
-              <div style={{ fontSize: '12px', color: '#333' }}>• 갑자기 일어나지 말 것</div>
-              <button style={{ marginTop: '16px', padding: '8px 24px', backgroundColor: '#e8f0fe', color: '#4a90e2', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>1일 1회</button>
+            <div style={{ fontSize: "0.9rem", color: "#6b7a8b", lineHeight: 1.6 }}>
+              가이드, 복약 요약, AI 상담을 한 화면에서 연결합니다.
             </div>
           </div>
 
-          {/* 생활습관 가이드 */}
-          <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>생활습관 가이드</h3>
-            <div style={{ marginBottom: '24px' }}>
-              <h4 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px' }}>식이요법</h4>
-              <div style={{ fontSize: '14px', color: '#333', marginBottom: '8px' }}>• 하루 염분 섭취량 5g 이하로 제한</div>
-              <div style={{ fontSize: '14px', color: '#333', marginBottom: '8px' }}>• 당분이 많은 음식 피하기</div>
-              <div style={{ fontSize: '14px', color: '#333', marginBottom: '8px' }}>• 채소와 과일 충분히 섭취</div>
-              <div style={{ fontSize: '14px', color: '#333', marginBottom: '8px' }}>• 가공식품 섭취 줄이기</div>
-              <div style={{ fontSize: '14px', color: '#333', marginBottom: '8px' }}>• 하루 수분 섭취 1.5L 이상</div>
-            </div>
-            <div style={{ position: 'relative', textAlign: 'right' }}>
-              <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: '100px', height: 'auto' }} />
-            </div>
-          </div>
-        </div>
+          <nav className="d-grid gap-2">
+            <a href="/auth-demo/app/dashboard" className="btn btn-outline-secondary text-start">대시보드</a>
+            <a href="/auth-demo/app/documents" className="btn btn-outline-secondary text-start">문서 관리</a>
+            <a href="/auth-demo/app/drug-search" className="btn btn-outline-secondary text-start">약 검색</a>
+            <a href="/auth-demo/app/health-profile" className="btn btn-outline-secondary text-start">건강 프로필</a>
+            <a href="/auth-demo/app/ai" className="btn btn-primary text-start">맞춤 복약 가이드</a>
+            <a href="/auth-demo/app/caregiver" className="btn btn-outline-secondary text-start">보호자 관리</a>
+            <a href="/auth-demo/app/schedule" className="btn btn-outline-secondary text-start">스케줄</a>
+          </nav>
 
-        {/* AI 챗봇 섹션 */}
-        <div style={{ backgroundColor: '#fff', padding: '30px', borderRadius: '12px', marginTop: '30px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
-            <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: '50px', height: '50px', marginRight: '12px' }} />
-            <h3 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>AI 상담 - 약속이</h3>
+          <div className="mt-4 pt-4" style={{ borderTop: "1px solid #ecf1f5" }}>
+            <div className="small text-muted mb-2">현재 로그인</div>
+            <div className="fw-semibold">{meState.data?.name || "사용자"}</div>
+            <div className="small text-muted">{loginRole === "CAREGIVER" ? "보호자" : "복약자"}</div>
           </div>
-          <div ref={chatContainerRef} style={{ height: '400px', overflowY: 'auto', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '20px', marginBottom: '16px', backgroundColor: '#f9f9f9' }}>
-            {chatMessages.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#999', paddingTop: '150px' }}>
-                <div style={{ fontSize: '16px', marginBottom: '8px' }}>안녕하세요! 저는 약속이에요 👋</div>
-                <div style={{ fontSize: '14px' }}>복약 관리와 건강에 대해 무엇이든 물어보세요!</div>
-              </div>
-            ) : (
-              chatMessages.map((msg, idx) => (
-                <div key={idx} style={{ marginBottom: '16px', display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                  <div style={{ 
-                    maxWidth: '70%', 
-                    padding: '12px 16px', 
-                    borderRadius: '12px', 
-                    backgroundColor: msg.role === 'user' ? '#4a90e2' : '#fff',
-                    color: msg.role === 'user' ? '#fff' : '#333',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
-                  }}>
-                    {msg.content}
-                  </div>
-                </div>
-              ))
-            )}
-            {chatLoading && (
-              <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '16px' }}>
-                <div style={{ padding: '12px 16px', borderRadius: '12px', backgroundColor: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }}>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#4a90e2', animation: 'bounce 1.4s infinite ease-in-out' }}></div>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#4a90e2', animation: 'bounce 1.4s infinite ease-in-out 0.2s' }}></div>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#4a90e2', animation: 'bounce 1.4s infinite ease-in-out 0.4s' }}></div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <input
-              type="text"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
-              placeholder="메시지를 입력하세요..."
-              style={{ flex: 1, padding: '12px 16px', border: '1px solid #e0e0e0', borderRadius: '8px', fontSize: '14px' }}
-              disabled={chatLoading}
-            />
-            <button
-              onClick={sendChatMessage}
-              disabled={chatLoading || !chatInput.trim()}
-              style={{ 
-                padding: '12px 24px', 
-                backgroundColor: chatLoading || !chatInput.trim() ? '#ccc' : '#4a90e2', 
-                color: '#fff', 
-                border: 'none', 
-                borderRadius: '8px', 
-                cursor: chatLoading || !chatInput.trim() ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-                fontWeight: '600'
-              }}
-            >
-              {chatLoading ? '전송 중...' : '전송'}
+
+          <div className="mt-auto pt-4">
+            <button className="btn btn-outline-danger w-100" onClick={handleLogout}>
+              로그아웃
             </button>
           </div>
+        </aside>
+
+        <main>
+          <div style={{ ...mainCardStyle, padding: "28px 30px 30px 30px" }}>
+            <div className="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+              <div>
+                <div className="small text-muted mb-2">AI Guide Workspace</div>
+                <h1 style={{ fontSize: "2.15rem", fontWeight: 800, color: "#163b82", marginBottom: "10px", letterSpacing: "-0.02em" }}>
+                  맞춤 복약 가이드
+                </h1>
+                <div style={{ color: "#5a6f8f", maxWidth: "720px", lineHeight: 1.7 }}>
+                  환자 기록을 한곳에서 확인하고, 필요한 안내를 바로 상담으로 이어갈 수 있도록 구성했습니다.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={openChatPanel}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  padding: 0,
+                  cursor: "pointer",
+                }}
+                title="약속이 챗봇 열기"
+              >
+                {/* Louis수정(기능추가): 로고 클릭 시 자연스럽게 챗봇 패널이 열리도록 연결 */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "14px",
+                    padding: "14px 18px",
+                    borderRadius: "20px",
+                    border: "1px solid #d3e1f5",
+                    background: "linear-gradient(135deg, #ffffff 0%, #eef5ff 100%)",
+                    boxShadow: "0 10px 22px rgba(37, 99, 235, 0.08)",
+                  }}
+                >
+                  <img src="/mascot.png" alt="약속이 열기" style={{ width: "60px", height: "60px" }} />
+                  <div className="text-start">
+                    <div className="fw-semibold" style={{ color: "#1e40af" }}>약속이 AI 상담</div>
+                    <div className="small" style={{ color: "#64748b" }}>상담 패널 열기</div>
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <div style={heroBannerStyle}>
+              <div className="row g-4 align-items-center">
+                <div className="col-lg-8">
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "8px 14px",
+                      borderRadius: "999px",
+                      background: "rgba(255,255,255,0.12)",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                      color: "rgba(255,255,255,0.88)",
+                      fontSize: "0.88rem",
+                      fontWeight: 600,
+                      marginBottom: "18px",
+                    }}
+                  >
+                    <span style={{ opacity: 0.82 }}>선택 환자</span>
+                    <span style={{ width: "4px", height: "4px", borderRadius: "999px", background: "rgba(255,255,255,0.72)" }} />
+                    <span style={{ color: "#ffffff", fontWeight: 700 }}>
+                      {selectedPatientId ? activePatientLabel : "미선택"}
+                    </span>
+                  </div>
+                  <h2 className="mb-2" style={{ fontWeight: 800, letterSpacing: "-0.03em" }}>
+                    {selectedPatientId ? `${activePatientLabel}님의 맞춤 복약 가이드` : "가이드를 확인할 환자를 선택해 주세요"}
+                  </h2>
+                  <div className="text-white-50" style={{ lineHeight: 1.75, maxWidth: "680px", fontSize: "0.98rem" }}>
+                    {selectedPatientId
+                      ? "문서, 건강정보, 복약 일정을 함께 확인하고 필요한 안내를 바로 살펴볼 수 있습니다."
+                      : isCaregiver
+                        ? "연동된 복약자를 선택하면 가이드와 상담 화면이 함께 활성화됩니다."
+                        : "건강프로필이나 문서가 연결되면 맞춤 가이드가 준비됩니다."}
+                  </div>
+                </div>
+                <div className="col-lg-4">
+                  <div
+                      style={{
+                        borderRadius: "18px",
+                        background: "rgba(255,255,255,0.12)",
+                        border: "1px solid rgba(255,255,255,0.18)",
+                        padding: "20px",
+                      }}
+                  >
+                    <div className="small text-white-50 mb-2">건강 프로필 요약</div>
+                    <div className="fw-semibold">{profileState.data ? `BMI ${profileState.data.bmi || "—"}` : "등록 전"}</div>
+                    <div className="small text-white-50 mt-2">
+                      {profileState.data?.conditions?.length
+                        ? `기저 질환 ${profileState.data.conditions.join(", ")}`
+                        : "기저 질환 정보 없음"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="row g-4 mb-4">
+              <div className="col-xl-4">
+                <div style={{ ...blockCardStyle, padding: "24px", height: "100%" }}>
+                  <div className="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                      <div className="small text-muted">대상 선택</div>
+                      <h4 className="mb-1">환자 컨텍스트</h4>
+                    </div>
+                    <button className="btn btn-outline-secondary btn-sm" onClick={() => { loadLinks(); loadProfile(); }}>
+                      새로고침
+                    </button>
+                  </div>
+
+                  {isCaregiver ? (
+                    <>
+                      <label className="form-label">연동 환자</label>
+                      <select
+                        className="form-select mb-3"
+                        value={selectedPatientId}
+                        onChange={(event) => {
+                          setSelectedPatientId(event.target.value);
+                          setSelectedGuideId("");
+                          setSelectedDocumentId("");
+                          setGuideActionState({ submitting: false, error: null, success: null });
+                        }}
+                      >
+                        {(linksState.data?.links || []).length === 0 && <option value="">연동 환자 없음</option>}
+                        {(linksState.data?.links || []).map((link) => (
+                          <option key={link.link_id} value={link.patient_id}>
+                            {link.patient_name || `환자 #${link.patient_id}`}
+                          </option>
+                        ))}
+                      </select>
+                      {linksState.error && <div className="alert alert-danger py-2">{linksState.error}</div>}
+                    </>
+                  ) : (
+                    <div className="mb-3">
+                      <div className="small text-muted">복약자</div>
+                      <div className="fw-semibold">{meState.data?.name || "본인"}</div>
+                    </div>
+                  )}
+
+                  <div className="row g-3">
+                    <div className="col-6">
+                      <div style={metricCardStyle}>
+                        <div className="small text-muted">문서 수</div>
+                        <div className="fs-4 fw-semibold">{documentsState.data.length}</div>
+                      </div>
+                    </div>
+                    <div className="col-6">
+                      <div style={metricCardStyle}>
+                        <div className="small text-muted">가이드 수</div>
+                        <div className="fs-4 fw-semibold">{guidesState.data.length}</div>
+                      </div>
+                    </div>
+                    <div className="col-6">
+                      <div style={metricCardStyle}>
+                        <div className="small text-muted">수면</div>
+                        <div className="fw-semibold">
+                          {profileState.data?.avg_sleep_hours_per_day ? `${profileState.data.avg_sleep_hours_per_day}시간` : "—"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="col-6">
+                      <div style={metricCardStyle}>
+                        <div className="small text-muted">운동</div>
+                        <div className="fw-semibold">
+                          {profileState.data?.avg_exercise_minutes_per_day ? `${profileState.data.avg_exercise_minutes_per_day}분` : "—"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 small text-muted" style={{ lineHeight: 1.7 }}>
+                    {profileState.error
+                      ? `건강 프로필 조회 오류: ${profileState.error}`
+                      : profileState.missing
+                        ? "건강 프로필이 아직 등록되지 않았습니다."
+                        : "선택한 환자 기준 건강 정보와 문서를 함께 사용합니다."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="col-xl-8">
+                <div style={{ ...blockCardStyle, padding: "24px", height: "100%" }}>
+                  <div className="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                    <div>
+                      <div className="small text-muted">가이드 작업</div>
+                      <h4 className="mb-1">문서 선택과 가이드 생성</h4>
+                    </div>
+                    <div className="d-flex gap-2">
+                      <button
+                        className="btn btn-outline-primary btn-sm"
+                        onClick={handleGenerateGuide}
+                        disabled={guideActionState.submitting || !selectedDocumentId}
+                      >
+                        {guideActionState.submitting ? "요청 중..." : "가이드 생성"}
+                      </button>
+                      <button
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={handleRegenerateGuide}
+                        disabled={guideActionState.submitting || !selectedGuideId}
+                      >
+                        재생성
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label">기존 문서 선택</label>
+                      <select
+                        className="form-select"
+                        value={selectedDocumentId}
+                        onChange={(event) => setSelectedDocumentId(event.target.value)}
+                      >
+                        {documentsState.data.length === 0 && <option value="">선택 가능한 문서 없음</option>}
+                        {documentsState.data.map((document) => (
+                          <option key={document.document_id} value={document.document_id}>
+                            {document.original_filename || `문서 #${document.document_id}`}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="small text-muted mt-2">
+                        {selectedDocument
+                          ? `OCR 상태 ${selectedDocument.ocr_status || "미확인"} · 업로드 ${formatDateTime(selectedDocument.created_at)}`
+                          : documentsState.loading
+                            ? "문서 목록을 불러오는 중입니다."
+                            : documentsState.error || "문서가 없으면 먼저 문서 관리에서 업로드해 주세요."}
+                      </div>
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label">가이드 버전 선택</label>
+                      <select
+                        className="form-select"
+                        value={selectedGuideId}
+                        onChange={(event) => setSelectedGuideId(event.target.value)}
+                      >
+                        {guidesState.data.length === 0 && <option value="">가이드 없음</option>}
+                        {guidesState.data.map((guide) => (
+                          <option key={guide.guide_id} value={guide.guide_id}>
+                            v{guide.version} · {guide.status} · {formatDateTime(guide.created_at)}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="small text-muted mt-2">
+                        최신 가이드부터 표시합니다. 생성 중 상태면 자동으로 다시 조회합니다.
+                      </div>
+                    </div>
+                  </div>
+
+                  {guideActionState.error && <div className="alert alert-danger mt-3 mb-0">{guideActionState.error}</div>}
+                  {guideActionState.success && <div className="alert alert-success mt-3 mb-0">{guideActionState.success}</div>}
+                </div>
+              </div>
+            </div>
+
+            <div className="row g-4 mb-4">
+              <div className="col-xl-5">
+                <div style={{ ...blockCardStyle, padding: "24px", height: "100%" }}>
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                      <div className="small text-muted">Medication Guide</div>
+                      <h4 className="mb-1">복약 안내</h4>
+                    </div>
+                    <span style={chipStyle}>{medGuideState.data.length}개 약</span>
+                  </div>
+
+                  {medGuideState.loading ? (
+                    <div className="text-muted">복약 안내를 불러오는 중입니다.</div>
+                  ) : medGuideState.error ? (
+                    <div className="alert alert-danger mb-0">{medGuideState.error}</div>
+                  ) : medGuideState.data.length === 0 ? (
+                    <div className="text-muted">확정된 약 정보가 아직 없습니다.</div>
+                  ) : (
+                    <div className="d-grid gap-3">
+                      {medGuideState.data.map((item) => (
+                        <div key={item.patient_med_id} style={metricCardStyle}>
+                          <div className="d-flex justify-content-between align-items-start gap-3 mb-2">
+                            <div>
+                              <div className="fw-semibold">{item.display_name}</div>
+                              <div className="small text-muted">{item.dosage || "용량 미등록"} · {item.frequency_text || "빈도 미등록"}</div>
+                            </div>
+                            <span style={chipStyle}>{item.data_source === "ocr_mfds" ? "검증됨" : "OCR 기준"}</span>
+                          </div>
+                          <div className="small text-muted mb-2">{item.efficacy_summary || "효능 요약 정보가 없습니다."}</div>
+                          <div className="small mb-2">
+                            <strong>복용 방법</strong>
+                            <ul className="mb-0 mt-1 ps-3">
+                              {toArray(item.dosage_instructions).slice(0, 3).map((line, index) => <li key={index}>{line}</li>)}
+                            </ul>
+                          </div>
+                          <div className="small">
+                            <strong>주의사항</strong>
+                            <ul className="mb-0 mt-1 ps-3">
+                              {(toArray(item.precautions).length > 0 ? toArray(item.precautions) : ["등록된 주의사항이 없습니다."])
+                                .slice(0, 3)
+                                .map((line, index) => <li key={index}>{line}</li>)}
+                            </ul>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="col-xl-7">
+                <div style={{ ...blockCardStyle, padding: "24px", height: "100%" }}>
+                  <div className="d-flex justify-content-between align-items-center gap-3 mb-3">
+                    <div>
+                      <div className="small text-muted">Guide Detail</div>
+                      <h4 className="mb-1">생활 습관 가이드</h4>
+                      <div className="small text-muted">
+                        마지막 확인 {guideUpdatedAt ? formatDateTime(guideUpdatedAt) : "—"}
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                      <button
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={() => {
+                          loadGuides();
+                          if (selectedGuideId) {
+                            loadGuideDetail(selectedGuideId);
+                          }
+                        }}
+                      >
+                        상태 확인
+                      </button>
+                      <span
+                        style={{
+                          ...chipStyle,
+                          background: guideStatusMeta.bg,
+                          color: guideStatusMeta.color,
+                          borderColor: "transparent",
+                        }}
+                      >
+                        {guideStatusMeta.label}
+                      </span>
+                    </div>
+                  </div>
+
+                  {guideDetailState.loading ? (
+                    <div className="text-muted">가이드 상세를 불러오는 중입니다.</div>
+                  ) : guideDetailState.error ? (
+                    <div className="alert alert-danger">{guideDetailState.error}</div>
+                  ) : !guideDetailState.data ? (
+                    <div className="text-muted">
+                      아직 선택된 가이드가 없습니다. 문서를 선택한 뒤 가이드를 생성해 주세요.
+                    </div>
+                  ) : (
+                    <>
+                      {guideDetailState.data.status === "GENERATING" && (
+                        <div className="alert alert-info">
+                          가이드 재생성 요청이 접수되었습니다. 4초마다 자동으로 상태를 확인하고 있으며, 필요하면 `상태 확인` 버튼으로 즉시 갱신할 수 있습니다.
+                        </div>
+                      )}
+                      {guideDetailState.data.status === "FAILED" && (
+                        <div className="alert alert-warning">
+                          가이드 생성이 완료되지 않았습니다. 문서 상태와 확정 약 정보를 확인한 뒤 다시 생성해 주세요.
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          borderRadius: "18px",
+                          border: "1px solid #e5edf5",
+                          padding: "18px",
+                          background: "#f8fbfd",
+                          marginBottom: "18px",
+                        }}
+                        >
+                        <div className="fw-semibold mb-2">
+                          {guideDetailState.data.content_json?.summary
+                            || primaryGuideSection?.title
+                            || "가이드 요약"}
+                        </div>
+                        <div className="small text-muted">
+                          문서 #{guideDetailState.data.document_id} · 버전 {guideDetailState.data.version} · 업데이트 {formatDateTime(guideDetailState.data.updated_at)}
+                        </div>
+                        {primaryGuideSection?.body && (
+                          <div className="small text-muted mt-3" style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
+                            {primaryGuideSection.body}
+                          </div>
+                        )}
+                      </div>
+
+                      {visibleGuideSections.length > 0 ? (
+                        <div className="d-grid gap-3">
+                          {visibleGuideSections.map((section) => (
+                            <div
+                              key={section.id}
+                              style={{
+                                ...metricCardStyle,
+                                padding: "18px 20px",
+                              }}
+                            >
+                              <div className="fw-semibold mb-2">{section.title}</div>
+                              {section.body && (
+                                <div className="small text-muted mb-3" style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
+                                  {section.body}
+                                </div>
+                              )}
+                              {section.bullets.length > 0 && (
+                                <ul className="mb-0 ps-3 small" style={{ lineHeight: 1.8 }}>
+                                  {section.bullets.map((line, index) => (
+                                    <li key={index} style={{ marginBottom: "6px" }}>{line}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="small text-muted mb-3">가이드 본문이 아직 생성되지 않았습니다.</div>
+                      )}
+
+                      {caregiverPoints.length > 0 && (
+                        <div className="mt-4">
+                          <div className="fw-semibold mb-2">보호자 체크포인트</div>
+                          <div className="d-flex flex-wrap gap-2">
+                            {caregiverPoints.map((point, index) => (
+                              <span key={index} style={chipStyle}>{point}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {guideDetailState.data.disclaimer && (
+                        <div className="small text-muted mt-4">{guideDetailState.data.disclaimer}</div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="row g-4">
+              <div className="col-lg-8">
+                <div style={{ ...blockCardStyle, padding: "24px" }}>
+                  <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
+                    <div>
+                      <div className="small text-muted">Chat Assistant</div>
+                      <h4 className="mb-1">AI 상담</h4>
+                    </div>
+                    <button className="btn btn-primary" onClick={openChatPanel}>
+                      챗봇 열기
+                    </button>
+                  </div>
+                  <div className="row g-3 align-items-center">
+                    <div className="col-md-8">
+                      <div className="small text-muted" style={{ lineHeight: 1.8 }}>
+                        아래 상담 영역은 유지하되 실제 대화는 오른쪽 패널에서 세션 기반으로 이어집니다. 같은 환자를 선택한 상태에서 질문하면 문맥이 유지됩니다.
+                      </div>
+                      <div className="mt-3 d-flex flex-wrap gap-2">
+                        <button className="btn btn-outline-secondary btn-sm" onClick={() => { setChatInput("복용할 때 주의할 점이 뭐야"); openChatPanel(); }}>
+                          주의사항 질문
+                        </button>
+                        <button className="btn btn-outline-secondary btn-sm" onClick={() => { setChatInput("이 약은 어떤 약이야?"); openChatPanel(); }}>
+                          약 설명 질문
+                        </button>
+                        <button className="btn btn-outline-secondary btn-sm" onClick={() => { setChatInput("생활 습관에서 조심할 점을 알려줘"); openChatPanel(); }}>
+                          생활 습관 질문
+                        </button>
+                      </div>
+                    </div>
+                    <div className="col-md-4 text-center">
+                      <button
+                        type="button"
+                        onClick={openChatPanel}
+                        style={{ border: "none", background: "transparent", cursor: "pointer" }}
+                      >
+                        <img src="/mascot.png" alt="약속이 챗봇 열기" style={{ width: "120px", height: "auto" }} />
+                        <div className="small text-muted mt-2">약속이를 눌러 상담 시작</div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="col-lg-4">
+                <div style={{ ...blockCardStyle, padding: "24px", height: "100%" }}>
+                  <div className="small text-muted">진행 상태</div>
+                  <h4 className="mb-3">현재 체크포인트</h4>
+                  <div className="d-grid gap-3">
+                    <div style={metricCardStyle}>
+                      <div className="small text-muted mb-1">가이드 상태</div>
+                      <div className="fw-semibold">{guideStatusMeta.label}</div>
+                    </div>
+                    <div style={metricCardStyle}>
+                      <div className="small text-muted mb-1">문서 연결</div>
+                      <div className="fw-semibold">{selectedDocument ? selectedDocument.original_filename || `문서 #${selectedDocument.document_id}` : "문서 미선택"}</div>
+                    </div>
+                    <div style={metricCardStyle}>
+                      <div className="small text-muted mb-1">챗 세션</div>
+                      <div className="fw-semibold">{chatState.sessionId ? `세션 #${chatState.sessionId}` : "아직 생성 전"}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* Louis수정(기능추가): 로고 및 플로팅 버튼으로 열 수 있는 우측 슬라이드 챗봇 패널 */}
+      <button
+        type="button"
+        onClick={openChatPanel}
+        style={{
+          position: "fixed",
+          right: "28px",
+          bottom: "28px",
+          width: "78px",
+          height: "78px",
+          borderRadius: "999px",
+          border: "1px solid #cfe0fb",
+          background: "linear-gradient(135deg, #ffffff 0%, #eaf2ff 100%)",
+          boxShadow: "0 16px 30px rgba(37, 99, 235, 0.18)",
+          cursor: "pointer",
+          zIndex: 1050,
+        }}
+      >
+        <img src="/mascot.png" alt="약속이 열기" style={{ width: "48px", height: "48px" }} />
+      </button>
+
+      {chatState.open && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(9, 19, 31, 0.24)",
+            zIndex: 1055,
+          }}
+          onClick={closeChatPanel}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              width: "min(620px, 100vw)",
+              height: "100vh",
+              background: "#ffffff",
+              boxShadow: "-16px 0 40px rgba(37, 99, 235, 0.18)",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                padding: "22px 22px 18px 22px",
+                borderBottom: "1px solid #e6edf4",
+                background: "linear-gradient(135deg, #f8fbff 0%, #edf4ff 100%)",
+              }}
+            >
+              <div className="d-flex justify-content-between align-items-start gap-3">
+                <div className="d-flex gap-3">
+                  <img src="/mascot.png" alt="약속이" style={{ width: "56px", height: "56px" }} />
+                  <div>
+                    <div className="small text-muted">AI 상담</div>
+                    <div className="fw-semibold fs-5">약속이와 대화하기</div>
+                    <div className="small text-muted mt-1">{activePatientLabel} 기준 상담</div>
+                  </div>
+                </div>
+                <button className="btn btn-outline-secondary btn-sm" onClick={closeChatPanel}>
+                  닫기
+                </button>
+              </div>
+            </div>
+
+            <div
+              ref={chatContainerRef}
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "24px",
+                background: "#f7fafc",
+              }}
+            >
+              {chatState.messages.length === 0 ? (
+                <div
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    color: "#708090",
+                    gap: "12px",
+                  }}
+                >
+                  <img src="/mascot.png" alt="약속이" style={{ width: "88px", height: "88px" }} />
+                  <div className="fw-semibold">안녕하세요, 약속이예요.</div>
+                  <div className="small">가이드 내용, 약 설명, 복용 주의사항을 이어서 물어보세요.</div>
+                </div>
+              ) : (
+                <div className="d-grid gap-3">
+                  {chatState.messages.map((message) => (
+                    <div
+                      key={message.message_id || `${message.role}-${message.created_at}-${message.content.slice(0, 12)}`}
+                      style={{
+                        display: "flex",
+                        justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+                      }}
+                    >
+                      <div
+                        style={{
+                          maxWidth: "90%",
+                          borderRadius: "20px",
+                          padding: "16px 18px",
+                          background: message.role === "user" ? "#1f6fb2" : "#ffffff",
+                          color: message.role === "user" ? "#ffffff" : "#243648",
+                          border: message.role === "user" ? "none" : "1px solid #dfe7ef",
+                          boxShadow: "0 8px 18px rgba(15, 23, 42, 0.06)",
+                          whiteSpace: "pre-wrap",
+                          lineHeight: 1.8,
+                          fontSize: "0.98rem",
+                        }}
+                      >
+                        <div>{renderChatContent(message.content)}</div>
+                        {message.emergency_message && (
+                          <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "#c0392b", lineHeight: 1.7 }}>
+                            {message.emergency_message}
+                          </div>
+                        )}
+                        {message.disclaimer && (
+                          <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "#718096", lineHeight: 1.7 }}>
+                            {message.disclaimer}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: "18px 20px 20px 20px", borderTop: "1px solid #e6edf4", background: "#ffffff" }}>
+              {chatState.error && <div className="alert alert-danger py-2 mb-3">{chatState.error}</div>}
+              <div className="d-flex gap-2">
+                <textarea
+                  className="form-control"
+                  rows={3}
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      sendChatMessage();
+                    }
+                  }}
+                  placeholder="예: 메트포르민정 복용 시 주의할 점이 뭐야?"
+                  disabled={chatState.sending}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={sendChatMessage}
+                  disabled={chatState.sending || !chatInput.trim()}
+                  style={{ minWidth: "96px" }}
+                >
+                  {chatState.sending ? "전송 중" : "보내기"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </main>
+      )}
     </div>
   );
 }

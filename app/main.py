@@ -90,6 +90,7 @@ async def admin_signup_page() -> HTMLResponse:
 @app.get("/auth-demo/app/documents", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/caregiver", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/ai", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/drug-search", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/schedule", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/settings", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/profile", include_in_schema=False, response_class=HTMLResponse)

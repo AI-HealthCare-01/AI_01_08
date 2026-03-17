@@ -212,6 +212,7 @@ class MfdsDrugItemResponse(BaseSerializerModel):
     item_seq: str
     item_name: str
     entp_name: str | None
+    item_image: str | None = None
     efficacy: str | None
     dosage_info: str | None
     precautions: str | None
@@ -222,3 +223,13 @@ class MfdsDrugSearchResponse(BaseSerializerModel):
     query: str
     total: int
     items: list[MfdsDrugItemResponse]
+
+
+class BarcodeDecodeItemResponse(BaseSerializerModel):
+    barcode_type: str
+    barcode_value: str
+
+
+class BarcodeDecodeResponse(BaseSerializerModel):
+    total: int
+    items: list[BarcodeDecodeItemResponse]
