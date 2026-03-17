@@ -76,6 +76,167 @@ const heroBannerStyle = {
   boxShadow: "0 18px 40px rgba(37, 99, 235, 0.22)",
 };
 
+const primaryActionButtonStyle = {
+  background: "#2563eb",
+  borderColor: "#2563eb",
+  color: "#ffffff",
+  boxShadow: "0 8px 18px rgba(37, 99, 235, 0.18)",
+};
+
+const scrollPanelStyle = {
+  maxHeight: "320px",
+  overflowY: "auto",
+  paddingRight: "6px",
+};
+
+const guideBodyStyle = {
+  whiteSpace: "pre-wrap",
+  lineHeight: 1.75,
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
+};
+
+const normalizeProfileList = (value) => {
+  if (Array.isArray(value)) return value.filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
+  if (!value) return [];
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        return normalizeProfileList(JSON.parse(trimmed));
+      } catch {
+        return trimmed.split(",").map((item) => item.trim()).filter(Boolean);
+      }
+    }
+    return trimmed.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+};
+
+const collectGuideLines = (section) => {
+  if (!section) return [];
+  const bodyLines = String(section.body || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return [...bodyLines, ...(Array.isArray(section.bullets) ? section.bullets : [])].filter(Boolean);
+};
+
+const pickGuideSectionByKeyword = (sections, keywords) =>
+  sections.find((section) => keywords.some((keyword) => String(section?.title || "").includes(keyword)));
+
+const uniqueGuideLines = (lines, seen = new Set()) =>
+  lines.filter((line) => {
+    const normalized = String(line).trim();
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+
+const buildGuideBriefing = (guideSections, caregiverPoints) => {
+  const summarySection = guideSections[0] || null;
+  const medicationSection = pickGuideSectionByKeyword(guideSections, ["복약", "약"]) || summarySection;
+  const lifestyleSection = pickGuideSectionByKeyword(guideSections, ["생활", "수면", "운동", "관리"]);
+  const warningSection = pickGuideSectionByKeyword(guideSections, ["주의", "위험", "신호", "이상"]);
+  const seen = new Set();
+
+  return {
+    summary: uniqueGuideLines(collectGuideLines(summarySection), seen).slice(0, 3),
+    medication: uniqueGuideLines(collectGuideLines(medicationSection), seen).slice(0, 3),
+    lifestyle: uniqueGuideLines(collectGuideLines(lifestyleSection), seen).slice(0, 3),
+    warning: uniqueGuideLines([...collectGuideLines(warningSection), ...caregiverPoints], seen).slice(0, 3),
+  };
+};
+
+const buildProfileBriefing = (profile) => {
+  if (!profile) return ["건강 프로필이 아직 등록되지 않았습니다."];
+
+  const conditions = normalizeProfileList(profile.conditions);
+  const allergies = normalizeProfileList(profile.allergies);
+  const lines = [];
+
+  if (conditions.length > 0) lines.push(`기저 질환: ${conditions.slice(0, 2).join(", ")}`);
+  if (allergies.length > 0) lines.push(`알레르기: ${allergies.slice(0, 2).join(", ")}`);
+  if (profile.bmi) lines.push(`BMI: ${Number(profile.bmi).toFixed(1)}`);
+  if (profile.avg_sleep_hours_per_day) lines.push(`수면: 하루 평균 ${profile.avg_sleep_hours_per_day}시간`);
+  if (profile.avg_exercise_minutes_per_day) lines.push(`운동: 하루 평균 ${profile.avg_exercise_minutes_per_day}분`);
+  if (profile.avg_alcohol_bottles_per_week) lines.push(`음주: 주 ${profile.avg_alcohol_bottles_per_week}병`);
+  if (profile.is_smoker || profile.avg_cig_packs_per_week) {
+    lines.push(`흡연: 주 ${profile.avg_cig_packs_per_week || 0}갑`);
+  }
+  if (typeof profile.is_hospitalized === "boolean") {
+    lines.push(profile.is_hospitalized ? "현재 입원 상태" : "현재 외래 관리 중");
+  }
+
+  return lines.slice(0, 4);
+};
+
+const buildMedicationSnapshot = (items) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [];
+  }
+
+  return items
+    .slice(0, 3)
+    .map((item) => {
+      const pieces = [item.display_name, item.frequency_text || item.dosage || "복약 정보 확인 필요"].filter(Boolean);
+      return pieces.join(" · ");
+    });
+};
+
+const buildMedicationScheduleBriefing = (items) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return [];
+  }
+
+  return items.slice(0, 4).map((item) => {
+    const parts = [
+      item.display_name,
+      item.frequency_text || "복용 시점 확인 필요",
+      item.dosage || null,
+    ].filter(Boolean);
+    return parts.join(" · ");
+  });
+};
+
+const normalizeMedicationLines = (value) => {
+  const items = Array.isArray(value) ? value : value ? [value] : [];
+  return items
+    .flatMap((item) =>
+      String(item || "")
+        .split(/(?<=[.!?。])(?=\s|[가-힣A-Za-z0-9])/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+    );
+};
+
+function MetricTile({ label, value }) {
+  return (
+    <div style={metricCardStyle}>
+      <div className="small text-muted">{label}</div>
+      <div className="fw-semibold">{value}</div>
+    </div>
+  );
+}
+
+function BriefingCard({ title, lines, emptyText }) {
+  return (
+    <div style={{ ...metricCardStyle, padding: "18px 20px" }}>
+      <div className="fw-semibold mb-2">{title}</div>
+      <div style={scrollPanelStyle}>
+        <ul className="mb-0 ps-3 small" style={{ ...guideBodyStyle, lineHeight: 1.8 }}>
+          {(lines.length > 0 ? lines : [emptyText]).map((line, index) => (
+            <li key={index} style={{ marginBottom: "6px" }}>
+              {line}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 const safeJson = async (res) => {
   try {
     return await res.json();
@@ -114,13 +275,6 @@ const formatApiError = (value) => {
     return JSON.stringify(value);
   }
   return String(value);
-};
-
-const toArray = (value) => {
-  if (Array.isArray(value)) return value;
-  if (!value) return [];
-  if (typeof value === "string") return value.split("\n").map((item) => item.trim()).filter(Boolean);
-  return [];
 };
 
 const normalizeGuideSections = (guideDetail) => {
@@ -267,6 +421,10 @@ function AiPage() {
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
 
   const chatContainerRef = useRef(null);
+  const patientOptions = (linksState.data?.links || []).map((link) => ({
+    value: String(link.patient_id),
+    label: link.patient_name || `환자 #${link.patient_id}`,
+  }));
 
   const refreshAccessToken = async () => {
     const res = await fetch(`${API_PREFIX}/auth/token/refresh`, {
@@ -317,7 +475,6 @@ function AiPage() {
 
   const selectedLink = (linksState.data?.links || []).find((link) => String(link.patient_id) === String(selectedPatientId)) || null;
   const isCaregiver = loginRole === "CAREGIVER";
-  const isPatient = loginRole === "PATIENT";
   const activePatientLabel = isCaregiver
     ? selectedLink?.patient_name || (selectedPatientId ? `환자 #${selectedPatientId}` : "복약자 선택")
     : meState.data?.name || "내 프로필";
@@ -328,6 +485,10 @@ function AiPage() {
   const caregiverPoints = normalizeCaregiverPoints(guideDetailState.data);
   const primaryGuideSection = guideSections[0] || null;
   const visibleGuideSections = primaryGuideSection ? guideSections.slice(1) : guideSections;
+  const guideBriefing = buildGuideBriefing(guideSections, caregiverPoints);
+  const profileBriefing = buildProfileBriefing(profileState.data);
+  const medicationSnapshot = buildMedicationSnapshot(medGuideState.data);
+  const medicationScheduleBriefing = buildMedicationScheduleBriefing(medGuideState.data);
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -795,40 +956,9 @@ function AiPage() {
                   맞춤 복약 가이드
                 </h1>
                 <div style={{ color: "#5a6f8f", maxWidth: "720px", lineHeight: 1.7 }}>
-                  환자 기록을 한곳에서 확인하고, 필요한 안내를 바로 상담으로 이어갈 수 있도록 구성했습니다.
+                  문서, 건강 프로필, 복약 일정을 함께 보고 필요한 안내를 자연스럽게 상담으로 이어갈 수 있습니다.
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={openChatPanel}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  padding: 0,
-                  cursor: "pointer",
-                }}
-                title="약속이 챗봇 열기"
-              >
-                {/* Louis수정(기능추가): 로고 클릭 시 자연스럽게 챗봇 패널이 열리도록 연결 */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "14px",
-                    padding: "14px 18px",
-                    borderRadius: "20px",
-                    border: "1px solid #d3e1f5",
-                    background: "linear-gradient(135deg, #ffffff 0%, #eef5ff 100%)",
-                    boxShadow: "0 10px 22px rgba(37, 99, 235, 0.08)",
-                  }}
-                >
-                  <img src="/mascot.png" alt="약속이 열기" style={{ width: "60px", height: "60px" }} />
-                  <div className="text-start">
-                    <div className="fw-semibold" style={{ color: "#1e40af" }}>약속이 AI 상담</div>
-                    <div className="small" style={{ color: "#64748b" }}>상담 패널 열기</div>
-                  </div>
-                </div>
-              </button>
             </div>
 
             <div style={heroBannerStyle}>
@@ -892,8 +1022,8 @@ function AiPage() {
                 <div style={{ ...blockCardStyle, padding: "24px", height: "100%" }}>
                   <div className="d-flex justify-content-between align-items-start mb-3">
                     <div>
-                      <div className="small text-muted">대상 선택</div>
-                      <h4 className="mb-1">환자 컨텍스트</h4>
+                      <div className="small text-muted">상담 기준</div>
+                      <h4 className="mb-1">선택 환자 정보</h4>
                     </div>
                     <button className="btn btn-outline-secondary btn-sm" onClick={() => { loadLinks(); loadProfile(); }}>
                       새로고침
@@ -931,32 +1061,22 @@ function AiPage() {
 
                   <div className="row g-3">
                     <div className="col-6">
-                      <div style={metricCardStyle}>
-                        <div className="small text-muted">문서 수</div>
-                        <div className="fs-4 fw-semibold">{documentsState.data.length}</div>
-                      </div>
+                      <MetricTile label="문서 수" value={<span className="fs-4 fw-semibold">{documentsState.data.length}</span>} />
                     </div>
                     <div className="col-6">
-                      <div style={metricCardStyle}>
-                        <div className="small text-muted">가이드 수</div>
-                        <div className="fs-4 fw-semibold">{guidesState.data.length}</div>
-                      </div>
+                      <MetricTile label="가이드 수" value={<span className="fs-4 fw-semibold">{guidesState.data.length}</span>} />
                     </div>
                     <div className="col-6">
-                      <div style={metricCardStyle}>
-                        <div className="small text-muted">수면</div>
-                        <div className="fw-semibold">
-                          {profileState.data?.avg_sleep_hours_per_day ? `${profileState.data.avg_sleep_hours_per_day}시간` : "—"}
-                        </div>
-                      </div>
+                      <MetricTile
+                        label="수면"
+                        value={profileState.data?.avg_sleep_hours_per_day ? `${profileState.data.avg_sleep_hours_per_day}시간` : "—"}
+                      />
                     </div>
                     <div className="col-6">
-                      <div style={metricCardStyle}>
-                        <div className="small text-muted">운동</div>
-                        <div className="fw-semibold">
-                          {profileState.data?.avg_exercise_minutes_per_day ? `${profileState.data.avg_exercise_minutes_per_day}분` : "—"}
-                        </div>
-                      </div>
+                      <MetricTile
+                        label="운동"
+                        value={profileState.data?.avg_exercise_minutes_per_day ? `${profileState.data.avg_exercise_minutes_per_day}분` : "—"}
+                      />
                     </div>
                   </div>
 
@@ -965,7 +1085,7 @@ function AiPage() {
                       ? `건강 프로필 조회 오류: ${profileState.error}`
                       : profileState.missing
                         ? "건강 프로필이 아직 등록되지 않았습니다."
-                        : "선택한 환자 기준 건강 정보와 문서를 함께 사용합니다."}
+                        : "환자 기록이 가이드와 상담에 함께 반영됩니다."}
                   </div>
                 </div>
               </div>
@@ -982,6 +1102,7 @@ function AiPage() {
                         className="btn btn-outline-primary btn-sm"
                         onClick={handleGenerateGuide}
                         disabled={guideActionState.submitting || !selectedDocumentId}
+                        style={primaryActionButtonStyle}
                       >
                         {guideActionState.submitting ? "요청 중..." : "가이드 생성"}
                       </button>
@@ -1073,20 +1194,28 @@ function AiPage() {
                             </div>
                             <span style={chipStyle}>{item.data_source === "ocr_mfds" ? "검증됨" : "OCR 기준"}</span>
                           </div>
-                          <div className="small text-muted mb-2">{item.efficacy_summary || "효능 요약 정보가 없습니다."}</div>
-                          <div className="small mb-2">
-                            <strong>복용 방법</strong>
-                            <ul className="mb-0 mt-1 ps-3">
-                              {toArray(item.dosage_instructions).slice(0, 3).map((line, index) => <li key={index}>{line}</li>)}
-                            </ul>
-                          </div>
-                          <div className="small">
-                            <strong>주의사항</strong>
-                            <ul className="mb-0 mt-1 ps-3">
-                              {(toArray(item.precautions).length > 0 ? toArray(item.precautions) : ["등록된 주의사항이 없습니다."])
-                                .slice(0, 3)
-                                .map((line, index) => <li key={index}>{line}</li>)}
-                            </ul>
+                          <div style={scrollPanelStyle}>
+                            <div className="small text-muted mb-2" style={guideBodyStyle}>
+                              {item.efficacy_summary || "효능 요약 정보가 없습니다."}
+                            </div>
+                            <div className="small mb-2">
+                              <strong>복용 방법</strong>
+                              <ul className="mb-0 mt-1 ps-3" style={guideBodyStyle}>
+                                {(normalizeMedicationLines(item.dosage_instructions).length > 0
+                                  ? normalizeMedicationLines(item.dosage_instructions)
+                                  : ["등록된 복용 방법이 없습니다."])
+                                  .map((line, index) => <li key={index}>{line}</li>)}
+                              </ul>
+                            </div>
+                            <div className="small">
+                              <strong>주의사항</strong>
+                              <ul className="mb-0 mt-1 ps-3" style={guideBodyStyle}>
+                                {(normalizeMedicationLines(item.precautions).length > 0
+                                  ? normalizeMedicationLines(item.precautions)
+                                  : ["등록된 주의사항이 없습니다."])
+                                  .map((line, index) => <li key={index}>{line}</li>)}
+                              </ul>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1158,20 +1287,39 @@ function AiPage() {
                           background: "#f8fbfd",
                           marginBottom: "18px",
                         }}
-                        >
+                      >
                         <div className="fw-semibold mb-2">
                           {guideDetailState.data.content_json?.summary
                             || primaryGuideSection?.title
                             || "가이드 요약"}
                         </div>
                         <div className="small text-muted">
-                          문서 #{guideDetailState.data.document_id} · 버전 {guideDetailState.data.version} · 업데이트 {formatDateTime(guideDetailState.data.updated_at)}
+                          가이드 v{guideDetailState.data.version || 1} · 마지막 업데이트 {formatDateTime(guideDetailState.data.updated_at)}
                         </div>
                         {primaryGuideSection?.body && (
-                          <div className="small text-muted mt-3" style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
+                          <div className="small text-muted mt-3" style={guideBodyStyle}>
                             {primaryGuideSection.body}
                           </div>
                         )}
+                      </div>
+
+                      <div className="row g-3 mb-3">
+                        <div className="col-md-6">
+                          <BriefingCard title="확인 포인트" lines={guideBriefing.warning} emptyText="먼저 확인할 포인트가 아직 없습니다." />
+                        </div>
+                        <div className="col-md-6">
+                          <BriefingCard
+                            title="복약 스케줄"
+                            lines={medicationScheduleBriefing.length > 0 ? medicationScheduleBriefing : medicationSnapshot}
+                            emptyText="확정된 약 정보가 준비되면 복약 일정이 여기에 표시됩니다."
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <BriefingCard title="생활 관리" lines={guideBriefing.lifestyle} emptyText="생활 관리 안내가 아직 없습니다." />
+                        </div>
+                        <div className="col-md-6">
+                          <BriefingCard title="건강 프로필 요약" lines={profileBriefing} emptyText="건강 프로필 요약이 아직 없습니다." />
+                        </div>
                       </div>
 
                       {visibleGuideSections.length > 0 ? (
@@ -1185,18 +1333,20 @@ function AiPage() {
                               }}
                             >
                               <div className="fw-semibold mb-2">{section.title}</div>
-                              {section.body && (
-                                <div className="small text-muted mb-3" style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>
-                                  {section.body}
-                                </div>
-                              )}
-                              {section.bullets.length > 0 && (
-                                <ul className="mb-0 ps-3 small" style={{ lineHeight: 1.8 }}>
-                                  {section.bullets.map((line, index) => (
-                                    <li key={index} style={{ marginBottom: "6px" }}>{line}</li>
-                                  ))}
-                                </ul>
-                              )}
+                              <div style={scrollPanelStyle}>
+                                {section.body && (
+                                  <div className="small text-muted mb-3" style={guideBodyStyle}>
+                                    {section.body}
+                                  </div>
+                                )}
+                                {section.bullets.length > 0 && (
+                                  <ul className="mb-0 ps-3 small" style={{ ...guideBodyStyle, lineHeight: 1.8 }}>
+                                    {section.bullets.map((line, index) => (
+                                      <li key={index} style={{ marginBottom: "6px" }}>{line}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1226,41 +1376,90 @@ function AiPage() {
 
             <div className="row g-4">
               <div className="col-lg-8">
-                <div style={{ ...blockCardStyle, padding: "24px" }}>
-                  <div className="d-flex justify-content-between align-items-start gap-3 mb-3">
+                <div
+                  style={{
+                    ...blockCardStyle,
+                    padding: "26px",
+                    background: "linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%)",
+                    border: "1px solid #d8e4f5",
+                    height: "100%",
+                  }}
+                >
+                  <div className="mb-4">
                     <div>
-                      <div className="small text-muted">Chat Assistant</div>
-                      <h4 className="mb-1">AI 상담</h4>
+                      <div className="small text-muted">AI 상담</div>
+                      <h4 className="mb-2" style={{ fontWeight: 800, color: "#163b82" }}>약속이와 대화하기</h4>
+                      <div style={{ color: "#5a6f8f", lineHeight: 1.75, maxWidth: "620px" }}>
+                        선택한 환자 기록을 바탕으로 가이드와 복약 정보를 함께 보며 상담할 수 있습니다.
+                      </div>
                     </div>
-                    <button className="btn btn-primary" onClick={openChatPanel}>
-                      챗봇 열기
-                    </button>
                   </div>
-                  <div className="row g-3 align-items-center">
+
+                  <div className="row g-3 align-items-stretch">
                     <div className="col-md-8">
-                      <div className="small text-muted" style={{ lineHeight: 1.8 }}>
-                        아래 상담 영역은 유지하되 실제 대화는 오른쪽 패널에서 세션 기반으로 이어집니다. 같은 환자를 선택한 상태에서 질문하면 문맥이 유지됩니다.
-                      </div>
-                      <div className="mt-3 d-flex flex-wrap gap-2">
-                        <button className="btn btn-outline-secondary btn-sm" onClick={() => { setChatInput("복용할 때 주의할 점이 뭐야"); openChatPanel(); }}>
-                          주의사항 질문
-                        </button>
-                        <button className="btn btn-outline-secondary btn-sm" onClick={() => { setChatInput("이 약은 어떤 약이야?"); openChatPanel(); }}>
-                          약 설명 질문
-                        </button>
-                        <button className="btn btn-outline-secondary btn-sm" onClick={() => { setChatInput("생활 습관에서 조심할 점을 알려줘"); openChatPanel(); }}>
-                          생활 습관 질문
-                        </button>
+                      <div
+                        style={{
+                          borderRadius: "20px",
+                          background: "#ffffff",
+                          border: "1px solid #d8e4f5",
+                          padding: "18px",
+                          height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <div className="small text-muted mb-4" style={{ lineHeight: 1.8, fontSize: "0.95rem" }}>
+                          자주 묻는 질문으로 상담을 시작해보세요.
+                        </div>
+                        <div className="d-flex flex-wrap gap-2">
+                          <button
+                            className="btn btn-outline-secondary"
+                            style={{ fontSize: "0.95rem", padding: "10px 14px" }}
+                            onClick={() => { setChatInput("복용할 때 주의할 점이 뭐야"); openChatPanel(); }}
+                          >
+                            주의사항 질문
+                          </button>
+                          <button
+                            className="btn btn-outline-secondary"
+                            style={{ fontSize: "0.95rem", padding: "10px 14px" }}
+                            onClick={() => { setChatInput("이 약은 어떤 약이야?"); openChatPanel(); }}
+                          >
+                            약 설명 질문
+                          </button>
+                          <button
+                            className="btn btn-outline-secondary"
+                            style={{ fontSize: "0.95rem", padding: "10px 14px" }}
+                            onClick={() => { setChatInput("생활 습관에서 조심할 점을 알려줘"); openChatPanel(); }}
+                          >
+                            생활 습관 질문
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    <div className="col-md-4 text-center">
+                    <div className="col-md-4">
                       <button
                         type="button"
                         onClick={openChatPanel}
-                        style={{ border: "none", background: "transparent", cursor: "pointer" }}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          border: "1px solid #d8e4f5",
+                          background: "linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%)",
+                          borderRadius: "20px",
+                          cursor: "pointer",
+                          textAlign: "center",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "center",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: "18px",
+                        }}
                       >
-                        <img src="/mascot.png" alt="약속이 챗봇 열기" style={{ width: "120px", height: "auto" }} />
-                        <div className="small text-muted mt-2">약속이를 눌러 상담 시작</div>
+                        <img src="/mascot.png" alt="약속이 챗봇 열기" style={{ width: "84px", height: "auto" }} />
+                        <div className="fw-semibold" style={{ color: "#1d4ed8" }}>약속이 AI 상담</div>
+                        <div className="small text-muted text-center">가이드 내용을 이어서 질문하고 답변을 확인하세요.</div>
                       </button>
                     </div>
                   </div>
@@ -1282,7 +1481,7 @@ function AiPage() {
                     </div>
                     <div style={metricCardStyle}>
                       <div className="small text-muted mb-1">챗 세션</div>
-                      <div className="fw-semibold">{chatState.sessionId ? `세션 #${chatState.sessionId}` : "아직 생성 전"}</div>
+                      <div className="fw-semibold">{chatState.sessionId ? `상담 세션 #${chatState.sessionId}` : "아직 생성 전"}</div>
                     </div>
                   </div>
                 </div>
@@ -1350,13 +1549,44 @@ function AiPage() {
                   <div>
                     <div className="small text-muted">AI 상담</div>
                     <div className="fw-semibold fs-5">약속이와 대화하기</div>
-                    <div className="small text-muted mt-1">{activePatientLabel} 기준 상담</div>
+                    <div className="small text-muted mt-1">
+                      {isCaregiver ? "연동 환자 기준 상담" : "현재 복약 기록 기준 상담"}
+                    </div>
                   </div>
                 </div>
                 <button className="btn btn-outline-secondary btn-sm" onClick={closeChatPanel}>
                   닫기
                 </button>
               </div>
+              {isCaregiver && patientOptions.length > 0 && (
+                <div
+                  className="mt-3"
+                  style={{
+                    borderRadius: "16px",
+                    border: "1px solid #d8e5f6",
+                    background: "#ffffff",
+                    padding: "12px 14px",
+                  }}
+                >
+                  <label className="form-label small text-muted mb-2">상담 대상</label>
+                  <select
+                    className="form-select form-select-sm"
+                    value={selectedPatientId}
+                    onChange={(event) => {
+                      setSelectedPatientId(event.target.value);
+                      setSelectedGuideId("");
+                      setSelectedDocumentId("");
+                      setGuideActionState({ submitting: false, error: null, success: null });
+                    }}
+                  >
+                    {patientOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div
@@ -1383,7 +1613,7 @@ function AiPage() {
                 >
                   <img src="/mascot.png" alt="약속이" style={{ width: "88px", height: "88px" }} />
                   <div className="fw-semibold">안녕하세요, 약속이예요.</div>
-                  <div className="small">가이드 내용, 약 설명, 복용 주의사항을 이어서 물어보세요.</div>
+                  <div className="small">약 설명, 복약 일정, 가이드 내용, 생활 관리 포인트를 이어서 물어보세요.</div>
                 </div>
               ) : (
                 <div className="d-grid gap-3">
@@ -1454,7 +1684,7 @@ function AiPage() {
                 </button>
               </div>
             </div>
-          </div>
+          </div>약 설명, 주의사항, 생활 관리처럼 필요한 내용을 자연스럽게 이어서 물어보세요.
         </div>
       )}
     </div>
