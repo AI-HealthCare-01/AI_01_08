@@ -5,6 +5,7 @@ from fastapi.responses import ORJSONResponse as Response
 
 from app.dependencies.security import get_request_user
 from app.dtos.users import UserInfoResponse, UserUpdateRequest
+from app.models.healthcare import AuthAccount, UserRole
 from app.models.patients import Patient
 from app.models.users import User
 from app.services.users import UserManageService
@@ -53,3 +54,16 @@ async def update_user_me_info(
     )
 
     return Response(response_data.model_dump(), status_code=status.HTTP_200_OK)
+
+
+@user_router.delete("/me", status_code=status.HTTP_200_OK)
+async def withdraw_user(
+    user: Annotated[User, Depends(get_request_user)],
+) -> Response:
+    user.is_active = False
+    await user.save()
+    await UserRole.filter(user_id=user.id).delete()
+    await AuthAccount.filter(user_id=user.id).delete()
+    resp = Response(content={"detail": "회원 탈퇴가 완료되었습니다."}, status_code=status.HTTP_200_OK)
+    resp.delete_cookie(key="refresh_token", path="/")
+    return resp
