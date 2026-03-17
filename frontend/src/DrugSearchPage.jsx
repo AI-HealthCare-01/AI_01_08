@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 const BARCODE_FORMATS = [
@@ -17,53 +18,6 @@ const authFetch = async (url, options = {}) => {
   if (token) headers.Authorization = `Bearer ${token}`;
   return fetch(url, { ...options, headers, credentials: "include" });
 };
-
-const SIDEBAR_ITEMS = [
-  { key: "dashboard", label: "대시보드", href: "/auth-demo/app/dashboard" },
-  { key: "documents", label: "처방전 업로드", href: "/auth-demo/app/documents" },
-  { key: "drug-search", label: "약 검색", href: null },
-  { key: "ai", label: "AI 가이드", href: "/auth-demo/app/ai" },
-  { key: "schedule", label: "스케줄", href: "/auth-demo/app/schedule" },
-  { key: "health", label: "건강 프로필", href: "/auth-demo/app/health-profile" },
-];
-
-function Sidebar() {
-  return (
-    <div className="doc-sidebar">
-      <div className="doc-sidebar-brand">
-        <strong>복약관리시스템</strong>
-        <div className="text-muted small">보호자 모드</div>
-      </div>
-      <nav className="doc-sidebar-nav">
-        {SIDEBAR_ITEMS.map((item) => (
-          <a
-            key={item.key}
-            className={`doc-sidebar-link ${item.key === "drug-search" ? "active" : ""}`}
-            href={item.href || "#"}
-            onClick={item.href ? undefined : (event) => { event.preventDefault(); }}
-          >
-            {item.label}
-          </a>
-        ))}
-      </nav>
-      <div className="doc-sidebar-footer">
-        <a className="doc-sidebar-link" href="/auth-demo/app/settings">Settings</a>
-        <a
-          className="doc-sidebar-link"
-          href="#"
-          onClick={(event) => {
-            event.preventDefault();
-            localStorage.removeItem("access_token");
-            document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-            window.location.href = "/auth-demo/login";
-          }}
-        >
-          Logout
-        </a>
-      </div>
-    </div>
-  );
-}
 
 function ScrollableText({ value }) {
   const normalized = String(value || "").trim();
@@ -84,7 +38,7 @@ const buildBarcodeDetector = () => {
   }
 };
 
-function DrugSearchPage() {
+function DrugSearchPage({ modeOptions = [], currentMode = "PATIENT", onModeChange }) {
   const [query, setQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -291,13 +245,14 @@ function DrugSearchPage() {
   };
 
   return (
-    <div className="doc-layout">
-      <Sidebar />
-      <div className="doc-main">
-        <div className="doc-header">
-          <h4 className="fw-bold mb-0">약 검색</h4>
-        </div>
-
+    <AppLayout
+      activeKey="drug-search"
+      title="약 검색"
+      description="약 이름·코드·카메라 스캔으로 약 정보를 조회합니다."
+      modeOptions={modeOptions}
+      currentMode={currentMode}
+      onModeChange={onModeChange}
+    >
         <div className="card border-0 shadow-sm mb-4">
           <div className="card-body">
             <h6 className="fw-bold mb-3">MFDS 약 정보 검색</h6>
@@ -400,8 +355,7 @@ function DrugSearchPage() {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </AppLayout>
   );
 }
 

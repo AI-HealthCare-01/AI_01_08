@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 const MAX_NOTIFICATION_CACHE = 100;
@@ -36,6 +37,9 @@ const NotificationPage = ({
   myPatient = null,
   loginRole = "PATIENT",
   me = null,
+  modeOptions = [],
+  currentMode = "PATIENT",
+  onModeChange,
 }) => {
   const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
 
@@ -49,7 +53,7 @@ const NotificationPage = ({
   const normalizedPatients = useMemo(() => {
     return patientsSource.map((patient) => ({
       id: Number(patient.id),
-      name: patient.name || patient.display_name || `환자 ${patient.id}`,
+      name: patient.name || patient.display_name || `복약자 ${patient.id}`,
     }));
   }, [patientsSource]);
 
@@ -256,7 +260,7 @@ const NotificationPage = ({
     const payloadPatientName = payload?.patient_name;
 
     if (payloadPatientName) return payloadPatientName;
-    if (payloadPatientId) return getPatientName(payloadPatientId) || `환자 ${payloadPatientId}`;
+    if (payloadPatientId) return getPatientName(payloadPatientId) || `복약자 ${payloadPatientId}`;
     if (!isCaregiver && myPatient?.name) return myPatient.name;
 
     return null;
@@ -449,7 +453,7 @@ const NotificationPage = ({
     e.preventDefault();
 
     if (!remindForm.patient_id) {
-      setRemindMessage("환자를 선택해주세요.");
+      setRemindMessage("복약자를 선택해주세요.");
       return;
     }
 
@@ -495,73 +499,28 @@ const NotificationPage = ({
   };
 
   return (
-    <div className="app-shell">
-      <header className="hero">
-        <div className="container py-4">
-          <nav className="navbar navbar-expand-lg">
-            <a className="navbar-brand fw-bold" href="/auth-demo/app" style={{ fontSize: "1.5rem" }}>
-              복약관리시스템
-            </a>
-            <div className="ms-auto d-flex gap-2">
-              <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/dashboard">
-                대시보드
-              </a>
-              <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/schedule">
-                스케줄
-              </a>
-            </div>
-          </nav>
-        </div>
-      </header>
-
-      <div className="container-fluid py-4">
-        <div className="row">
-          <div className="col-md-3">
-            <div className="card border-0 shadow-sm mb-3">
-              <div className="card-body">
-                <h5 className="fw-bold mb-3">
-                  복약관리시스템
-                  <div className="small text-primary mt-1">
-                    {isCaregiver ? "보호자 모드" : "복약자 모드"}
-                  </div>
-                </h5>
-
-                <div className="list-group list-group-flush">
-                  <a href="/auth-demo/app/dashboard" className="list-group-item list-group-item-action">
-                    대시보드
-                  </a>
-                  <a href="/auth-demo/app/health-profile" className="list-group-item list-group-item-action">
-                    처방전 업로드
-                  </a>
-                  <a href="/auth-demo/app/documents" className="list-group-item list-group-item-action">
-                    맞춤 복약 가이드
-                  </a>
-                  <a href="/auth-demo/app/notifications" className="list-group-item list-group-item-action active">
-                    알림 센터
-                  </a>
-                  <a href="/auth-demo/app/medication-check" className="list-group-item list-group-item-action">
-                    복약 체크
-                  </a>
-                  <a href="/auth-demo/app/schedule" className="list-group-item list-group-item-action">
-                    스케줄
-                  </a>
-                  <a href="/auth-demo/app/profile" className="list-group-item list-group-item-action">
-                    건강 프로필
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            <div className="card border-0 shadow-sm mb-3">
-              <div className="card-body">
+    <AppLayout
+      activeKey="caregiver"
+      title="알림센터"
+      description={isCaregiver ? "연동 복약자 기준 알림과 리마인드를 관리합니다." : "복약 알림을 한 화면에서 확인합니다."}
+      loginRole={loginRole}
+      userName={me?.name}
+      modeOptions={modeOptions}
+      currentMode={currentMode}
+      onModeChange={onModeChange}
+    >
+      <div className="row g-4">
+        <div className="col-xl-4">
+          <div className="card border-0 shadow-sm mb-3">
+            <div className="card-body">
                 <h6 className="fw-bold mb-3">알림 요약</h6>
                 <div className="small text-muted mb-2">총 알림 {notifications.length}건</div>
                 <div className="small text-muted">미읽음 알림 {unreadCount}건</div>
-              </div>
             </div>
+          </div>
 
-            <div className="card border-0 shadow-sm mb-3">
-              <div className="card-body">
+          <div className="card border-0 shadow-sm mb-3">
+            <div className="card-body">
                 <h6 className="fw-bold mb-3">알림 설정</h6>
 
                 <form onSubmit={submitSettings}>
@@ -589,20 +548,20 @@ const NotificationPage = ({
                     {settingsSubmitting ? "저장 중..." : "설정 저장"}
                   </button>
                 </form>
-              </div>
             </div>
+          </div>
 
-            {isCaregiver && (
-              <div className="card border-0 shadow-sm" id="manual-remind-card">
-                <div className="card-body">
+          {isCaregiver && (
+            <div className="card border-0 shadow-sm" id="manual-remind-card">
+              <div className="card-body">
                   <h6 className="fw-bold mb-2">수동 리마인드</h6>
-                  <div className="small text-muted mb-3">보호자가 직접 환자에게 알림을 보낼 수 있습니다.</div>
+                  <div className="small text-muted mb-3">보호자가 직접 복약자에게 알림을 보낼 수 있습니다.</div>
 
                   <form onSubmit={submitRemind}>
                     <div className="mb-3">
-                      <label className="form-label">환자 선택</label>
+                      <label className="form-label">복약자 선택</label>
                       <select className="form-select" value={remindForm.patient_id} onChange={(e) => setRemindForm((prev) => ({ ...prev, patient_id: e.target.value }))}>
-                        <option value="">환자를 선택해주세요</option>
+                        <option value="">복약자를 선택해주세요</option>
                         {normalizedPatients.map((patient) => (
                           <option key={patient.id} value={patient.id}>
                             {patient.name}
@@ -628,7 +587,7 @@ const NotificationPage = ({
 
                     <div className="mb-3">
                       <label className="form-label">알림 메시지</label>
-                      <textarea className="form-control" rows="3" placeholder="환자에게 보낼 메시지를 입력해주세요" value={remindForm.message} onChange={(e) => setRemindForm((prev) => ({ ...prev, message: e.target.value }))} />
+                      <textarea className="form-control" rows="3" placeholder="복약자에게 보낼 메시지를 입력해주세요" value={remindForm.message} onChange={(e) => setRemindForm((prev) => ({ ...prev, message: e.target.value }))} />
                     </div>
 
                     <button type="submit" className="btn btn-primary btn-sm w-100" disabled={remindSubmitting}>
@@ -641,12 +600,12 @@ const NotificationPage = ({
                       </div>
                     )}
                   </form>
-                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
 
-          <div className="col-md-9">
+        <div className="col-xl-8">
             <div className="card border-0 shadow-sm">
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -680,7 +639,7 @@ const NotificationPage = ({
                   {isCaregiver && (
                     <div className="col-md-3">
                       <select className="form-select" value={patientFilter} onChange={(e) => setPatientFilter(e.target.value)}>
-                        <option value="all">환자 전체</option>
+                        <option value="all">복약자 전체</option>
                         {normalizedPatients.map((patient) => (
                           <option key={patient.id} value={String(patient.id)}>
                             {patient.name}
@@ -816,8 +775,7 @@ const NotificationPage = ({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </AppLayout>
   );
 };
 

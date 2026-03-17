@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
+import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -9,47 +10,6 @@ const authFetch = async (url, options = {}) => {
   if (token) headers.Authorization = `Bearer ${token}`;
   return fetch(url, { ...options, headers, credentials: "include" });
 };
-
-const SIDEBAR_ITEMS = [
-  { key: "dashboard", label: "대시보드", href: "/auth-demo/app/dashboard" },
-  { key: "documents", label: "처방전 업로드", href: null },
-  { key: "drug-search", label: "약 검색", href: "/auth-demo/app/drug-search" },
-  { key: "ai", label: "AI 가이드", href: "/auth-demo/app/ai" },
-  { key: "notifications", label: "알림센터", href: "/auth-demo/app" },
-  { key: "health", label: "건강 프로필", href: "/auth-demo/app/health-profile" },
-];
-
-function Sidebar() {
-  return (
-    <div className="doc-sidebar">
-      <div className="doc-sidebar-brand">
-        <strong>복약관리시스템</strong>
-        <div className="text-muted small">보호자 모드</div>
-      </div>
-      <nav className="doc-sidebar-nav">
-        {SIDEBAR_ITEMS.map((item) => (
-          <a
-            key={item.key}
-            className={`doc-sidebar-link ${item.key === "documents" ? "active" : ""}`}
-            href={item.href || "#"}
-            onClick={item.href ? undefined : (e) => { e.preventDefault(); }}
-          >
-            {item.label}
-          </a>
-        ))}
-      </nav>
-      <div className="doc-sidebar-footer">
-        <a className="doc-sidebar-link" href="/auth-demo/app/settings">Settings</a>
-        <a className="doc-sidebar-link" href="#" onClick={(e) => {
-          e.preventDefault();
-          localStorage.removeItem("access_token");
-          document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-          window.location.href = "/auth-demo/login";
-        }}>Logout</a>
-      </div>
-    </div>
-  );
-}
 
 function StatCard({ label, value, unit, color }) {
   return (
@@ -134,7 +94,15 @@ function DrugRow({ drug, index, onChange, onDelete }) {
 }
 
 // 메인 뷰: 목록 or OCR 결과
-function DocumentManagement() {
+function DocumentManagement({
+  linkedPatients = [],
+  myPatient = null,
+  loginRole = "PATIENT",
+  modeOptions = [],
+  currentMode = "PATIENT",
+  onModeChange,
+}) {
+  const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
   const [view, setView] = useState("list"); // "list" | "ocr"
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -143,6 +111,7 @@ function DocumentManagement() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [documentTitle, setDocumentTitle] = useState("");
   const [patientId, setPatientId] = useState("");
+  const [listPatientFilter, setListPatientFilter] = useState("all");
   const [uploadNotice, setUploadNotice] = useState(null);
 
   // OCR 결과 뷰 상태
@@ -194,6 +163,40 @@ function DocumentManagement() {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  const uploadPatientOptions = useMemo(() => {
+    const patientMap = new Map();
+
+    if (isCaregiver) {
+      (linkedPatients || []).forEach((patient) => {
+        if (!patient?.id) return;
+        patientMap.set(String(patient.id), {
+          value: String(patient.id),
+          label: patient.name || `복약자 #${patient.id}`,
+        });
+      });
+    } else if (myPatient?.id) {
+      patientMap.set(String(myPatient.id), {
+        value: String(myPatient.id),
+        label: myPatient.name || "내 건강 프로필",
+      });
+    }
+
+    (documents || []).forEach((doc) => {
+      if (!doc?.patient_id) return;
+      const key = String(doc.patient_id);
+      if (!patientMap.has(key)) {
+        patientMap.set(key, { value: key, label: `복약자 #${doc.patient_id}` });
+      }
+    });
+
+    return Array.from(patientMap.values());
+  }, [documents, isCaregiver, linkedPatients, myPatient]);
+
+  const filteredDocuments = useMemo(() => {
+    if (listPatientFilter === "all") return documents;
+    return documents.filter((doc) => String(doc.patient_id) === String(listPatientFilter));
+  }, [documents, listPatientFilter]);
 
   const validateUploadFile = useCallback((file) => {
     if (!file) return false;
@@ -518,11 +521,17 @@ function DocumentManagement() {
     const isSuccess = ocrStatus?.ocr_status === "success";
 
     return (
-      <div className="doc-layout">
-        <Sidebar />
-        <div className="doc-main">
+      <AppLayout
+        activeKey="documents"
+        title="처방전 업로드"
+        description="처방전을 업로드하고 추출된 약 정보를 검토합니다."
+        loginRole={loginRole}
+        modeOptions={modeOptions}
+        currentMode={currentMode}
+        onModeChange={onModeChange}
+      >
           <div className="doc-header">
-            <h4 className="fw-bold mb-0">처방전 업로드</h4>
+            <h4 className="fw-bold mb-0">인식 결과 상세</h4>
             {isSuccess && (
               <span className="badge bg-success-subtle text-success px-3 py-2" style={{ fontSize: "0.85rem" }}>
                 ✅ 문서 인식 완료
@@ -604,8 +613,8 @@ function DocumentManagement() {
                       <span className="fw-semibold">본인</span>
                     </div>
                     <div className="d-flex justify-content-between mb-1">
-                      <span className="text-muted">대상 환자</span>
-                      <span className="fw-semibold">환자 #{currentDoc.patient_id}</span>
+                      <span className="text-muted">대상 복약자</span>
+                      <span className="fw-semibold">복약자 #{currentDoc.patient_id}</span>
                     </div>
                   </div>
                   <div className="d-flex gap-2 mt-3">
@@ -699,20 +708,21 @@ function DocumentManagement() {
               </div>
             </>
           )}
-        </div>
-      </div>
+      </AppLayout>
     );
   }
 
   // ─── 문서 목록 뷰 ───
   return (
-    <div className="doc-layout">
-      <Sidebar />
-      <div className="doc-main">
-        <div className="doc-header">
-          <h4 className="fw-bold mb-0">처방전 업로드</h4>
-        </div>
-
+    <AppLayout
+      activeKey="documents"
+      title="처방전 업로드"
+      description="문서를 업로드하고 복약자별 처방전 상태를 확인합니다."
+      loginRole={loginRole}
+      modeOptions={modeOptions}
+      currentMode={currentMode}
+      onModeChange={onModeChange}
+    >
         {error && (
           <div className="alert alert-danger alert-dismissible">
             {error}
@@ -731,9 +741,9 @@ function DocumentManagement() {
           <div className="card-body">
             <h6 className="fw-bold mb-3">처방전 업로드</h6>
             <form onSubmit={handleUpload}>
-              <div className="row g-3 align-items-end">
+              <div className="row g-3 doc-upload-grid">
                 <div className="col-md-4">
-                  <label className="form-label small">파일 선택</label>
+                  <label className="form-label small">파일 선택 (최대 10MB)</label>
                   <input
                     type="file"
                     id="fileInput"
@@ -742,7 +752,6 @@ function DocumentManagement() {
                     accept="image/*,.pdf"
                     required
                   />
-                  <div className="form-text">최대 10MB</div>
                 </div>
                 <div className="col-md-3">
                   <label className="form-label small">문서명 (선택)</label>
@@ -756,8 +765,15 @@ function DocumentManagement() {
                   />
                 </div>
                 <div className="col-md-3">
-                  <label className="form-label small">환자 ID (선택)</label>
-                  <input type="number" className="form-control" value={patientId} onChange={(e) => setPatientId(e.target.value)} placeholder="본인이면 비워두세요" />
+                  <label className="form-label small">복약자 선택</label>
+                  <select className="form-select" value={patientId} onChange={(e) => setPatientId(e.target.value)}>
+                    <option value="">{isCaregiver ? "업로드 대상 선택" : "내 프로필(자동 선택)"}</option>
+                    {uploadPatientOptions.map((patient) => (
+                      <option key={patient.value} value={patient.value}>
+                        {patient.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="col-md-2">
                   <button type="submit" className="btn btn-primary w-100" disabled={uploading || !selectedFile}>
@@ -772,14 +788,31 @@ function DocumentManagement() {
         {/* 문서 목록 */}
         <div className="card border-0 shadow-sm">
           <div className="card-body">
-            <div className="d-flex justify-content-between align-items-center mb-3">
+            <div className="doc-list-toolbar mb-3">
               <h6 className="fw-bold mb-0">처방전 목록</h6>
-              <button className="btn btn-outline-secondary btn-sm" onClick={loadDocuments} disabled={loading}>
-                {loading ? "로딩..." : "새로고침"}
-              </button>
+              <div className="d-flex flex-wrap align-items-end gap-2">
+                <div className="doc-list-filter">
+                  <label className="form-label small mb-1">조회 대상 선택</label>
+                  <select
+                    className="form-select form-select-sm"
+                    value={listPatientFilter}
+                    onChange={(event) => setListPatientFilter(event.target.value)}
+                  >
+                    <option value="all">전체 복약자</option>
+                    {uploadPatientOptions.map((patient) => (
+                      <option key={patient.value} value={patient.value}>
+                        {patient.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button className="btn btn-outline-secondary btn-sm" onClick={loadDocuments} disabled={loading}>
+                  {loading ? "로딩..." : "새로고침"}
+                </button>
+              </div>
             </div>
-            {documents.length === 0 ? (
-              <div className="text-center py-5 text-muted">처방전이 없습니다.</div>
+            {filteredDocuments.length === 0 ? (
+              <div className="text-center py-5 text-muted">등록된 처방전이 없습니다. 상단에서 문서를 업로드해보세요.</div>
             ) : (
               <div className="table-responsive">
                 <table className="table table-hover align-middle">
@@ -787,14 +820,14 @@ function DocumentManagement() {
                     <tr>
                       <th>ID</th>
                       <th>파일명</th>
-                      <th>환자 ID</th>
+                      <th>복약자 ID</th>
                       <th>상태</th>
                       <th>업로드 일시</th>
                       <th>작업</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {documents.map((doc) => {
+                    {filteredDocuments.map((doc) => {
                       const docId = doc.document_id || doc.id;
                       const st = doc.ocr_status || doc.status;
                       const badgeCls = { queued: "bg-warning", processing: "bg-info", success: "bg-success", failed: "bg-danger" }[st] || "bg-secondary";
@@ -824,8 +857,7 @@ function DocumentManagement() {
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </AppLayout>
   );
 }
 

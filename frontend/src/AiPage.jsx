@@ -1,30 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 
 const pageStyle = {
   minHeight: "100vh",
   background: "linear-gradient(145deg, #f8fbff 0%, #dfeafb 100%)",
-};
-
-const shellStyle = {
-  maxWidth: "1440px",
-  margin: "0 auto",
-  display: "grid",
-  gridTemplateColumns: "240px minmax(0, 1fr)",
-  gap: "28px",
-  padding: "28px",
-};
-
-const sidebarCardStyle = {
-  position: "sticky",
-  top: "24px",
-  borderRadius: "24px",
-  background: "rgba(255, 255, 255, 0.96)",
-  border: "1px solid #d7e3f4",
-  boxShadow: "0 18px 40px rgba(37, 99, 235, 0.1)",
-  padding: "24px 18px",
-  height: "calc(100vh - 56px)",
 };
 
 const mainCardStyle = {
@@ -378,7 +359,11 @@ const getGuideStatusMeta = (status) => statusColorMap[status] || { bg: "#f1f5f9"
 
 const getChatStorageKey = (role, patientId) => `ai-chat-session:${role || "UNKNOWN"}:${patientId || "unknown"}`;
 
-function AiPage() {
+function AiPage({
+  modeOptions = [],
+  currentMode = "PATIENT",
+  onModeChange,
+}) {
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const requestedPatientId = searchParams.get("patient_id");
   const shouldOpenChat = searchParams.get("open_chat") === "1";
@@ -499,19 +484,6 @@ function AiPage() {
   useEffect(() => {
     setLoginRole(localStorage.getItem("login_role") || "PATIENT");
   }, []);
-
-  const handleLogout = async () => {
-    try {
-      await fetch(`${API_PREFIX}/auth/logout`, { method: "POST", credentials: "include" });
-    } catch {
-      // ignore
-    } finally {
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem("access_token");
-        window.location.href = "/auth-demo/login";
-      }
-    }
-  };
 
   const loadMe = async () => {
     setMeState({ loading: true, data: null, error: null });
@@ -909,57 +881,17 @@ function AiPage() {
 
   return (
     <div style={pageStyle}>
-      <div style={shellStyle}>
-        <aside style={sidebarCardStyle}>
-          <div className="mb-4">
-            <div className="d-flex align-items-center gap-3 mb-3">
-              <img src="/mascot.png" alt="약속이" style={{ width: "56px", height: "56px" }} />
-              <div>
-                <div style={{ fontSize: "0.9rem", color: "#5d6d7e", fontWeight: 700 }}>복약 도우미</div>
-                <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#16324f" }}>AI Guide Center</div>
-              </div>
-            </div>
-            <div style={{ fontSize: "0.9rem", color: "#6b7a8b", lineHeight: 1.6 }}>
-              가이드, 복약 요약, AI 상담을 한 화면에서 연결합니다.
-            </div>
-          </div>
-
-          <nav className="d-grid gap-2">
-            <a href="/auth-demo/app/dashboard" className="btn btn-outline-secondary text-start">대시보드</a>
-            <a href="/auth-demo/app/documents" className="btn btn-outline-secondary text-start">문서 관리</a>
-            <a href="/auth-demo/app/drug-search" className="btn btn-outline-secondary text-start">약 검색</a>
-            <a href="/auth-demo/app/health-profile" className="btn btn-outline-secondary text-start">건강 프로필</a>
-            <a href="/auth-demo/app/ai" className="btn btn-primary text-start">맞춤 복약 가이드</a>
-            <a href="/auth-demo/app/caregiver" className="btn btn-outline-secondary text-start">보호자 관리</a>
-            <a href="/auth-demo/app/schedule" className="btn btn-outline-secondary text-start">스케줄</a>
-          </nav>
-
-          <div className="mt-4 pt-4" style={{ borderTop: "1px solid #ecf1f5" }}>
-            <div className="small text-muted mb-2">현재 로그인</div>
-            <div className="fw-semibold">{meState.data?.name || "사용자"}</div>
-            <div className="small text-muted">{loginRole === "CAREGIVER" ? "보호자" : "복약자"}</div>
-          </div>
-
-          <div className="mt-auto pt-4">
-            <button className="btn btn-outline-danger w-100" onClick={handleLogout}>
-              로그아웃
-            </button>
-          </div>
-        </aside>
-
-        <main>
-          <div style={{ ...mainCardStyle, padding: "28px 30px 30px 30px" }}>
-            <div className="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-              <div>
-                <div className="small text-muted mb-2">AI Guide Workspace</div>
-                <h1 style={{ fontSize: "2.15rem", fontWeight: 800, color: "#163b82", marginBottom: "10px", letterSpacing: "-0.02em" }}>
-                  맞춤 복약 가이드
-                </h1>
-                <div style={{ color: "#5a6f8f", maxWidth: "720px", lineHeight: 1.7 }}>
-                  문서, 건강 프로필, 복약 일정을 함께 보고 필요한 안내를 자연스럽게 상담으로 이어갈 수 있습니다.
-                </div>
-              </div>
-            </div>
+      <AppLayout
+        activeKey="ai"
+        title="AI 가이드"
+        description="복약 문서와 건강 정보를 바탕으로 맞춤 가이드를 확인하고 AI 상담을 이어갈 수 있습니다."
+        loginRole={loginRole}
+        userName={meState.data?.name || "사용자"}
+        modeOptions={modeOptions}
+        currentMode={currentMode}
+        onModeChange={onModeChange}
+      >
+        <div style={{ ...mainCardStyle, padding: "28px 30px 30px 30px" }}>
 
             <div style={heroBannerStyle}>
               <div className="row g-4 align-items-center">
@@ -1167,8 +1099,8 @@ function AiPage() {
             </div>
 
             <div className="row g-4 mb-4">
-              <div className="col-xl-5">
-                <div style={{ ...blockCardStyle, padding: "24px", height: "100%" }}>
+              <div className="col-12">
+                <div style={{ ...blockCardStyle, padding: "24px" }}>
                   <div className="d-flex justify-content-between align-items-center mb-3">
                     <div>
                       <div className="small text-muted">Medication Guide</div>
@@ -1184,7 +1116,7 @@ function AiPage() {
                   ) : medGuideState.data.length === 0 ? (
                     <div className="text-muted">확정된 약 정보가 아직 없습니다.</div>
                   ) : (
-                    <div className="d-grid gap-3">
+                    <div className="d-grid gap-3" style={{ maxHeight: "560px", overflowY: "auto", paddingRight: "4px" }}>
                       {medGuideState.data.map((item) => (
                         <div key={item.patient_med_id} style={metricCardStyle}>
                           <div className="d-flex justify-content-between align-items-start gap-3 mb-2">
@@ -1224,8 +1156,8 @@ function AiPage() {
                 </div>
               </div>
 
-              <div className="col-xl-7">
-                <div style={{ ...blockCardStyle, padding: "24px", height: "100%" }}>
+              <div className="col-12">
+                <div style={{ ...blockCardStyle, padding: "24px", maxHeight: "820px", overflowY: "auto" }}>
                   <div className="d-flex justify-content-between align-items-center gap-3 mb-3">
                     <div>
                       <div className="small text-muted">Guide Detail</div>
@@ -1488,8 +1420,7 @@ function AiPage() {
               </div>
             </div>
           </div>
-        </main>
-      </div>
+      </AppLayout>
 
       {/* Louis수정(기능추가): 로고 및 플로팅 버튼으로 열 수 있는 우측 슬라이드 챗봇 패널 */}
       <button
@@ -1684,7 +1615,7 @@ function AiPage() {
                 </button>
               </div>
             </div>
-          </div>약 설명, 주의사항, 생활 관리처럼 필요한 내용을 자연스럽게 이어서 물어보세요.
+          </div>
         </div>
       )}
     </div>

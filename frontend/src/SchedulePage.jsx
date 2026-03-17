@@ -1,8 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
+import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 
-const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CAREGIVER" }) => {
+const SchedulePage = ({
+  linkedPatients = [],
+  myPatient = null,
+  loginRole = "CAREGIVER",
+  modeOptions = [],
+  currentMode = "PATIENT",
+  onModeChange,
+}) => {
   const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
 
   const patientsSource = useMemo(() => {
@@ -15,7 +23,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
   const normalizedPatients = useMemo(() => {
     return patientsSource.map((patient) => ({
       id: Number(patient.id),
-      name: patient.name || `환자 ${patient.id}`,
+      name: patient.name || `복약자 ${patient.id}`,
     }));
   }, [patientsSource]);
 
@@ -189,7 +197,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
 
   const getPatientName = (patientId) => {
     const patient = normalizedPatients.find((p) => p.id === Number(patientId));
-    return patient?.name || `환자 ${patientId}`;
+    return patient?.name || `복약자 ${patientId}`;
   };
 
   const getPatientColor = (patientId) => {
@@ -338,73 +346,24 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
   });
 
   return (
-    <div className="app-shell">
-      <header className="hero">
-        <div className="container py-4">
-          <nav className="navbar navbar-expand-lg">
-            <a
-              className="navbar-brand fw-bold"
-              href="/auth-demo/app"
-              style={{ fontSize: "1.5rem" }}
-            >
-              복약관리시스템
-            </a>
-            <div className="ms-auto d-flex gap-2">
-              <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/dashboard">
-                대시보드
-              </a>
-              {isCaregiver && (
-                <a className="btn btn-outline-light btn-sm" href="/auth-demo/app/caregiver">
-                  보호자 모드
-                </a>
-              )}
-            </div>
-          </nav>
-        </div>
-      </header>
-
-      <div className="container-fluid py-4">
-        <div className="row g-3">
-          <div className="col-md-3">
-            <div className="card border-0 shadow-sm mb-3">
-              <div className="card-body">
-                <h5 className="fw-bold mb-3">
-                  복약관리시스템
-                  <div className="small text-primary mt-1">
-                    {isCaregiver ? "보호자 모드" : "복약자 모드"}
-                  </div>
-                </h5>
-                <div className="list-group list-group-flush">
-                  <a href="/auth-demo/app/dashboard" className="list-group-item list-group-item-action">
-                    대시보드
-                  </a>
-                  <a href="/auth-demo/app/health-profile" className="list-group-item list-group-item-action">
-                    처방전 업로드
-                  </a>
-                  <a href="/auth-demo/app/documents" className="list-group-item list-group-item-action">
-                    맞춤 복약 가이드
-                  </a>
-                  <a href="/auth-demo/app/caregiver" className="list-group-item list-group-item-action">
-                    알림 센터
-                  </a>
-                  <a href="/auth-demo/app/medication-check" className="list-group-item list-group-item-action">
-                    복약 체크
-                  </a>
-                  <a href="/auth-demo/app/schedule" className="list-group-item list-group-item-action active">
-                    스케줄
-                  </a>
-                  <a href="/auth-demo/app/profile" className="list-group-item list-group-item-action">
-                    건강 프로필
-                  </a>
-                </div>
-              </div>
-            </div>
-
-            <div className="card border-0 shadow-sm mb-3">
-              <div className="card-body">
+    <>
+      <AppLayout
+        activeKey="schedule"
+        title="스케줄"
+        description="복약자별 병원 방문 일정을 확인하고 추가/수정할 수 있습니다."
+        loginRole={loginRole}
+        modeOptions={modeOptions}
+        currentMode={currentMode}
+        onModeChange={onModeChange}
+      >
+        <div className="container-fluid py-1">
+          <div className="row g-3">
+            <div className="col-md-3">
+              <div className="card border-0 shadow-sm mb-3">
+                <div className="card-body">
                 {isCaregiver && (
                   <div className="mb-3">
-                    <label className="form-label fw-semibold">환자 선택</label>
+                    <label className="form-label fw-semibold">복약자 선택</label>
                     <select
                       className="form-select"
                       value={selectedPatientId}
@@ -433,9 +392,9 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                 <div className="small text-muted">
                   {isCaregiver
                     ? selectedPatientId === "all"
-                      ? "전체 환자의 예정 일정 미리보기"
-                      : "선택한 환자의 예정 일정 미리보기"
-                    : "내 예정 일정 미리보기"}
+                      ? `전체 복약자의 등록된 병원 진료 예약 ${filteredSchedules.length}건`
+                      : `선택한 복약자의 등록된 병원 진료 예약 ${filteredSchedules.length}건`
+                    : `내 등록된 병원 진료 예약 ${filteredSchedules.length}건`}
                 </div>
 
                 <div className="small text-muted mt-2 mb-2">최근 일정 3건</div>
@@ -646,7 +605,7 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
                 <div className="modal-body">
                   {isCaregiver && (
                     <div className="mb-3">
-                      <label className="form-label">환자</label>
+                      <label className="form-label">복약자</label>
                       <select
                         className="form-select"
                         value={formData.patient_id}
@@ -744,7 +703,8 @@ const SchedulePage = ({ linkedPatients = [], myPatient = null, loginRole = "CARE
           </div>
         </div>
       )}
-    </div>
+      </AppLayout>
+    </>
   );
 };
 

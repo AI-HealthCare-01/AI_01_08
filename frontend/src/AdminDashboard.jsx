@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -104,40 +105,11 @@ const DonutChart = ({ successRate }) => {
   );
 };
 
-function AdminDashboard() {
+function AdminDashboard({ modeOptions = [], currentMode = "ADMIN", onModeChange }) {
   const [period, setPeriod] = useState(7);
   const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  const handleLogout = async () => {
-    try {
-      // 로컬 스토리지와 쿠키에서 토큰 제거
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user_role");
-      
-      // 쿠키 제거
-      document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-      document.cookie = "refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-      
-      // 서버에 로그아웃 요청 (선택사항)
-      try {
-        await fetch(`${API_PREFIX}/auth/logout`, {
-          method: 'POST',
-          credentials: 'include'
-        });
-      } catch (error) {
-        console.log('서버 로그아웃 요청 실패:', error);
-      }
-      
-      // 일반 로그인 페이지로 리다이렉트
-      window.location.href = "/auth-demo/login";
-    } catch (error) {
-      console.error('로그아웃 처리 중 오류:', error);
-      // 오류가 발생해도 로그인 페이지로 이동
-      window.location.href = "/auth-demo/login";
-    }
-  };
 
   const fetchDashboard = async () => {
     setLoading(true);
@@ -191,20 +163,36 @@ function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="container py-5">
-        <div className="text-center">
+      <AppLayout
+        activeKey="admin-dashboard"
+        title="관리자 대시보드"
+        description="운영 데이터를 불러오는 중입니다."
+        loginRole="ADMIN"
+        modeOptions={modeOptions}
+        currentMode={currentMode}
+        onModeChange={onModeChange}
+      >
+        <div className="text-center py-5">
           <div className="spinner-border text-primary" role="status">
             <span className="visually-hidden">Loading...</span>
           </div>
           <div className="mt-3 text-muted">대시보드 데이터를 불러오는 중...</div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   if (error) {
     return (
-      <div className="container py-5">
+      <AppLayout
+        activeKey="admin-dashboard"
+        title="관리자 대시보드"
+        description="데이터 로드 중 오류가 발생했습니다."
+        loginRole="ADMIN"
+        modeOptions={modeOptions}
+        currentMode={currentMode}
+        onModeChange={onModeChange}
+      >
         <div className="alert alert-danger alert-dismissible" role="alert">
           <strong>오류 발생!</strong> {error}
           <button 
@@ -218,7 +206,7 @@ function AdminDashboard() {
             다시 시도
           </button>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
@@ -229,19 +217,16 @@ function AdminDashboard() {
   const { stats, guide_trend, chatbot_trend, ocr_analysis } = dashboardData;
 
   return (
-    <div className="container-fluid py-4" style={{ backgroundColor: "#f8f9fa", minHeight: "100vh" }}>
-      <nav className="navbar navbar-expand-lg navbar-light bg-white shadow-sm mb-4">
-        <div className="container-fluid">
-          <a className="navbar-brand fw-bold" href="/auth-demo/app">AI Health</a>
-          <div className="ms-auto d-flex gap-2">
-            <a className="btn btn-outline-primary btn-sm" href="/auth-demo/app">홈</a>
-            <a className="btn btn-outline-primary btn-sm" href="/auth-demo/app/ai">AI 상담</a>
-            <a className="btn btn-outline-primary btn-sm" href="/auth-demo/app/profile">개인정보</a>
-            <button className="btn btn-outline-danger btn-sm" onClick={handleLogout}>로그아웃</button>
-          </div>
-        </div>
-      </nav>
-
+    <AppLayout
+      activeKey="admin-dashboard"
+      title="관리자 대시보드"
+      description="OCR, 가이드, 챗봇 운영 지표를 확인합니다."
+      loginRole="ADMIN"
+      modeOptions={modeOptions}
+      currentMode={currentMode}
+      onModeChange={onModeChange}
+    >
+      <div className="py-2">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div className="d-flex align-items-center">
           <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
@@ -376,7 +361,8 @@ function AdminDashboard() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </AppLayout>
   );
 }
 
