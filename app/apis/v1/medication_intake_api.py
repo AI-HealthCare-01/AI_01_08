@@ -10,6 +10,8 @@ from app.dtos.medication_intake_dtos import (
     AdherenceResponse,
     IntakeCheckRequest,
     IntakeCheckResponse,
+    IntakeSkipRequest,
+    IntakeSkipResponse,
     IntakeStatusResponse,
     IntakeUndoRequest,
     IntakeUndoResponse,
@@ -100,3 +102,12 @@ async def get_schedule_adherence(
     GET /api/v1/schedules/adherence?patient_id=10001&from=2026-03-10&to=2026-03-12
     """
     return await service.get_patient_adherence(patient_id, date_from, date_to)
+
+
+@router.post("/{schedule_id}/skip", response_model=IntakeSkipResponse)
+async def skip_medication(
+    schedule_id: int,
+    request: IntakeSkipRequest,
+    service: MedicationServiceDep,
+) -> IntakeSkipResponse:
+    return await service.skip_medication(schedule_id, request)

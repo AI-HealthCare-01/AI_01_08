@@ -8,6 +8,7 @@ import SchedulePage from "./SchedulePage.jsx";
 import SettingsPage from "./SettingsPage.jsx";
 import NotificationPage from "./NotificationPage.jsx";
 import DrugSearchPage from "./DrugSearchPage.jsx";
+import MedicationCheckPage from "./MedicationCheckPage.jsx";
 
 const API_PREFIX = "/api/v1";
 
@@ -220,6 +221,9 @@ function App() {
   }, [pathname]);
   const isDrugSearchPage = useMemo(() => {
     return pathname.startsWith("/auth-demo/drug-search") || pathname.startsWith("/auth-demo/app/drug-search");
+  }, [pathname]);
+  const isMedicationCheckPage = useMemo(() => {
+    return (pathname.startsWith("/auth-demo/medication-check") || pathname.startsWith("/auth-demo/app/medication-check"));
   }, [pathname]);
   const isSchedulePage = useMemo(() => {
     return pathname.startsWith("/auth-demo/schedule") || pathname.startsWith("/auth-demo/app/schedule");
@@ -1556,7 +1560,30 @@ function App() {
     }
     return <DrugSearchPage />;
   }
+  if (isMedicationCheckPage) {
+    if (!accessToken) {
+      if (authChecking) {
+        return (
+          <div className="login-page">
+            <div className="container text-center">
+              <div className="py-5 text-muted">인증 상태 확인 중...</div>
+            </div>
+          </div>
+        );
+      }
+      window.location.href = "/auth-demo/login";
+      return null;
+    }
 
+    return (
+      <MedicationCheckPage
+        linkedPatients={linkedPatients}
+        myPatient={myPatient}
+        loginRole={loginRole}
+        me={meState.data}
+      />
+    );
+  }
   if (isSchedulePage) {
     if (!accessToken) {
       if (authChecking) {

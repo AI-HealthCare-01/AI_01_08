@@ -1,37 +1,33 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 const API_PREFIX = "/api/v1";
+const MAX_NOTIFICATION_CACHE = 100;
 
 const TYPE_META = {
+  intake_reminder: { label: "복약 리마인드", bg: "#dbeafe", color: "#2563eb" },
+  missed_alert: { label: "미복용 알림", bg: "#ffedd5", color: "#ea580c" },
+  ocr_done: { label: "처방전 업데이트", bg: "#f3e8ff", color: "#a855f7" },
+  guide_ready: { label: "AI 가이드", bg: "#dcfce7", color: "#16a34a" },
+  taken: { label: "복용 완료", bg: "#ccfbf1", color: "#0f766e" },
+  default: { label: "알림", bg: "#e5e7eb", color: "#374151" },
+};
+
+const REMIND_TEMPLATE = {
   intake_reminder: {
-    label: "복약 리마인드",
-    bg: "#dbeafe",
-    color: "#2563eb",
+    title: "복약 리마인드",
+    message: "복약 시간이에요. 복용 여부를 확인해 주세요.",
   },
   missed_alert: {
-    label: "미복용 알림",
-    bg: "#ffedd5",
-    color: "#ea580c",
+    title: "복약 확인 요청",
+    message: "아직 복용 기록이 없어요. 복용 여부를 확인해 주세요.",
   },
   ocr_done: {
-    label: "처방전 업데이트",
-    bg: "#f3e8ff",
-    color: "#a855f7",
+    title: "처방전 등록 확인",
+    message: "처방전 인식이 완료되었어요. 내용을 확인해 주세요.",
   },
   guide_ready: {
-    label: "AI 가이드",
-    bg: "#dcfce7",
-    color: "#16a34a",
-  },
-  taken: {
-    label: "복용 완료",
-    bg: "#ccfbf1",
-    color: "#0f766e",
-  },
-  default: {
-    label: "알림",
-    bg: "#e5e7eb",
-    color: "#374151",
+    title: "복약 가이드 준비 완료",
+    message: "AI 복약 가이드가 준비되었어요. 확인해 주세요.",
   },
 };
 
@@ -53,7 +49,7 @@ const NotificationPage = ({
   const normalizedPatients = useMemo(() => {
     return patientsSource.map((patient) => ({
       id: Number(patient.id),
-      name: patient.name || `환자 ${patient.id}`,
+      name: patient.name || patient.display_name || `환자 ${patient.id}`,
     }));
   }, [patientsSource]);
 
@@ -78,11 +74,10 @@ const NotificationPage = ({
   const [patientFilter, setPatientFilter] = useState("all");
 
   const [remindForm, setRemindForm] = useState({
-    patient_id: normalizedPatients[0]?.id || "",
+    patient_id: "",
     type: "intake_reminder",
-    title: "복약 리마인드",
-    message: "복약 시간이예요! 확인해 주세요.",
-    payload: "",
+    title: REMIND_TEMPLATE.intake_reminder.title,
+    message: REMIND_TEMPLATE.intake_reminder.message,
   });
   const [remindSubmitting, setRemindSubmitting] = useState(false);
   const [remindMessage, setRemindMessage] = useState(null);
@@ -157,11 +152,13 @@ const NotificationPage = ({
 
       const body = await safeJson(res);
       const data = body?.data || body || {};
-
       const items = data?.items || [];
       const cursorValue = data?.next_cursor ?? null;
 
-      setNotifications((prev) => (append ? [...prev, ...items] : items));
+      setNotifications((prev) => {
+        const merged = append ? [...prev, ...items] : items;
+        return merged.slice(-MAX_NOTIFICATION_CACHE);
+      });
       setNextCursor(cursorValue);
     } catch (err) {
       setError(err.message || "알림을 불러오지 못했습니다.");
@@ -179,9 +176,7 @@ const NotificationPage = ({
       const body = await safeJson(res);
       const data = body?.data || body || {};
       setUnreadCount(data?.count ?? 0);
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   const loadSettings = async () => {
@@ -199,22 +194,56 @@ const NotificationPage = ({
           guide_ready: !!data.guide_ready,
         });
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
   const loadAll = async () => {
-    await Promise.all([
-      loadNotifications(),
-      loadUnreadCount(),
-      loadSettings(),
-    ]);
+    await Promise.all([loadNotifications(), loadUnreadCount(), loadSettings()]);
   };
 
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    if (!isCaregiver || typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const prefill = params.get("prefill");
+
+    if (prefill !== "1") return;
+
+    const patientId = params.get("patient_id") || "";
+    const type = params.get("type") || "missed_alert";
+    const title = params.get("title") || "복약 확인 요청";
+    const message =
+      params.get("message") || "복용 기록이 없어 확인이 필요합니다. 복용 여부를 확인해 주세요.";
+
+    setRemindForm((prev) => ({
+      ...prev,
+      patient_id: patientId,
+      type,
+      title,
+      message,
+    }));
+
+    if (patientId) setPatientFilter(String(patientId));
+    if (type) setTypeFilter(type);
+
+    setRemindMessage("복약 체크 화면에서 알림 내용을 불러왔습니다. 확인 후 전송해주세요.");
+
+    setTimeout(() => {
+      const remindSection = document.getElementById("manual-remind-card");
+      if (remindSection) {
+        remindSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 120);
+
+    params.delete("prefill");
+    const queryString = params.toString();
+    const nextUrl = `${window.location.pathname}${queryString ? `?${queryString}` : ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, [isCaregiver]);
 
   const getPatientName = (patientId) => {
     const patient = normalizedPatients.find((p) => p.id === Number(patientId));
@@ -222,13 +251,12 @@ const NotificationPage = ({
   };
 
   const resolvePatientLabel = (item) => {
-    const payload = item?.payload || {};
-    const payloadPatientId = payload?.patient_id;
+    const payload = item?.payload || item?.payload_json || {};
+    const payloadPatientId = payload?.patient_id ?? item?.patient_id;
     const payloadPatientName = payload?.patient_name;
 
     if (payloadPatientName) return payloadPatientName;
     if (payloadPatientId) return getPatientName(payloadPatientId) || `환자 ${payloadPatientId}`;
-
     if (!isCaregiver && myPatient?.name) return myPatient.name;
 
     return null;
@@ -242,33 +270,29 @@ const NotificationPage = ({
       const title = item.title || "";
       const body = item.body || "";
       const type = item.type || "";
+      const payloadPatientId =
+        item?.payload?.patient_id ?? item?.payload_json?.patient_id ?? item?.patient_id;
 
-      if (typeFilter !== "all" && type !== typeFilter) {
-        return false;
-      }
+      if (typeFilter !== "all" && type !== typeFilter) return false;
 
       if (patientFilter !== "all") {
-        const payloadPatientId = item?.payload?.patient_id;
-        if (String(payloadPatientId || "") !== String(patientFilter)) {
-          return false;
-        }
+        if (String(payloadPatientId || "") !== String(patientFilter)) return false;
       }
 
       if (!keyword) return true;
 
-      return [patientLabel, title, body, type]
-        .join(" ")
-        .toLowerCase()
-        .includes(keyword);
+      return [patientLabel, title, body, type].join(" ").toLowerCase().includes(keyword);
     });
   }, [notifications, search, typeFilter, patientFilter, isCaregiver, myPatient, normalizedPatients]);
 
-  const getTypeMeta = (type) => {
-    return TYPE_META[type] || TYPE_META.default;
-  };
+  const getTypeMeta = (type) => TYPE_META[type] || TYPE_META.default;
 
-  const markRead = async (notificationId) => {
-    setActionLoading(true);
+  const markRead = async (notificationId, silent = false) => {
+    const currentItem = notifications.find((item) => item.id === notificationId);
+    if (currentItem?.read_at) return true;
+
+    if (!silent) setActionLoading(true);
+
     try {
       const res = await authFetch(`${API_PREFIX}/notifications/${notificationId}/read`, {
         method: "PATCH",
@@ -287,10 +311,12 @@ const NotificationPage = ({
         )
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
+      return true;
     } catch (err) {
-      setError(err.message || "읽음 처리에 실패했습니다.");
+      if (!silent) setError(err.message || "읽음 처리에 실패했습니다.");
+      return false;
     } finally {
-      setActionLoading(false);
+      if (!silent) setActionLoading(false);
     }
   };
 
@@ -344,11 +370,96 @@ const NotificationPage = ({
     }
   };
 
+  const handleRemindTypeChange = (nextType) => {
+    const template = REMIND_TEMPLATE[nextType] || { title: "", message: "" };
+
+    setRemindForm((prev) => ({
+      ...prev,
+      type: nextType,
+      title: template.title,
+      message: template.message,
+    }));
+  };
+
+  const scrollToManualRemind = () => {
+    const remindSection = document.getElementById("manual-remind-card");
+    if (remindSection) {
+      remindSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  const prefillRemindFromNotification = (item) => {
+    const payload = item?.payload || item?.payload_json || {};
+    const patientId = payload?.patient_id ?? item?.patient_id ?? "";
+    const patientName = resolvePatientLabel(item) || "";
+    const defaultMessage =
+      payload?.scheduled_at || payload?.schedule_date
+        ? `${patientName ? `${patientName} ` : ""}복용 기록이 없어 확인이 필요합니다. 복용 여부를 확인해 주세요.`
+        : `${patientName ? `${patientName} ` : ""}아직 복용 기록이 없어요. 복용 여부를 확인해 주세요.`;
+
+    setRemindForm({
+      patient_id: patientId,
+      type: "missed_alert",
+      title: "복약 확인 요청",
+      message: defaultMessage,
+    });
+
+    setRemindMessage("미복용 알림 내용을 불러왔습니다. 확인 후 전송해주세요.");
+    scrollToManualRemind();
+  };
+
+  const buildNotificationTarget = (item) => {
+    const payload = item?.payload || item?.payload_json || {};
+    const patientId = payload?.patient_id ?? item?.patient_id;
+    const scheduleId = payload?.schedule_id;
+    const documentId = payload?.document_id;
+    const guideId = payload?.guide_id;
+
+    if (item.type === "intake_reminder" || item.type === "missed_alert" || item.type === "taken") {
+      const params = new URLSearchParams();
+      if (patientId) params.set("patient_id", patientId);
+      if (scheduleId) params.set("schedule_id", scheduleId);
+      return `/auth-demo/app/schedule${params.toString() ? `?${params.toString()}` : ""}`;
+    }
+
+    if (item.type === "ocr_done") {
+      return documentId
+        ? `/auth-demo/app/documents?document_id=${documentId}`
+        : "/auth-demo/app/documents";
+    }
+
+    if (item.type === "guide_ready") {
+      return guideId
+        ? `/auth-demo/app/documents?guide_id=${guideId}`
+        : "/auth-demo/app/documents";
+    }
+
+    return null;
+  };
+
+  const handleNotificationClick = async (item) => {
+    const readSuccess = await markRead(item.id, true);
+    if (!readSuccess && !item.read_at) return;
+
+    const target = buildNotificationTarget(item);
+    if (target) window.location.href = target;
+  };
+
   const submitRemind = async (e) => {
     e.preventDefault();
 
     if (!remindForm.patient_id) {
       setRemindMessage("환자를 선택해주세요.");
+      return;
+    }
+
+    if (!remindForm.title.trim()) {
+      setRemindMessage("제목을 입력해주세요.");
+      return;
+    }
+
+    if (!remindForm.message.trim()) {
+      setRemindMessage("메시지를 입력해주세요.");
       return;
     }
 
@@ -360,13 +471,9 @@ const NotificationPage = ({
       const payload = {
         patient_id: Number(remindForm.patient_id),
         type: remindForm.type,
-        title: remindForm.title,
-        message: remindForm.message,
+        title: remindForm.title.trim(),
+        message: remindForm.message.trim(),
       };
-
-      if (remindForm.payload?.trim()) {
-        payload.payload = JSON.parse(remindForm.payload);
-      }
 
       const res = await authFetch(`${API_PREFIX}/notifications/remind`, {
         method: "POST",
@@ -379,6 +486,7 @@ const NotificationPage = ({
       }
 
       setRemindMessage("리마인드를 전송했습니다.");
+      await loadAll();
     } catch (err) {
       setRemindMessage(err.message || "리마인드 전송에 실패했습니다.");
     } finally {
@@ -391,11 +499,7 @@ const NotificationPage = ({
       <header className="hero">
         <div className="container py-4">
           <nav className="navbar navbar-expand-lg">
-            <a
-              className="navbar-brand fw-bold"
-              href="/auth-demo/app"
-              style={{ fontSize: "1.5rem" }}
-            >
+            <a className="navbar-brand fw-bold" href="/auth-demo/app" style={{ fontSize: "1.5rem" }}>
               복약관리시스템
             </a>
             <div className="ms-auto d-flex gap-2">
@@ -432,8 +536,11 @@ const NotificationPage = ({
                   <a href="/auth-demo/app/documents" className="list-group-item list-group-item-action">
                     맞춤 복약 가이드
                   </a>
-                  <a href="/auth-demo/app/caregiver" className="list-group-item list-group-item-action active">
+                  <a href="/auth-demo/app/notifications" className="list-group-item list-group-item-action active">
                     알림 센터
+                  </a>
+                  <a href="/auth-demo/app/medication-check" className="list-group-item list-group-item-action">
+                    복약 체크
                   </a>
                   <a href="/auth-demo/app/schedule" className="list-group-item list-group-item-action">
                     스케줄
@@ -459,70 +566,26 @@ const NotificationPage = ({
 
                 <form onSubmit={submitSettings}>
                   <div className="form-check mb-2">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="intake_reminder"
-                      checked={settings.intake_reminder}
-                      onChange={(e) =>
-                        setSettings((prev) => ({ ...prev, intake_reminder: e.target.checked }))
-                      }
-                    />
-                    <label className="form-check-label" htmlFor="intake_reminder">
-                      복약 리마인드
-                    </label>
+                    <input className="form-check-input" type="checkbox" id="intake_reminder" checked={settings.intake_reminder} onChange={(e) => setSettings((prev) => ({ ...prev, intake_reminder: e.target.checked }))} />
+                    <label className="form-check-label" htmlFor="intake_reminder">복약 리마인드</label>
                   </div>
 
                   <div className="form-check mb-2">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="missed_alert"
-                      checked={settings.missed_alert}
-                      onChange={(e) =>
-                        setSettings((prev) => ({ ...prev, missed_alert: e.target.checked }))
-                      }
-                    />
-                    <label className="form-check-label" htmlFor="missed_alert">
-                      미복용 알림
-                    </label>
+                    <input className="form-check-input" type="checkbox" id="missed_alert" checked={settings.missed_alert} onChange={(e) => setSettings((prev) => ({ ...prev, missed_alert: e.target.checked }))} />
+                    <label className="form-check-label" htmlFor="missed_alert">미복용 알림</label>
                   </div>
 
                   <div className="form-check mb-2">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="ocr_done"
-                      checked={settings.ocr_done}
-                      onChange={(e) =>
-                        setSettings((prev) => ({ ...prev, ocr_done: e.target.checked }))
-                      }
-                    />
-                    <label className="form-check-label" htmlFor="ocr_done">
-                      OCR 완료
-                    </label>
+                    <input className="form-check-input" type="checkbox" id="ocr_done" checked={settings.ocr_done} onChange={(e) => setSettings((prev) => ({ ...prev, ocr_done: e.target.checked }))} />
+                    <label className="form-check-label" htmlFor="ocr_done">OCR 완료</label>
                   </div>
 
                   <div className="form-check mb-3">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="guide_ready"
-                      checked={settings.guide_ready}
-                      onChange={(e) =>
-                        setSettings((prev) => ({ ...prev, guide_ready: e.target.checked }))
-                      }
-                    />
-                    <label className="form-check-label" htmlFor="guide_ready">
-                      가이드 준비 완료
-                    </label>
+                    <input className="form-check-input" type="checkbox" id="guide_ready" checked={settings.guide_ready} onChange={(e) => setSettings((prev) => ({ ...prev, guide_ready: e.target.checked }))} />
+                    <label className="form-check-label" htmlFor="guide_ready">가이드 준비 완료</label>
                   </div>
 
-                  <button
-                    type="submit"
-                    className="btn btn-outline-primary btn-sm w-100"
-                    disabled={settingsSubmitting}
-                  >
+                  <button type="submit" className="btn btn-outline-primary btn-sm w-100" disabled={settingsSubmitting}>
                     {settingsSubmitting ? "저장 중..." : "설정 저장"}
                   </button>
                 </form>
@@ -530,24 +593,16 @@ const NotificationPage = ({
             </div>
 
             {isCaregiver && (
-              <div className="card border-0 shadow-sm">
+              <div className="card border-0 shadow-sm" id="manual-remind-card">
                 <div className="card-body">
-                  <h6 className="fw-bold mb-3">수동 리마인드</h6>
+                  <h6 className="fw-bold mb-2">수동 리마인드</h6>
+                  <div className="small text-muted mb-3">보호자가 직접 환자에게 알림을 보낼 수 있습니다.</div>
 
                   <form onSubmit={submitRemind}>
-                    <div className="mb-2">
-                      <label className="form-label">환자</label>
-                      <select
-                        className="form-select"
-                        value={remindForm.patient_id}
-                        onChange={(e) =>
-                          setRemindForm((prev) => ({
-                            ...prev,
-                            patient_id: e.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">환자 선택</option>
+                    <div className="mb-3">
+                      <label className="form-label">환자 선택</label>
+                      <select className="form-select" value={remindForm.patient_id} onChange={(e) => setRemindForm((prev) => ({ ...prev, patient_id: e.target.value }))}>
+                        <option value="">환자를 선택해주세요</option>
                         {normalizedPatients.map((patient) => (
                           <option key={patient.id} value={patient.id}>
                             {patient.name}
@@ -556,18 +611,9 @@ const NotificationPage = ({
                       </select>
                     </div>
 
-                    <div className="mb-2">
-                      <label className="form-label">알림 타입</label>
-                      <select
-                        className="form-select"
-                        value={remindForm.type}
-                        onChange={(e) =>
-                          setRemindForm((prev) => ({
-                            ...prev,
-                            type: e.target.value,
-                          }))
-                        }
-                      >
+                    <div className="mb-3">
+                      <label className="form-label">알림 종류</label>
+                      <select className="form-select" value={remindForm.type} onChange={(e) => handleRemindTypeChange(e.target.value)}>
                         <option value="intake_reminder">복약 리마인드</option>
                         <option value="missed_alert">미복용 알림</option>
                         <option value="ocr_done">OCR 완료</option>
@@ -575,60 +621,24 @@ const NotificationPage = ({
                       </select>
                     </div>
 
-                    <div className="mb-2">
-                      <label className="form-label">제목</label>
-                      <input
-                        className="form-control"
-                        value={remindForm.title}
-                        onChange={(e) =>
-                          setRemindForm((prev) => ({
-                            ...prev,
-                            title: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    <div className="mb-2">
-                      <label className="form-label">메시지</label>
-                      <textarea
-                        className="form-control"
-                        rows="3"
-                        value={remindForm.message}
-                        onChange={(e) =>
-                          setRemindForm((prev) => ({
-                            ...prev,
-                            message: e.target.value,
-                          }))
-                        }
-                      />
+                    <div className="mb-3">
+                      <label className="form-label">알림 제목</label>
+                      <input className="form-control" placeholder="알림 제목을 입력해주세요" value={remindForm.title} onChange={(e) => setRemindForm((prev) => ({ ...prev, title: e.target.value }))} />
                     </div>
 
                     <div className="mb-3">
-                      <label className="form-label">payload(JSON, 선택)</label>
-                      <input
-                        className="form-control"
-                        placeholder='{"patient_id":10001}'
-                        value={remindForm.payload}
-                        onChange={(e) =>
-                          setRemindForm((prev) => ({
-                            ...prev,
-                            payload: e.target.value,
-                          }))
-                        }
-                      />
+                      <label className="form-label">알림 메시지</label>
+                      <textarea className="form-control" rows="3" placeholder="환자에게 보낼 메시지를 입력해주세요" value={remindForm.message} onChange={(e) => setRemindForm((prev) => ({ ...prev, message: e.target.value }))} />
                     </div>
 
-                    <button
-                      type="submit"
-                      className="btn btn-primary btn-sm w-100"
-                      disabled={remindSubmitting}
-                    >
+                    <button type="submit" className="btn btn-primary btn-sm w-100" disabled={remindSubmitting}>
                       {remindSubmitting ? "전송 중..." : "리마인드 전송"}
                     </button>
 
                     {remindMessage && (
-                      <div className="small mt-2 text-muted">{remindMessage}</div>
+                      <div className={`small mt-2 ${remindMessage.includes("실패") || remindMessage.includes("선택") || remindMessage.includes("입력") ? "text-danger" : "text-muted"}`}>
+                        {remindMessage}
+                      </div>
                     )}
                   </form>
                 </div>
@@ -642,45 +652,23 @@ const NotificationPage = ({
                 <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
                   <div>
                     <h3 className="fw-bold mb-1">알림 센터</h3>
-                    <div className="text-muted">
-                      총 {notifications.length}개의 알림 / 미읽음 {unreadCount}건
-                    </div>
+                    <div className="text-muted">미읽음 {unreadCount}건</div>
                   </div>
 
                   <div className="d-flex gap-2">
-                    <button
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={loadAll}
-                      disabled={loading || actionLoading}
-                    >
-                      새로고침
-                    </button>
-                    <button
-                      className="btn btn-outline-primary btn-sm"
-                      onClick={markAllRead}
-                      disabled={actionLoading}
-                    >
+                    <button className="btn btn-outline-primary btn-sm" onClick={markAllRead} disabled={actionLoading}>
                       모두 읽음 처리
                     </button>
                   </div>
                 </div>
 
                 <div className="row g-2 mb-4">
-                  <div className="col-md-5">
-                    <input
-                      className="form-control"
-                      placeholder="알림 검색"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
+                  <div className="col-md-4">
+                    <input className="form-control" placeholder="알림 검색" value={search} onChange={(e) => setSearch(e.target.value)} />
                   </div>
 
                   <div className="col-md-3">
-                    <select
-                      className="form-select"
-                      value={typeFilter}
-                      onChange={(e) => setTypeFilter(e.target.value)}
-                    >
+                    <select className="form-select" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
                       <option value="all">알림 종류 전체</option>
                       <option value="intake_reminder">복약 리마인드</option>
                       <option value="missed_alert">미복용 알림</option>
@@ -691,11 +679,7 @@ const NotificationPage = ({
 
                   {isCaregiver && (
                     <div className="col-md-3">
-                      <select
-                        className="form-select"
-                        value={patientFilter}
-                        onChange={(e) => setPatientFilter(e.target.value)}
-                      >
+                      <select className="form-select" value={patientFilter} onChange={(e) => setPatientFilter(e.target.value)}>
                         <option value="all">환자 전체</option>
                         {normalizedPatients.map((patient) => (
                           <option key={patient.id} value={String(patient.id)}>
@@ -706,16 +690,12 @@ const NotificationPage = ({
                     </div>
                   )}
 
-                  <div className="col-md-1 d-grid">
-                    <button
-                      type="button"
-                      className="btn btn-light border"
-                      onClick={() => {
-                        setSearch("");
-                        setTypeFilter("all");
-                        setPatientFilter("all");
-                      }}
-                    >
+                  <div className="col-md-2 d-grid">
+                    <button type="button" className="btn btn-light border" onClick={() => {
+                      setSearch("");
+                      setTypeFilter("all");
+                      setPatientFilter("all");
+                    }}>
                       초기화
                     </button>
                   </div>
@@ -731,17 +711,12 @@ const NotificationPage = ({
                   </div>
                 ) : (
                   <div className="border rounded-4 overflow-hidden">
-                    <div
-                      className="d-flex align-items-center px-4 py-3 border-bottom"
-                      style={{ backgroundColor: "#f8fafc" }}
-                    >
+                    <div className="d-flex align-items-center px-4 py-3 border-bottom" style={{ backgroundColor: "#f8fafc" }}>
                       <div className="fw-semibold">알림 목록</div>
                     </div>
 
                     {filteredNotifications.length === 0 ? (
-                      <div className="px-4 py-5 text-center text-muted">
-                        표시할 알림이 없습니다.
-                      </div>
+                      <div className="px-4 py-5 text-center text-muted">표시할 알림이 없습니다.</div>
                     ) : (
                       filteredNotifications.map((item) => {
                         const meta = getTypeMeta(item.type);
@@ -751,45 +726,68 @@ const NotificationPage = ({
                           <div
                             key={item.id}
                             className="px-4 py-3 border-bottom"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleNotificationClick(item)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                handleNotificationClick(item);
+                              }
+                            }}
                             style={{
                               backgroundColor: item.read_at ? "#ffffff" : "#f8fbff",
+                              borderLeft: item.read_at ? "4px solid transparent" : "4px solid #2563eb",
+                              cursor: "pointer",
+                              transition: "background-color 0.15s ease",
                             }}
                           >
                             <div className="d-flex justify-content-between align-items-start gap-3">
                               <div className="flex-grow-1">
                                 <div className="d-flex align-items-center gap-2 flex-wrap mb-2">
                                   {!item.read_at && (
-                                    <span
-                                      style={{
-                                        width: 8,
-                                        height: 8,
-                                        borderRadius: "999px",
-                                        backgroundColor: "#2563eb",
-                                        display: "inline-block",
-                                      }}
-                                    />
+                                    <span style={{ width: 8, height: 8, borderRadius: "999px", backgroundColor: "#2563eb", display: "inline-block" }} />
                                   )}
 
                                   {isCaregiver && patientLabel && (
                                     <span className="fw-semibold">{patientLabel}</span>
                                   )}
 
-                                  <span
-                                    className="px-2 py-1 rounded-pill small fw-semibold"
-                                    style={{
-                                      backgroundColor: meta.bg,
-                                      color: meta.color,
-                                    }}
-                                  >
+                                  <span className="px-2 py-1 rounded-pill small fw-semibold" style={{ backgroundColor: meta.bg, color: meta.color }}>
                                     {meta.label}
                                   </span>
                                 </div>
 
-                                <div className="fw-semibold mb-1">
-                                  {item.title || meta.label}
-                                </div>
-                                <div className="text-muted small">
-                                  {item.body || "알림 내용이 없습니다."}
+                                <div className="fw-semibold mb-1">{item.title || meta.label}</div>
+                                <div className="text-muted small mb-2">{item.body || "알림 내용이 없습니다."}</div>
+
+                                <div className="d-flex gap-2 flex-wrap">
+                                  {!item.read_at && (
+                                    <button className="btn btn-outline-primary btn-sm" onClick={(e) => {
+                                      e.stopPropagation();
+                                      markRead(item.id);
+                                    }} disabled={actionLoading}>
+                                      읽음 처리
+                                    </button>
+                                  )}
+
+                                  {(item.type === "intake_reminder" || item.type === "missed_alert" || item.type === "taken") && (
+                                    <button className="btn btn-outline-secondary btn-sm" onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleNotificationClick(item);
+                                    }}>
+                                      일정 보기
+                                    </button>
+                                  )}
+
+                                  {item.type === "missed_alert" && isCaregiver && (
+                                    <button className="btn btn-warning btn-sm" onClick={(e) => {
+                                      e.stopPropagation();
+                                      prefillRemindFromNotification(item);
+                                    }}>
+                                      리마인드 보내기
+                                    </button>
+                                  )}
                                 </div>
                               </div>
 
@@ -797,18 +795,7 @@ const NotificationPage = ({
                                 <div className="small text-muted">
                                   {new Date(item.created_at).toLocaleString("ko-KR")}
                                 </div>
-
-                                {!item.read_at ? (
-                                  <button
-                                    className="btn btn-outline-primary btn-sm"
-                                    onClick={() => markRead(item.id)}
-                                    disabled={actionLoading}
-                                  >
-                                    읽음 처리
-                                  </button>
-                                ) : (
-                                  <span className="small text-muted">읽음</span>
-                                )}
+                                {item.read_at && <span className="small text-muted">읽음</span>}
                               </div>
                             </div>
                           </div>
@@ -818,11 +805,7 @@ const NotificationPage = ({
 
                     {nextCursor && (
                       <div className="px-4 py-3 text-center">
-                        <button
-                          className="btn btn-outline-primary btn-sm"
-                          onClick={() => loadNotifications(nextCursor, true)}
-                          disabled={actionLoading}
-                        >
+                        <button className="btn btn-outline-primary btn-sm" onClick={() => loadNotifications(nextCursor, true)} disabled={actionLoading}>
                           더 보기
                         </button>
                       </div>
