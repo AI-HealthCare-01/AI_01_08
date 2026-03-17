@@ -4,8 +4,7 @@ const API_PREFIX = "/api/v1";
 
 const pageStyle = {
   minHeight: "100vh",
-  background:
-    "radial-gradient(circle at top left, rgba(181, 215, 196, 0.16), transparent 28%), radial-gradient(circle at top right, rgba(255, 226, 182, 0.14), transparent 24%), linear-gradient(180deg, #f7faf7 0%, #eef3ef 100%)",
+  background: "linear-gradient(145deg, #f8fbff 0%, #dfeafb 100%)",
 };
 
 const shellStyle = {
@@ -21,31 +20,31 @@ const sidebarCardStyle = {
   position: "sticky",
   top: "24px",
   borderRadius: "24px",
-  background: "#ffffff",
-  border: "1px solid #e7ece7",
-  boxShadow: "0 18px 40px rgba(37, 58, 43, 0.08)",
+  background: "rgba(255, 255, 255, 0.96)",
+  border: "1px solid #d7e3f4",
+  boxShadow: "0 18px 40px rgba(37, 99, 235, 0.1)",
   padding: "24px 18px",
   height: "calc(100vh - 56px)",
 };
 
 const mainCardStyle = {
   borderRadius: "28px",
-  background: "#ffffff",
-  border: "1px solid #e7ece7",
-  boxShadow: "0 18px 40px rgba(37, 58, 43, 0.08)",
+  background: "rgba(255, 255, 255, 0.96)",
+  border: "1px solid #d7e3f4",
+  boxShadow: "0 18px 40px rgba(37, 99, 235, 0.1)",
 };
 
 const blockCardStyle = {
   borderRadius: "22px",
   background: "#ffffff",
-  border: "1px solid #e7ece7",
-  boxShadow: "0 12px 28px rgba(37, 58, 43, 0.06)",
+  border: "1px solid #dbe7f6",
+  boxShadow: "0 12px 28px rgba(37, 99, 235, 0.07)",
 };
 
 const metricCardStyle = {
   borderRadius: "18px",
-  background: "#fbfcfa",
-  border: "1px solid #e7ece7",
+  background: "linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%)",
+  border: "1px solid #d7e3f4",
   padding: "20px",
   height: "100%",
 };
@@ -55,17 +54,26 @@ const chipStyle = {
   alignItems: "center",
   borderRadius: "999px",
   padding: "6px 12px",
-  border: "1px solid #dfe8df",
-  background: "#fafcf9",
-  color: "#31443a",
+  border: "1px solid #cfe0fb",
+  background: "#eaf2ff",
+  color: "#1d4ed8",
   fontSize: "0.88rem",
   fontWeight: 600,
 };
 
 const statusColorMap = {
-  DONE: { bg: "#eaf8ee", color: "#1f7a43", label: "가이드 준비 완료" },
-  GENERATING: { bg: "#eef5ff", color: "#275dad", label: "가이드 생성 중" },
-  FAILED: { bg: "#fff1f1", color: "#c23d3d", label: "가이드 생성 실패" },
+  DONE: { bg: "#eef6ff", color: "#1d4ed8", label: "가이드 준비 완료" },
+  GENERATING: { bg: "#f8fafc", color: "#475569", label: "가이드 생성 중" },
+  FAILED: { bg: "#fef2f2", color: "#b91c1c", label: "가이드 생성 실패" },
+};
+
+const heroBannerStyle = {
+  borderRadius: "24px",
+  padding: "28px",
+  marginBottom: "28px",
+  background: "linear-gradient(135deg, #0f3d91 0%, #2563eb 58%, #4f8df7 100%)",
+  color: "#ffffff",
+  boxShadow: "0 18px 40px rgba(37, 99, 235, 0.22)",
 };
 
 const safeJson = async (res) => {
@@ -319,6 +327,7 @@ function AiPage() {
   const guideSections = normalizeGuideSections(guideDetailState.data);
   const caregiverPoints = normalizeCaregiverPoints(guideDetailState.data);
   const primaryGuideSection = guideSections[0] || null;
+  const visibleGuideSections = primaryGuideSection ? guideSections.slice(1) : guideSections;
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -782,11 +791,11 @@ function AiPage() {
             <div className="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
               <div>
                 <div className="small text-muted mb-2">AI Guide Workspace</div>
-                <h1 style={{ fontSize: "2.15rem", fontWeight: 800, color: "#193628", marginBottom: "10px" }}>
+                <h1 style={{ fontSize: "2.15rem", fontWeight: 800, color: "#163b82", marginBottom: "10px", letterSpacing: "-0.02em" }}>
                   맞춤 복약 가이드
                 </h1>
-                <div style={{ color: "#61746a", maxWidth: "720px", lineHeight: 1.7 }}>
-                  문서, 건강프로필, 확정 약 정보를 바탕으로 가이드를 확인하고 바로 AI 상담으로 이어질 수 있게 구성했습니다.
+                <div style={{ color: "#5a6f8f", maxWidth: "720px", lineHeight: 1.7 }}>
+                  환자 기록을 한곳에서 확인하고, 필요한 안내를 바로 상담으로 이어갈 수 있도록 구성했습니다.
                 </div>
               </div>
               <button
@@ -808,48 +817,61 @@ function AiPage() {
                     gap: "14px",
                     padding: "14px 18px",
                     borderRadius: "20px",
-                    border: "1px solid #dde8df",
-                    background: "linear-gradient(135deg, #fcfdf9 0%, #f0f6ee 100%)",
+                    border: "1px solid #d3e1f5",
+                    background: "linear-gradient(135deg, #ffffff 0%, #eef5ff 100%)",
+                    boxShadow: "0 10px 22px rgba(37, 99, 235, 0.08)",
                   }}
                 >
                   <img src="/mascot.png" alt="약속이 열기" style={{ width: "60px", height: "60px" }} />
                   <div className="text-start">
-                    <div className="fw-semibold" style={{ color: "#1d3a2a" }}>약속이 AI 상담</div>
-                    <div className="small text-muted">상담 패널 열기</div>
+                    <div className="fw-semibold" style={{ color: "#1e40af" }}>약속이 AI 상담</div>
+                    <div className="small" style={{ color: "#64748b" }}>상담 패널 열기</div>
                   </div>
                 </div>
               </button>
             </div>
 
-            <div
-              style={{
-                borderRadius: "24px",
-                padding: "28px",
-                marginBottom: "28px",
-                background: "linear-gradient(135deg, #1d3b2b 0%, #44624d 100%)",
-                color: "#fff",
-              }}
-            >
+            <div style={heroBannerStyle}>
               <div className="row g-4 align-items-center">
                 <div className="col-lg-8">
-                  <div className="small text-white-50 mb-2">현재 관리 대상</div>
-                  <h2 className="mb-2" style={{ fontWeight: 800 }}>
-                    {selectedPatientId ? `${activePatientLabel} 기준 가이드` : "가이드 대상 선택 필요"}
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "8px 14px",
+                      borderRadius: "999px",
+                      background: "rgba(255,255,255,0.12)",
+                      border: "1px solid rgba(255,255,255,0.16)",
+                      color: "rgba(255,255,255,0.88)",
+                      fontSize: "0.88rem",
+                      fontWeight: 600,
+                      marginBottom: "18px",
+                    }}
+                  >
+                    <span style={{ opacity: 0.82 }}>선택 환자</span>
+                    <span style={{ width: "4px", height: "4px", borderRadius: "999px", background: "rgba(255,255,255,0.72)" }} />
+                    <span style={{ color: "#ffffff", fontWeight: 700 }}>
+                      {selectedPatientId ? activePatientLabel : "미선택"}
+                    </span>
+                  </div>
+                  <h2 className="mb-2" style={{ fontWeight: 800, letterSpacing: "-0.03em" }}>
+                    {selectedPatientId ? `${activePatientLabel}님의 맞춤 복약 가이드` : "가이드를 확인할 환자를 선택해 주세요"}
                   </h2>
-                  <div className="text-white-50" style={{ lineHeight: 1.7 }}>
+                  <div className="text-white-50" style={{ lineHeight: 1.75, maxWidth: "680px", fontSize: "0.98rem" }}>
                     {selectedPatientId
-                      ? "최신 문서와 확정 약 정보를 기준으로 가이드를 확인하고, 복약 주의사항을 AI 상담으로 이어갈 수 있습니다."
+                      ? "문서, 건강정보, 복약 일정을 함께 확인하고 필요한 안내를 바로 살펴볼 수 있습니다."
                       : isCaregiver
-                        ? "연동된 환자를 선택하면 가이드, 복약 카드, AI 상담이 활성화됩니다."
-                        : "건강프로필 또는 문서가 연결되면 맞춤 가이드가 표시됩니다."}
+                        ? "연동된 복약자를 선택하면 가이드와 상담 화면이 함께 활성화됩니다."
+                        : "건강프로필이나 문서가 연결되면 맞춤 가이드가 준비됩니다."}
                   </div>
                 </div>
                 <div className="col-lg-4">
                   <div
                       style={{
                         borderRadius: "18px",
-                        background: "rgba(255,255,255,0.1)",
-                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: "rgba(255,255,255,0.12)",
+                        border: "1px solid rgba(255,255,255,0.18)",
                         padding: "20px",
                       }}
                   >
@@ -1152,9 +1174,9 @@ function AiPage() {
                         )}
                       </div>
 
-                      {guideSections.length > 0 ? (
+                      {visibleGuideSections.length > 0 ? (
                         <div className="d-grid gap-3">
-                          {guideSections.map((section) => (
+                          {visibleGuideSections.map((section) => (
                             <div
                               key={section.id}
                               style={{
@@ -1281,9 +1303,9 @@ function AiPage() {
           width: "78px",
           height: "78px",
           borderRadius: "999px",
-          border: "1px solid #d6e3ef",
-          background: "linear-gradient(135deg, #ffffff 0%, #f1f6ef 100%)",
-          boxShadow: "0 16px 30px rgba(37, 58, 43, 0.16)",
+          border: "1px solid #cfe0fb",
+          background: "linear-gradient(135deg, #ffffff 0%, #eaf2ff 100%)",
+          boxShadow: "0 16px 30px rgba(37, 99, 235, 0.18)",
           cursor: "pointer",
           zIndex: 1050,
         }}
@@ -1310,7 +1332,7 @@ function AiPage() {
               width: "min(620px, 100vw)",
               height: "100vh",
               background: "#ffffff",
-              boxShadow: "-16px 0 40px rgba(37, 58, 43, 0.18)",
+              boxShadow: "-16px 0 40px rgba(37, 99, 235, 0.18)",
               display: "flex",
               flexDirection: "column",
             }}
@@ -1319,7 +1341,7 @@ function AiPage() {
               style={{
                 padding: "22px 22px 18px 22px",
                 borderBottom: "1px solid #e6edf4",
-                background: "linear-gradient(135deg, #f8fbf7 0%, #eef5ee 100%)",
+                background: "linear-gradient(135deg, #f8fbff 0%, #edf4ff 100%)",
               }}
             >
               <div className="d-flex justify-content-between align-items-start gap-3">

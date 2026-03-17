@@ -7,15 +7,15 @@ from starlette import status
 from tortoise.transactions import in_transaction
 
 from app.core import config
-from app.models.healthcare import UserRole
 from app.models.patients import CaregiverPatientLink, InvitationCode, Patient
 from app.models.users import User
+from app.services.role_utils import user_has_role
 
 
 class InvitationService:
     # 초대 코드 생성 - REQ-USER-004
     async def create_invite_code(self, user: User, expires_in_minutes: int) -> InvitationCode:
-        is_patient = await UserRole.filter(user_id=user.id, role__name="PATIENT").exists()
+        is_patient = await user_has_role(user.id, "PATIENT")
         if not is_patient:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
@@ -38,7 +38,7 @@ class InvitationService:
 
     # 초대 코드 폐기 - REQ-USER-004
     async def delete_invite_code(self, user: User) -> None:
-        is_patient = await UserRole.filter(user_id=user.id, role__name="PATIENT").exists()
+        is_patient = await user_has_role(user.id, "PATIENT")
         if not is_patient:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
@@ -52,7 +52,7 @@ class InvitationService:
 
     # 초대 코드 연동 - REQ-USER-005
     async def link_by_invite_code(self, user: User, code: str) -> CaregiverPatientLink:
-        is_caregiver = await UserRole.filter(user_id=user.id, role__name="CAREGIVER").exists()
+        is_caregiver = await user_has_role(user.id, "CAREGIVER", "GUARDIAN")
         if not is_caregiver:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
@@ -108,8 +108,8 @@ class InvitationService:
 
     # 연동 목록 조회 - REQ-USER-006
     async def get_links(self, user: User) -> tuple[str, list[CaregiverPatientLink]]:
-        is_caregiver = await UserRole.filter(user_id=user.id, role__name="CAREGIVER").exists()
-        is_patient = await UserRole.filter(user_id=user.id, role__name="PATIENT").exists()
+        is_caregiver = await user_has_role(user.id, "CAREGIVER", "GUARDIAN")
+        is_patient = await user_has_role(user.id, "PATIENT")
 
         if is_caregiver:
             links = (
@@ -151,8 +151,8 @@ class InvitationService:
         if not link:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
 
-        is_caregiver = await UserRole.filter(user_id=user.id, role__name="CAREGIVER").exists()
-        is_patient = await UserRole.filter(user_id=user.id, role__name="PATIENT").exists()
+        is_caregiver = await user_has_role(user.id, "CAREGIVER", "GUARDIAN")
+        is_patient = await user_has_role(user.id, "PATIENT")
 
         allowed = False
         if is_caregiver and link.caregiver_user_id == user.id:

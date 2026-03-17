@@ -5,9 +5,9 @@ from typing import Literal
 from fastapi import HTTPException
 from starlette import status
 
-from app.models.healthcare import UserRole
 from app.models.patients import CaregiverPatientLink, Patient
 from app.models.users import User
+from app.services.role_utils import user_has_role
 
 ActorType = Literal["PATIENT", "CAREGIVER", "ADMIN"]
 
@@ -16,9 +16,9 @@ ActorType = Literal["PATIENT", "CAREGIVER", "ADMIN"]
 # 현재 사용자의 역할을 판정하는 함수
 # ------------------------------------------------------------
 async def resolve_actor_role(user: User) -> ActorType:
-    if await UserRole.filter(user_id=user.id, role__name="ADMIN").exists():
+    if await user_has_role(user.id, "ADMIN"):
         return "ADMIN"
-    if await UserRole.filter(user_id=user.id, role__name="CAREGIVER").exists():
+    if await user_has_role(user.id, "CAREGIVER", "GUARDIAN"):
         return "CAREGIVER"
     return "PATIENT"
 
@@ -27,7 +27,7 @@ async def resolve_actor_role(user: User) -> ActorType:
 # 환자 역할 여부를 검증하는 함수
 # ------------------------------------------------------------
 async def require_patient_role(user: User) -> None:
-    if await UserRole.filter(user_id=user.id, role__name="PATIENT").exists():
+    if await user_has_role(user.id, "PATIENT"):
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -39,7 +39,7 @@ async def require_patient_role(user: User) -> None:
 # 보호자 역할 여부를 검증하는 함수
 # ------------------------------------------------------------
 async def require_caregiver_role(user: User) -> None:
-    if await UserRole.filter(user_id=user.id, role__name="CAREGIVER").exists():
+    if await user_has_role(user.id, "CAREGIVER", "GUARDIAN"):
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -100,7 +100,7 @@ async def get_linked_patient_or_404(caregiver: User, link_id: int) -> Patient:
 # 기존 구조 호환용: patient_id 직접 접근 권한을 판정하는 함수
 # ------------------------------------------------------------
 async def assert_can_access_patient(user: User, patient_id: int, action: str) -> ActorType:
-    if await UserRole.filter(user_id=user.id, role__name="ADMIN").exists():
+    if await user_has_role(user.id, "ADMIN"):
         return "ADMIN"
 
     patient = await Patient.get_or_none(id=patient_id)
