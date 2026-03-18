@@ -9,6 +9,7 @@ const TYPE_META = {
   missed_alert: { label: "미복용 알림", bg: "#ffedd5", color: "#ea580c" },
   hospital_schedule_reminder: { label: "병원 일정 알림", bg: "#e0f2fe", color: "#0369a1" },
   ocr_done: { label: "처방전 업데이트", bg: "#f3e8ff", color: "#a855f7" },
+  ocr_failed: { label: "OCR 실패", bg: "#fee2e2", color: "#dc2626" },
   guide_ready: { label: "AI 가이드", bg: "#dcfce7", color: "#16a34a" },
   taken: { label: "복용 완료", bg: "#ccfbf1", color: "#0f766e" },
   default: { label: "알림", bg: "#e5e7eb", color: "#374151" },
@@ -507,6 +508,8 @@ const NotificationPage = ({
     const scheduleId = payload?.schedule_id;
     const scheduleTimeId = payload?.schedule_time_id;
     const scheduledAt = payload?.scheduled_at;
+    const scheduledDate = payload?.scheduled_date;
+    const mealLabel = payload?.meal_label;
     const documentId = payload?.document_id;
     const guideId = payload?.guide_id;
 
@@ -516,6 +519,8 @@ const NotificationPage = ({
       if (scheduleId) params.set("schedule_id", scheduleId);
       if (scheduleTimeId) params.set("schedule_time_id", scheduleTimeId);
       if (scheduledAt) params.set("scheduled_at", scheduledAt);
+      if (scheduledDate) params.set("scheduled_date", scheduledDate);
+      if (mealLabel) params.set("meal_label", mealLabel);
       return `/auth-demo/app/medication-check${params.toString() ? `?${params.toString()}` : ""}`;
     }
 
@@ -527,7 +532,7 @@ const NotificationPage = ({
       return `/auth-demo/app/schedule${params.toString() ? `?${params.toString()}` : ""}`;
     }
 
-    if (item.type === "ocr_done") {
+    if (item.type === "ocr_done" || item.type === "ocr_failed") {
       return documentId
         ? `/auth-demo/app/documents?document_id=${documentId}`
         : "/auth-demo/app/documents";
@@ -682,6 +687,7 @@ const NotificationPage = ({
                         <option value="intake_reminder">복약 리마인드</option>
                         <option value="missed_alert">미복용 알림</option>
                         <option value="ocr_done">OCR 완료</option>
+                        <option value="ocr_failed">OCR 실패</option>
                         <option value="guide_ready">가이드 준비 완료</option>
                       </select>
                     </div>
@@ -742,6 +748,7 @@ const NotificationPage = ({
                       <option value="missed_alert">미복용 알림</option>
                       <option value="hospital_schedule_reminder">병원 일정 알림</option>
                       <option value="ocr_done">OCR 완료</option>
+                      <option value="ocr_failed">OCR 실패</option>
                       <option value="guide_ready">가이드 준비 완료</option>
                     </select>
                   </div>

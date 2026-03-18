@@ -19,6 +19,12 @@ from app.services.queue_service import enqueue_send_notification
 INTAKE_REMINDER_TYPE = "intake_reminder"
 MISSED_ALERT_TYPE = "missed_alert"
 
+MEAL_LABELS = (
+    ("아침", 10),
+    ("점심", 15),
+    ("저녁", 20),
+)
+
 
 @dataclass(slots=True)
 class MedicationSlot:
@@ -33,6 +39,18 @@ class MedicationSlot:
     caregiver_user_ids: list[int]
 
 
+@dataclass(slots=True)
+class MedicationGroup:
+    patient_id: int
+    patient_user_id: int | None
+    patient_name: str | None
+    caregiver_user_ids: list[int]
+    scheduled_date: str
+    meal_label: str
+    stage: str
+    slots: list[MedicationSlot]
+
+
 def _daterange(date_from: date, date_to: date) -> list[date]:
     days: list[date] = []
     current = date_from
@@ -42,38 +60,61 @@ def _daterange(date_from: date, date_to: date) -> list[date]:
     return days
 
 
-def _build_reminder_key(slot: MedicationSlot, stage: str) -> str:
-    return f"med:{slot.patient_id}:{slot.schedule_id}:{slot.schedule_time_id}:{slot.scheduled_at.isoformat()}:{stage}"
+def _infer_meal_label(scheduled_at: datetime) -> str:
+    hour = scheduled_at.hour
+    for label, hour_limit in MEAL_LABELS:
+        if hour < hour_limit:
+            return label
+    return "취침 전"
 
 
-def _build_slot_payload(slot: MedicationSlot, stage: str) -> dict[str, object]:
+def _build_reminder_key(group: MedicationGroup) -> str:
+    return f"med:{group.patient_id}:{group.scheduled_date}:{group.meal_label}:{group.stage}"
+
+
+def _build_group_payload(group: MedicationGroup) -> dict[str, object]:
+    medication_names = [slot.medication_name for slot in group.slots if slot.medication_name]
+    schedule_ids = sorted({slot.schedule_id for slot in group.slots})
+    schedule_time_ids = sorted({slot.schedule_time_id for slot in group.slots})
+    patient_med_ids = sorted({slot.patient_med_id for slot in group.slots})
+    scheduled_times = [slot.scheduled_at.strftime("%H:%M") for slot in group.slots]
+
     return {
-        "patient_id": slot.patient_id,
-        "patient_name": slot.patient_name,
-        "schedule_id": slot.schedule_id,
-        "schedule_time_id": slot.schedule_time_id,
-        "patient_med_id": slot.patient_med_id,
-        "medication_name": slot.medication_name,
-        "scheduled_at": slot.scheduled_at.isoformat(),
-        "scheduled_date": slot.scheduled_at.date().isoformat(),
-        "type_stage": stage,
-        "reminder_key": _build_reminder_key(slot, stage),
+        "patient_id": group.patient_id,
+        "patient_name": group.patient_name,
+        "meal_label": group.meal_label,
+        "scheduled_date": group.scheduled_date,
+        "schedule_ids": schedule_ids,
+        "schedule_time_ids": schedule_time_ids,
+        "patient_med_ids": patient_med_ids,
+        "medication_names": medication_names,
+        "scheduled_times": scheduled_times,
+        "type_stage": group.stage,
+        "reminder_key": _build_reminder_key(group),
     }
 
 
-def _build_intake_message(slot: MedicationSlot) -> tuple[str, str]:
-    medication_name = slot.medication_name or "복약"
-    scheduled_label = slot.scheduled_at.strftime("%H:%M")
-    return "복약 시간이에요", f"{medication_name} 복용 시간({scheduled_label})이에요. 복용 여부를 확인해 주세요."
+def _join_medication_names(group: MedicationGroup) -> str:
+    names = [slot.medication_name for slot in group.slots if slot.medication_name]
+    if not names:
+        return "등록된 약"
+    return ", ".join(dict.fromkeys(names))
 
 
-def _build_missed_message(slot: MedicationSlot) -> tuple[str, str]:
-    patient_name = slot.patient_name or "환자"
-    medication_name = slot.medication_name or "약"
-    scheduled_label = slot.scheduled_at.strftime("%H:%M")
+def _build_intake_message(group: MedicationGroup) -> tuple[str, str]:
+    medication_names = _join_medication_names(group)
     return (
-        "복약 확인이 필요해요",
-        f"{patient_name}님의 {medication_name} 복용 기록이 {scheduled_label} 이후 아직 없어요. 확인해 주세요.",
+        f"{group.meal_label} 복약 시간이에요",
+        f"{medication_names} 복용 여부를 확인해 주세요.",
+    )
+
+
+def _build_missed_message(group: MedicationGroup) -> tuple[str, str]:
+    patient_name = group.patient_name or "환자"
+    medication_names = _join_medication_names(group)
+    return (
+        f"{group.meal_label} 복약 확인이 필요해요",
+        f"{patient_name}님의 {group.meal_label} 복약 기록이 아직 없어요. {medication_names} 복용 여부를 확인해 주세요.",
     )
 
 
@@ -144,7 +185,6 @@ async def _load_candidate_slots(window_start: datetime, window_end: datetime) ->
                 scheduled_at = datetime.combine(day, slot_time).replace(microsecond=0)
                 key = (schedule_time.id, scheduled_at)
 
-                # Any existing log means the slot is already handled.
                 if key in log_map:
                     continue
 
@@ -165,61 +205,95 @@ async def _load_candidate_slots(window_start: datetime, window_end: datetime) ->
     return slots
 
 
+def _group_slots(slots: list[MedicationSlot], stage: str) -> list[MedicationGroup]:
+    grouped: dict[tuple[int, str, str], MedicationGroup] = {}
+
+    for slot in sorted(slots, key=lambda current: (current.patient_id, current.scheduled_at, current.schedule_id)):
+        meal_label = _infer_meal_label(slot.scheduled_at)
+        scheduled_date = slot.scheduled_at.date().isoformat()
+        key = (slot.patient_id, scheduled_date, meal_label)
+
+        group = grouped.get(key)
+        if group is None:
+            group = MedicationGroup(
+                patient_id=slot.patient_id,
+                patient_user_id=slot.patient_user_id,
+                patient_name=slot.patient_name,
+                caregiver_user_ids=slot.caregiver_user_ids,
+                scheduled_date=scheduled_date,
+                meal_label=meal_label,
+                stage=stage,
+                slots=[],
+            )
+            grouped[key] = group
+
+        group.slots.append(slot)
+
+    return list(grouped.values())
+
+
 async def dispatch_due_medication_notifications(*, window_start: datetime, window_end: datetime) -> int:
     grace = timedelta(minutes=GRACE_MINUTES)
     created_count = 0
     slots = await _load_candidate_slots(window_start, window_end)
 
-    for slot in slots:
-        intake_due = window_start <= slot.scheduled_at < window_end
-        missed_due = window_start <= (slot.scheduled_at + grace) < window_end
+    intake_groups = _group_slots(
+        [slot for slot in slots if window_start <= slot.scheduled_at < window_end],
+        "intake",
+    )
+    missed_groups = _group_slots(
+        [slot for slot in slots if window_start <= (slot.scheduled_at + grace) < window_end],
+        "missed",
+    )
 
-        if intake_due and slot.patient_user_id:
-            reminder_key = _build_reminder_key(slot, "intake")
-            if await _is_notification_enabled(
-                slot.patient_user_id, "intake_reminder"
-            ) and not await _notification_already_created(
-                slot.patient_user_id,
-                INTAKE_REMINDER_TYPE,
-                reminder_key,
-            ):
-                title, body = _build_intake_message(slot)
-                payload_json = json.dumps(
-                    _build_slot_payload(slot, "intake"), ensure_ascii=False, separators=(",", ":")
-                )
-                notif = await Notification.create(
-                    user_id=slot.patient_user_id,
-                    patient_id=slot.patient_id,
-                    type=INTAKE_REMINDER_TYPE,
-                    title=title,
-                    body=body,
-                    payload_json=payload_json,
-                    sent_at=None,
-                )
-                await enqueue_send_notification(notif.id)
-                created_count += 1
+    for group in intake_groups:
+        if not group.patient_user_id:
+            continue
 
-        if missed_due and slot.caregiver_user_ids:
-            reminder_key = _build_reminder_key(slot, "missed")
-            title, body = _build_missed_message(slot)
-            payload_json = json.dumps(_build_slot_payload(slot, "missed"), ensure_ascii=False, separators=(",", ":"))
+        reminder_key = _build_reminder_key(group)
+        if not await _is_notification_enabled(group.patient_user_id, "intake_reminder"):
+            continue
+        if await _notification_already_created(group.patient_user_id, INTAKE_REMINDER_TYPE, reminder_key):
+            continue
 
-            for caregiver_user_id in slot.caregiver_user_ids:
-                if not await _is_notification_enabled(caregiver_user_id, "missed_alert"):
-                    continue
-                if await _notification_already_created(caregiver_user_id, MISSED_ALERT_TYPE, reminder_key):
-                    continue
+        title, body = _build_intake_message(group)
+        payload_json = json.dumps(_build_group_payload(group), ensure_ascii=False, separators=(",", ":"))
+        notif = await Notification.create(
+            user_id=group.patient_user_id,
+            patient_id=group.patient_id,
+            type=INTAKE_REMINDER_TYPE,
+            title=title,
+            body=body,
+            payload_json=payload_json,
+            sent_at=None,
+        )
+        await enqueue_send_notification(notif.id)
+        created_count += 1
 
-                notif = await Notification.create(
-                    user_id=caregiver_user_id,
-                    patient_id=slot.patient_id,
-                    type=MISSED_ALERT_TYPE,
-                    title=title,
-                    body=body,
-                    payload_json=payload_json,
-                    sent_at=None,
-                )
-                await enqueue_send_notification(notif.id)
-                created_count += 1
+    for group in missed_groups:
+        if not group.caregiver_user_ids:
+            continue
+
+        reminder_key = _build_reminder_key(group)
+        title, body = _build_missed_message(group)
+        payload_json = json.dumps(_build_group_payload(group), ensure_ascii=False, separators=(",", ":"))
+
+        for caregiver_user_id in group.caregiver_user_ids:
+            if not await _is_notification_enabled(caregiver_user_id, "missed_alert"):
+                continue
+            if await _notification_already_created(caregiver_user_id, MISSED_ALERT_TYPE, reminder_key):
+                continue
+
+            notif = await Notification.create(
+                user_id=caregiver_user_id,
+                patient_id=group.patient_id,
+                type=MISSED_ALERT_TYPE,
+                title=title,
+                body=body,
+                payload_json=payload_json,
+                sent_at=None,
+            )
+            await enqueue_send_notification(notif.id)
+            created_count += 1
 
     return created_count
