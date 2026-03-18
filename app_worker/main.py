@@ -2,13 +2,18 @@
 import asyncio
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from redis.asyncio import Redis
 from tortoise import Tortoise
 
+from app.db.bootstrap import bootstrap_database
 from app.db.databases import TORTOISE_ORM
 from app.models.notifications import Notification
+from app.services.hospital_schedule_notifications import (
+    dispatch_due_hospital_schedule_notifications,
+    now_kst_naive,
+)
 
 QUEUE_NAME = os.getenv("APP_WORKER_QUEUE", "notification_queue")
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")  # docker 기준
@@ -59,6 +64,7 @@ async def handle_job(raw: str) -> None:
 async def main() -> None:
     # 1) DB 연결
     await Tortoise.init(config=TORTOISE_ORM)
+    await bootstrap_database()
     print("[app_worker] tortoise initialized")
 
     r = Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -66,10 +72,27 @@ async def main() -> None:
     try:
         await r.ping()
         print(f"[app_worker] connected redis {REDIS_HOST}:{REDIS_PORT}, queue={QUEUE_NAME}")
+        last_schedule_check_at = now_kst_naive() - timedelta(minutes=1)
 
         while True:
-            # BRPOP: blocking pop (큐에 뭐 들어올 때까지 대기)
-            _, raw = await r.brpop(QUEUE_NAME)  # timeout 생략 = 무한 대기
+            window_end = now_kst_naive()
+            if window_end > last_schedule_check_at:
+                try:
+                    created = await dispatch_due_hospital_schedule_notifications(
+                        window_start=last_schedule_check_at,
+                        window_end=window_end,
+                    )
+                    if created:
+                        print(f"[app_worker] created hospital schedule notifications: {created}")
+                except Exception as exc:
+                    print(f"[app_worker] failed to create hospital schedule notifications: {exc!r}")
+                finally:
+                    last_schedule_check_at = window_end
+
+            item = await r.brpop(QUEUE_NAME, timeout=30)
+            if item is None:
+                continue
+            _, raw = item
             await handle_job(raw)
 
     finally:

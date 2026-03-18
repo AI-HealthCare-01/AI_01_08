@@ -178,7 +178,13 @@ class NotificationService:
         settings, _ = await NotificationSettings.get_or_create(user_id=user_id)
 
         updated_fields: list[str] = []
-        for field in ("intake_reminder", "missed_alert", "ocr_done", "guide_ready"):
+        for field in (
+            "intake_reminder",
+            "missed_alert",
+            "hospital_schedule_reminder",
+            "ocr_done",
+            "guide_ready",
+        ):
             value = getattr(data, field, None)
             if value is not None:
                 setattr(settings, field, value)

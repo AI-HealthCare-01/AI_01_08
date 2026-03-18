@@ -11,6 +11,7 @@ class NotificationSettings(Model):
 
     intake_reminder = fields.BooleanField(default=True)
     missed_alert = fields.BooleanField(default=True)
+    hospital_schedule_reminder = fields.BooleanField(default=True)
     ocr_done = fields.BooleanField(default=True)
     guide_ready = fields.BooleanField(default=True)
 
