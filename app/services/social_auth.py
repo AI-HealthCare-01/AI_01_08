@@ -166,7 +166,6 @@ class SocialAuthService:
             await UserRole.get_or_create(user=user, role=default_role)
 
             from app.models.patients import Patient
-
             await Patient.get_or_create(
                 user_id=user.id,
                 defaults={"owner_user_id": user.id, "display_name": user.name},

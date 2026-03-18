@@ -120,6 +120,37 @@ async def ensure_notification_settings_schema_compatibility() -> None:
         )
 
 
+async def _seed_admin_accounts() -> None:
+    from app.models.domains.reference import Role, UserRole
+    from app.models.users import User
+    from app.utils.security import hash_password
+
+    admin_role, _ = await Role.get_or_create(code="ADMIN", defaults={"name": "ADMIN"})
+
+    admins = [
+        {"email": "admin1@gmail.com", "name": "관리자1", "phone": "01000000001"},
+        {"email": "admin2@gmail.com", "name": "관리자2", "phone": "01000000002"},
+        {"email": "admin3@gmail.com", "name": "관리자3", "phone": "01000000003"},
+        {"email": "admin4@gmail.com", "name": "관리자4", "phone": "01000000004"},
+    ]
+    from datetime import date
+
+    for info in admins:
+        if await User.filter(email=info["email"]).exists():
+            continue
+        if await User.filter(phone_number=info["phone"]).exists():
+            continue
+        user = await User.create(
+            email=info["email"],
+            hashed_password=hash_password("Admin1234!"),
+            name=info["name"],
+            phone_number=info["phone"],
+            gender="MALE",
+            birthday=date(1990, 1, 1),
+        )
+        await UserRole.get_or_create(user=user, role=admin_role)
+
+
 async def bootstrap_database() -> None:
     # Create missing tables for current models without dropping existing data.
     await Tortoise.generate_schemas(safe=True)
@@ -127,3 +158,4 @@ async def bootstrap_database() -> None:
     await ensure_roles_schema_compatibility()
     await ensure_user_roles_schema_compatibility()
     await ensure_notification_settings_schema_compatibility()
+    await _seed_admin_accounts()
