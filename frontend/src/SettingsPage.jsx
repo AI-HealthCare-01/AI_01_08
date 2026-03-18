@@ -49,7 +49,7 @@ const authFetch = async (path, options = {}) => {
   });
 };
 
-const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange }) => {
+const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange, selfPatient = null, userName = "사용자" }) => {
   const [loginRole, setLoginRole] = useState(() => {
     if (typeof window === "undefined") return "PATIENT";
     return window.localStorage.getItem("login_role") || "PATIENT";
@@ -167,7 +167,9 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange 
   const loadLinks = async () => {
     setLinksState((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const res = await authFetch(`${API_PREFIX}/users/links`);
+      const params = new URLSearchParams();
+      params.set("mode", isCaregiverMode ? "CAREGIVER" : "PATIENT");
+      const res = await authFetch(`${API_PREFIX}/users/links?${params.toString()}`);
       if (!res.ok) {
         if (res.status === 404) {
           setLinksState({ loading: false, links: [], error: null });
@@ -177,7 +179,10 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange 
         throw new Error(formatApiError(body) || `status ${res.status}`);
       }
       const data = await res.json();
-      const links = data.links || [];
+      const links =
+        isCaregiverMode && selfPatient?.id
+          ? (data.links || []).filter((link) => String(link.patient_id) !== String(selfPatient.id))
+          : data.links || [];
       setLinksState({ loading: false, links, error: null });
     } catch (error) {
       setLinksState({ loading: false, links: [], error: error?.message || String(error) });
@@ -339,6 +344,7 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange 
       title="설정"
       description={isCaregiverMode ? "앱 환경과 복약자 연동을 관리합니다." : "앱 환경과 보호자 연동을 관리합니다."}
       loginRole={effectiveMode}
+      userName={userName}
       modeOptions={modeOptions}
       currentMode={currentMode}
       onModeChange={onModeChange}

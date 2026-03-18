@@ -21,9 +21,7 @@ class InvitationService:
 
         patient = await Patient.get_or_none(user_id=user.id)
         if not patient:
-            patient = await Patient.create(
-                user_id=user.id, owner_user_id=user.id, display_name=user.name
-            )
+            patient = await Patient.create(user_id=user.id, owner_user_id=user.id, display_name=user.name)
 
         now = datetime.now(config.TIMEZONE)
         expires_at = now + timedelta(minutes=expires_in_minutes)
@@ -109,9 +107,41 @@ class InvitationService:
             return link
 
     # 연동 목록 조회 - REQ-USER-006
-    async def get_links(self, user: User) -> tuple[str, list[CaregiverPatientLink]]:
+    async def get_links(self, user: User, *, mode: str | None = None) -> tuple[str, list[CaregiverPatientLink]]:
         is_caregiver = await user_has_role(user.id, "CAREGIVER", "GUARDIAN")
         is_patient = await user_has_role(user.id, "PATIENT")
+
+        normalized_mode = (mode or "").strip().upper()
+
+        if normalized_mode == "CAREGIVER":
+            if not is_caregiver:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
+            links = (
+                await CaregiverPatientLink.filter(
+                    caregiver_user_id=user.id,
+                    status="active",
+                    revoked_at__isnull=True,
+                )
+                .select_related("patient__user", "caregiver_user")
+                .order_by("-created_at")
+            )
+            return "CAREGIVER", links
+
+        if normalized_mode == "PATIENT":
+            patient = await Patient.get_or_none(user_id=user.id)
+            if not patient:
+                patient = await Patient.create(user_id=user.id, owner_user_id=user.id, display_name=user.name)
+
+            links = (
+                await CaregiverPatientLink.filter(
+                    patient_id=patient.id,
+                    status="active",
+                    revoked_at__isnull=True,
+                )
+                .select_related("patient__user", "caregiver_user")
+                .order_by("-created_at")
+            )
+            return "PATIENT", links
 
         if is_caregiver:
             links = (
@@ -128,9 +158,7 @@ class InvitationService:
         if is_patient:
             patient = await Patient.get_or_none(user_id=user.id)
             if not patient:
-                patient = await Patient.create(
-                    user_id=user.id, owner_user_id=user.id, display_name=user.name
-                )
+                patient = await Patient.create(user_id=user.id, owner_user_id=user.id, display_name=user.name)
 
             links = (
                 await CaregiverPatientLink.filter(

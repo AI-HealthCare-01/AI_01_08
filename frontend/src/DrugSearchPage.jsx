@@ -38,7 +38,7 @@ const buildBarcodeDetector = () => {
   }
 };
 
-function DrugSearchPage({ modeOptions = [], currentMode = "PATIENT", onModeChange }) {
+function DrugSearchPage({ modeOptions = [], currentMode = "PATIENT", onModeChange, userName = "사용자" }) {
   const [query, setQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -249,6 +249,7 @@ function DrugSearchPage({ modeOptions = [], currentMode = "PATIENT", onModeChang
       activeKey="drug-search"
       title="약 검색"
       description="약 이름·코드·카메라 스캔으로 약 정보를 조회합니다."
+      userName={userName}
       modeOptions={modeOptions}
       currentMode={currentMode}
       onModeChange={onModeChange}

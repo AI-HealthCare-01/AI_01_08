@@ -3,6 +3,7 @@ import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
 const MAX_UPLOAD_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const TIME_SLOTS = ["아침", "점심", "저녁", "취침"];
 
 const authFetch = async (url, options = {}) => {
   const token = localStorage.getItem("access_token");
@@ -21,8 +22,34 @@ function StatCard({ label, value, unit, color }) {
   );
 }
 
+const extractTimeSlots = (frequencyText = "") =>
+  TIME_SLOTS.filter((slot) => String(frequencyText).includes(slot));
+
+const updateFrequencyWithSlot = (frequencyText = "", slot, checked) => {
+  const currentText = String(frequencyText || "").trim();
+  const selectedSlots = extractTimeSlots(currentText);
+  const nextSlots = checked
+    ? Array.from(new Set([...selectedSlots, slot]))
+    : selectedSlots.filter((item) => item !== slot);
+
+  const baseText = TIME_SLOTS.reduce((text, timeSlot) => text.replaceAll(timeSlot, " "), currentText)
+    .replaceAll("/", " ")
+    .replaceAll(",", " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!baseText) {
+    return nextSlots.join("/");
+  }
+
+  if (nextSlots.length === 0) {
+    return baseText;
+  }
+
+  return `${baseText} ${nextSlots.join("/")}`.trim();
+};
+
 function DrugRow({ drug, index, onChange, onDelete }) {
-  const timeSlots = ["아침", "점심", "저녁", "취침"];
   const freq = drug.frequency_text || "";
 
   return (
@@ -53,7 +80,7 @@ function DrugRow({ drug, index, onChange, onDelete }) {
       </td>
       <td>
         <div className="d-flex gap-1 align-items-center">
-          {timeSlots.map((slot) => {
+          {TIME_SLOTS.map((slot) => {
             const checked = freq.includes(slot);
             return (
               <div key={slot} className="text-center" style={{ minWidth: 28 }}>
@@ -62,7 +89,7 @@ function DrugRow({ drug, index, onChange, onDelete }) {
                   type="checkbox"
                   className="form-check-input"
                   checked={checked}
-                  onChange={() => {}}
+                  onChange={(e) => onChange(index, "frequency_text", updateFrequencyWithSlot(freq, slot, e.target.checked))}
                   style={{ marginTop: 2 }}
                 />
               </div>
@@ -97,12 +124,15 @@ function DrugRow({ drug, index, onChange, onDelete }) {
 function DocumentManagement({
   linkedPatients = [],
   myPatient = null,
+  selfPatient = null,
   loginRole = "PATIENT",
+  userName = "사용자",
   modeOptions = [],
   currentMode = "PATIENT",
   onModeChange,
 }) {
-  const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
+  const effectiveMode = currentMode || loginRole;
+  const isCaregiver = effectiveMode === "CAREGIVER" || effectiveMode === "GUARDIAN";
   const [view, setView] = useState("list"); // "list" | "ocr"
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -129,20 +159,54 @@ function DocumentManagement({
   const [previewError, setPreviewError] = useState(null);
 
   const loadDocuments = useCallback(async () => {
+    if (!isCaregiver && !myPatient?.id) {
+      setDocuments([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await authFetch(`${API_PREFIX}/documents`);
+      const params = new URLSearchParams();
+      if (!isCaregiver && myPatient?.id) {
+        params.set("patient_id", String(myPatient.id));
+      }
+      const query = params.toString();
+      const res = await authFetch(`${API_PREFIX}/documents${query ? `?${query}` : ""}`);
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data = await res.json();
-      setDocuments(data.items || []);
+      const items = data.items || [];
+      const visibleItems =
+        isCaregiver && selfPatient?.id
+          ? items.filter((doc) => String(doc.patient_id) !== String(selfPatient.id))
+          : items;
+      setDocuments(visibleItems);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isCaregiver, myPatient, selfPatient]);
 
   useEffect(() => { loadDocuments(); }, [loadDocuments]);
+
+  useEffect(() => {
+    if (isCaregiver) {
+      setPatientId("");
+      setListPatientFilter("all");
+      return;
+    }
+
+    if (myPatient?.id) {
+      setPatientId(String(myPatient.id));
+      setListPatientFilter(String(myPatient.id));
+      return;
+    }
+
+    setPatientId("");
+    setListPatientFilter("all");
+  }, [isCaregiver, myPatient]);
 
   useEffect(() => {
     if (view !== "list") return undefined;
@@ -194,9 +258,22 @@ function DocumentManagement({
   }, [documents, isCaregiver, linkedPatients, myPatient]);
 
   const filteredDocuments = useMemo(() => {
+    if (!isCaregiver) return documents;
     if (listPatientFilter === "all") return documents;
     return documents.filter((doc) => String(doc.patient_id) === String(listPatientFilter));
-  }, [documents, listPatientFilter]);
+  }, [documents, isCaregiver, listPatientFilter]);
+
+  const getPatientDisplayLabel = useCallback(
+    (targetPatientId) => {
+      if (!targetPatientId) return "—";
+      if (!isCaregiver && myPatient?.id && String(myPatient.id) === String(targetPatientId)) {
+        return myPatient.name || "내 프로필";
+      }
+      const matched = uploadPatientOptions.find((patient) => String(patient.value) === String(targetPatientId));
+      return matched?.label || `복약자 #${targetPatientId}`;
+    },
+    [isCaregiver, myPatient, uploadPatientOptions],
+  );
 
   const validateUploadFile = useCallback((file) => {
     if (!file) return false;
@@ -526,6 +603,7 @@ function DocumentManagement({
         title="처방전 업로드"
         description="처방전을 업로드하고 추출된 약 정보를 검토합니다."
         loginRole={loginRole}
+        userName={userName}
         modeOptions={modeOptions}
         currentMode={currentMode}
         onModeChange={onModeChange}
@@ -614,7 +692,7 @@ function DocumentManagement({
                     </div>
                     <div className="d-flex justify-content-between mb-1">
                       <span className="text-muted">대상 복약자</span>
-                      <span className="fw-semibold">복약자 #{currentDoc.patient_id}</span>
+                      <span className="fw-semibold">{getPatientDisplayLabel(currentDoc.patient_id)}</span>
                     </div>
                   </div>
                   <div className="d-flex gap-2 mt-3">
@@ -719,6 +797,7 @@ function DocumentManagement({
       title="처방전 업로드"
       description="문서를 업로드하고 복약자별 처방전 상태를 확인합니다."
       loginRole={loginRole}
+      userName={userName}
       modeOptions={modeOptions}
       currentMode={currentMode}
       onModeChange={onModeChange}
@@ -766,14 +845,20 @@ function DocumentManagement({
                 </div>
                 <div className="col-md-3">
                   <label className="form-label small">복약자 선택</label>
-                  <select className="form-select" value={patientId} onChange={(e) => setPatientId(e.target.value)}>
-                    <option value="">{isCaregiver ? "업로드 대상 선택" : "내 프로필(자동 선택)"}</option>
-                    {uploadPatientOptions.map((patient) => (
-                      <option key={patient.value} value={patient.value}>
-                        {patient.label}
-                      </option>
-                    ))}
-                  </select>
+                  {isCaregiver ? (
+                    <select className="form-select" value={patientId} onChange={(e) => setPatientId(e.target.value)}>
+                      <option value="">업로드 대상 선택</option>
+                      {uploadPatientOptions.map((patient) => (
+                        <option key={patient.value} value={patient.value}>
+                          {patient.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="form-control bg-light">
+                      {myPatient?.name || "내 프로필"}
+                    </div>
+                  )}
                 </div>
                 <div className="col-md-2">
                   <button type="submit" className="btn btn-primary w-100" disabled={uploading || !selectedFile}>
@@ -793,18 +878,24 @@ function DocumentManagement({
               <div className="d-flex flex-wrap align-items-end gap-2">
                 <div className="doc-list-filter">
                   <label className="form-label small mb-1">조회 대상 선택</label>
-                  <select
-                    className="form-select form-select-sm"
-                    value={listPatientFilter}
-                    onChange={(event) => setListPatientFilter(event.target.value)}
-                  >
-                    <option value="all">전체 복약자</option>
-                    {uploadPatientOptions.map((patient) => (
-                      <option key={patient.value} value={patient.value}>
-                        {patient.label}
-                      </option>
-                    ))}
-                  </select>
+                  {isCaregiver ? (
+                    <select
+                      className="form-select form-select-sm"
+                      value={listPatientFilter}
+                      onChange={(event) => setListPatientFilter(event.target.value)}
+                    >
+                      <option value="all">전체 복약자</option>
+                      {uploadPatientOptions.map((patient) => (
+                        <option key={patient.value} value={patient.value}>
+                          {patient.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="form-control form-control-sm bg-light">
+                      {myPatient?.name || "내 문서"}
+                    </div>
+                  )}
                 </div>
                 <button className="btn btn-outline-secondary btn-sm" onClick={loadDocuments} disabled={loading}>
                   {loading ? "로딩..." : "새로고침"}
@@ -820,7 +911,7 @@ function DocumentManagement({
                     <tr>
                       <th>ID</th>
                       <th>파일명</th>
-                      <th>복약자 ID</th>
+                      <th>대상 복약자</th>
                       <th>상태</th>
                       <th>업로드 일시</th>
                       <th>작업</th>
@@ -836,7 +927,7 @@ function DocumentManagement({
                         <tr key={docId}>
                           <td>{docId}</td>
                           <td>{doc.original_filename || "—"}</td>
-                          <td>{doc.patient_id}</td>
+                          <td>{getPatientDisplayLabel(doc.patient_id)}</td>
                           <td><span className={`badge ${badgeCls}`}>{stText}</span></td>
                           <td>{new Date(doc.created_at).toLocaleString("ko-KR")}</td>
                           <td>

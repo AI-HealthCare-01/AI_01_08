@@ -7,18 +7,20 @@ const SchedulePage = ({
   linkedPatients = [],
   myPatient = null,
   loginRole = "CAREGIVER",
+  userName = "사용자",
   modeOptions = [],
   currentMode = "PATIENT",
   onModeChange,
 }) => {
-  const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
+  const effectiveMode = currentMode || loginRole;
+  const isCaregiver = effectiveMode === "CAREGIVER" || effectiveMode === "GUARDIAN";
 
   const patientsSource = useMemo(() => {
-    if (loginRole === "PATIENT") {
+    if (!isCaregiver) {
       return myPatient ? [myPatient] : [];
     }
     return (linkedPatients || []).filter((patient) => patient?.id);
-  }, [loginRole, linkedPatients, myPatient]);
+  }, [isCaregiver, linkedPatients, myPatient]);
 
   const normalizedPatients = useMemo(() => {
     return patientsSource.map((patient) => ({
@@ -352,6 +354,7 @@ const SchedulePage = ({
         title="스케줄"
         description="복약자별 병원 방문 일정을 확인하고 추가/수정할 수 있습니다."
         loginRole={loginRole}
+        userName={userName}
         modeOptions={modeOptions}
         currentMode={currentMode}
         onModeChange={onModeChange}
@@ -397,7 +400,9 @@ const SchedulePage = ({
                     : `내 등록된 병원 진료 예약 ${filteredSchedules.length}건`}
                 </div>
 
-                <div className="small text-muted mt-2 mb-2">최근 일정 3건</div>
+                <div className="small text-muted mt-2 mb-2">
+                  최근 일정 {Math.min(filteredSchedules.length, 3)}건
+                </div>
 
                 {filteredSchedules.slice(0, 3).map((schedule) => (
                   <button

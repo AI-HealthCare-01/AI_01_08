@@ -17,11 +17,13 @@ const MedicationCheckPage = ({
   myPatient = null,
   loginRole = "PATIENT",
   me = null,
+  userName = "사용자",
   modeOptions = [],
   currentMode = "PATIENT",
   onModeChange,
 }) => {
-  const isCaregiver = loginRole === "CAREGIVER" || loginRole === "GUARDIAN";
+  const effectiveMode = currentMode || loginRole;
+  const isCaregiver = effectiveMode === "CAREGIVER" || effectiveMode === "GUARDIAN";
 
   const patients = useMemo(() => {
     if (isCaregiver) {
@@ -481,7 +483,7 @@ const MedicationCheckPage = ({
       title="복약 체크"
       description={isCaregiver ? "연동 복약자의 복약 상태를 확인하고 필요한 알림을 보낼 수 있습니다." : "오늘 복약 일정을 확인하고 상태를 기록하세요."}
       loginRole={loginRole}
-      userName={me?.name}
+      userName={userName}
       modeOptions={modeOptions}
       currentMode={currentMode}
       onModeChange={onModeChange}

@@ -124,7 +124,7 @@ const buildPayload = (formData) => ({
   notes: formData.notes || null,
 });
 
-function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange }) {
+function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange, selfPatient = null, userName = "사용자" }) {
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const requestedLinkId = searchParams.get("link_id");
 
@@ -139,6 +139,8 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [profileMissing, setProfileMissing] = useState(false);
+  const effectiveMode = currentMode || loginRole;
+  const isCaregiver = effectiveMode === "CAREGIVER" || effectiveMode === "GUARDIAN";
 
   const authFetch = async (url, options = {}) => {
     const token = localStorage.getItem("access_token");
@@ -156,7 +158,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
     (linksState.data?.links || []).find((link) => String(link.link_id) === String(selectedLinkId)) || null;
   const selectedPatientLabel =
     selectedLink?.patient_name || (selectedLink?.patient_id ? `복약자 #${selectedLink.patient_id}` : null);
-  const isCaregiverOwnProfile = loginRole === "CAREGIVER" && selectedLinkId === "me";
+  const isCaregiverOwnProfile = isCaregiver && selectedLinkId === "me";
 
   const hydrateForm = (data) => {
     if (!data) {
@@ -184,7 +186,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
   };
 
   const loadLinks = async () => {
-    if (loginRole !== "CAREGIVER") return;
+    if (!isCaregiver) return;
 
     setLinksState((prev) => ({ ...prev, loading: true, error: null }));
     try {
@@ -193,11 +195,15 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
         throw new Error(formatApiError(await safeJson(res)));
       }
       const body = await res.json();
-      setLinksState({ loading: false, data: body, error: null });
+      const links =
+        isCaregiver && selfPatient?.id
+          ? (body?.links || []).filter((link) => String(link.patient_id) !== String(selfPatient.id))
+          : body?.links || [];
+      setLinksState({ loading: false, data: { ...(body || {}), links }, error: null });
       if (!selectedLinkId) {
         setSelectedLinkId("me");
-      } else if (selectedLinkId !== "me" && body?.links?.length > 0 && !body.links.some((link) => String(link.link_id) === String(selectedLinkId))) {
-        setSelectedLinkId(String(body.links[0].link_id));
+      } else if (selectedLinkId !== "me" && links.length > 0 && !links.some((link) => String(link.link_id) === String(selectedLinkId))) {
+        setSelectedLinkId(String(links[0].link_id));
       }
     } catch (err) {
       setLinksState({ loading: false, data: null, error: err?.message || String(err) });
@@ -206,7 +212,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
 
   const loadProfile = async () => {
     // Louis수정(코드삭제): 보호자도 무조건 /users/me/health-profile 를 치던 기존 단일 흐름 제거
-    if (loginRole === "CAREGIVER" && !selectedLinkId) {
+    if (isCaregiver && !selectedLinkId) {
       setProfile(null);
       hydrateForm(null);
       setLoading(false);
@@ -220,7 +226,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
     setProfileMissing(false);
     try {
       const endpoint =
-        loginRole === "CAREGIVER" && selectedLinkId && selectedLinkId !== "me"
+        isCaregiver && selectedLinkId && selectedLinkId !== "me"
           ? `${API_PREFIX}/users/links/${selectedLinkId}/health-profile`
           : `${API_PREFIX}/users/me/health-profile`;
       const res = await authFetch(endpoint);
@@ -248,11 +254,11 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
 
   useEffect(() => {
     loadLinks();
-  }, [loginRole]);
+  }, [isCaregiver]);
 
   useEffect(() => {
     loadProfile();
-  }, [loginRole, selectedLinkId]);
+  }, [isCaregiver, selectedLinkId]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -273,7 +279,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
 
     try {
       const endpoint =
-        loginRole === "CAREGIVER" && selectedLinkId && selectedLinkId !== "me"
+        isCaregiver && selectedLinkId && selectedLinkId !== "me"
           ? `${API_PREFIX}/users/links/${selectedLinkId}/health-profile`
           : `${API_PREFIX}/users/me/health-profile`;
       const method = profile ? "PATCH" : "POST";
@@ -302,7 +308,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
     setNotice(null);
     try {
       const endpoint =
-        loginRole === "CAREGIVER" && selectedLinkId && selectedLinkId !== "me"
+        isCaregiver && selectedLinkId && selectedLinkId !== "me"
           ? `${API_PREFIX}/users/links/${selectedLinkId}/health-profile`
           : `${API_PREFIX}/users/me/health-profile`;
       const res = await authFetch(endpoint, { method: "DELETE" });
@@ -322,7 +328,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
   };
 
   const title =
-    loginRole === "CAREGIVER" ? "건강 프로필 관리" : "건강 프로필";
+    isCaregiver ? "건강 프로필 관리" : "건강 프로필";
 
   const handleCaregiverPatientChange = (nextValue) => {
     setSelectedLinkId(nextValue || "me");
@@ -331,13 +337,14 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
     setError(null);
   };
 
-  if (loading && !profile && !(loginRole === "CAREGIVER" && !selectedLinkId)) {
+  if (loading && !profile && !(isCaregiver && !selectedLinkId)) {
     return (
       <AppLayout
         activeKey="health"
         title={title}
         description="건강 정보를 불러오는 중입니다."
         loginRole={loginRole}
+        userName={userName}
         modeOptions={modeOptions}
         currentMode={currentMode}
         onModeChange={onModeChange}
@@ -351,8 +358,9 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
     <AppLayout
       activeKey="health"
       title={title}
-      description={loginRole === "CAREGIVER" ? "내 정보와 연동된 복약자 프로필을 함께 관리합니다." : "건강 정보를 정리하고 필요한 항목을 관리합니다."}
+      description={isCaregiver ? "내 정보와 연동된 복약자 프로필을 함께 관리합니다." : "건강 정보를 정리하고 필요한 항목을 관리합니다."}
       loginRole={loginRole}
+      userName={userName}
       modeOptions={modeOptions}
       currentMode={currentMode}
       onModeChange={onModeChange}
@@ -366,7 +374,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                 <div>
                   <h3 className="mb-1" style={{ color: "#1e40af" }}>{title}</h3>
                   <div className="text-muted small">
-                    {loginRole === "CAREGIVER"
+                    {isCaregiver
                       ? "내 정보와 연동된 복약자 프로필을 한 화면에서 관리할 수 있습니다."
                       : "건강 정보를 정리하고 필요한 항목을 바로 수정할 수 있습니다."}
                   </div>
@@ -404,7 +412,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                 </div>
               </div>
 
-              {loginRole === "CAREGIVER" && (
+              {isCaregiver && (
                 <div className="mb-4">
                   <label className="form-label">관리 프로필 선택</label>
                   <div className="row g-2">
@@ -449,7 +457,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                 </div>
               )}
 
-              {loginRole === "CAREGIVER" && (isCaregiverOwnProfile || selectedLink) && (
+              {isCaregiver && (isCaregiverOwnProfile || selectedLink) && (
                 <div className="border rounded p-3 mb-4" style={softPanelStyle}>
                   <div className="d-flex flex-wrap justify-content-between align-items-start gap-3">
                     <div>
@@ -483,15 +491,15 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
               {!profile && !editing ? (
                 <div className="text-center py-5">
                   <p className="text-muted mb-3">
-                    {loginRole === "CAREGIVER" && selectedLink && profileMissing
+                    {isCaregiver && selectedLink && profileMissing
                       ? `${selectedLink.patient_name || "선택한 복약자"}의 건강 프로필이 없습니다.`
                       : isCaregiverOwnProfile && profileMissing
                         ? "내 건강 프로필이 아직 등록되지 않았습니다."
-                      : loginRole === "CAREGIVER"
+                      : isCaregiver
                           ? "연동된 복약자를 선택해 주세요."
                         : "등록된 건강 프로필이 없습니다."}
                   </p>
-                  {loginRole === "CAREGIVER" && selectedLink && (
+                  {isCaregiver && selectedLink && (
                     <div className="small text-muted mb-3">
                       복약자 기본 정보와 생활습관을 먼저 등록해 두면 이후 가이드, 상담, 일정 기능에서 재사용됩니다.
                     </div>
@@ -501,7 +509,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                       보호자 본인도 복약자가 될 수 있으므로 내 건강 프로필을 따로 관리할 수 있습니다.
                     </div>
                   )}
-                  {(loginRole !== "CAREGIVER" || selectedLinkId) && (
+                  {(!isCaregiver || selectedLinkId) && (
                     <button className="btn btn-primary" style={primaryButtonStyle} onClick={() => setEditing(true)}>
                       건강 프로필 등록
                     </button>

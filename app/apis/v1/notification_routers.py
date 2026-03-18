@@ -84,12 +84,14 @@ async def list_notifications(
     cursor: int | None = Query(default=None, description="cursor pagination id (id < cursor)"),
     limit: int = Query(default=20, ge=1, le=100),
     unread_only: bool = Query(default=False),
+    patient_id: int | None = Query(default=None),
 ) -> Response:
     rows, next_cursor = await service.list_notifications(
         user_id=user.id,
         cursor=cursor,
         limit=limit,
         unread_only=unread_only,
+        patient_id=patient_id,
     )
 
     items = [
@@ -134,8 +136,9 @@ async def mark_notification_read(
 async def mark_all_notifications_read(
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[NotificationService, Depends(NotificationService)],
+    patient_id: int | None = Query(default=None),
 ) -> Response:
-    updated = await service.mark_all_read(user_id=user.id)
+    updated = await service.mark_all_read(user_id=user.id, patient_id=patient_id)
     return Response(ApiResponse(data={"updated": updated}).model_dump())
 
 
@@ -147,8 +150,9 @@ async def mark_all_notifications_read(
 async def unread_count(
     user: Annotated[User, Depends(get_request_user)],
     service: Annotated[NotificationService, Depends(NotificationService)],
+    patient_id: int | None = Query(default=None),
 ) -> Response:
-    count = await service.unread_count(user_id=user.id)
+    count = await service.unread_count(user_id=user.id, patient_id=patient_id)
     return Response(ApiResponse(data={"count": count}).model_dump())
 
 
