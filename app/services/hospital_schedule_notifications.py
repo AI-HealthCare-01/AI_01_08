@@ -60,7 +60,7 @@ async def _notification_already_created(user_id: int, reminder_key: str) -> bool
     ).exists()
 
 
-async def dispatch_due_hospital_schedule_notifications( # noqa: C901
+async def dispatch_due_hospital_schedule_notifications(  # noqa: C901
     *,
     window_start: datetime,
     window_end: datetime,
