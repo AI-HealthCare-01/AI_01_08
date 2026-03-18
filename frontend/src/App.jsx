@@ -37,6 +37,56 @@ const formatDateTime = (value) => {
   }).format(date);
 };
 
+const formatClockTime = (value) => {
+  if (!value) {
+    return "—";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+  return date.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+};
+
+const normalizeIntakeStatus = (rawStatus) => {
+  const value = String(rawStatus || "").toLowerCase();
+  if (value === "taken") return "taken";
+  if (value === "missed") return "missed";
+  if (value === "skipped") return "skipped";
+  return "pending";
+};
+
+const intakeStatusLabel = (status) => {
+  if (status === "taken") return "복용완료";
+  if (status === "missed") return "미복용";
+  if (status === "skipped") return "건너뜀";
+  return "복용대기";
+};
+
+const toDateKey = (value) => {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const resolveNotificationPatientId = (item) => {
+  const payloadPatientId = item?.payload?.patient_id;
+  if (payloadPatientId !== undefined && payloadPatientId !== null && payloadPatientId !== "") {
+    const id = Number(payloadPatientId);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }
+  const fallbackId = Number(item?.patient_id);
+  return Number.isFinite(fallbackId) && fallbackId > 0 ? fallbackId : null;
+};
+
 function App() {
   const [healthStatus, setHealthStatus] = useState({
     loading: false,
@@ -232,6 +282,19 @@ function App() {
   const isSettingsPage = useMemo(() => {
     return pathname.startsWith("/auth-demo/settings") || pathname.startsWith("/auth-demo/app/settings");
   }, [pathname]);
+  const isHomePage =
+    !isLoginPage &&
+    !isSignupPage &&
+    !isProfilePage &&
+    !isDashboardPage &&
+    !isHealthProfilePage &&
+    !isDocumentsPage &&
+    !isCaregiverPage &&
+    !isAiPage &&
+    !isDrugSearchPage &&
+    !isMedicationCheckPage &&
+    !isSchedulePage &&
+    !isSettingsPage;
 
   const persistAccessToken = (token) => {
     if (typeof window !== "undefined") {
@@ -487,18 +550,243 @@ function App() {
     persistLoginRole(nextMode);
   };
   const [homePatientId, setHomePatientId] = useState("");
+  const [homeScheduleState, setHomeScheduleState] = useState({
+    loading: false,
+    items: [],
+    error: null
+  });
+  const [homeMedicationState, setHomeMedicationState] = useState({
+    loading: false,
+    items: [],
+    summaryByPatient: {},
+    error: null
+  });
+  const [homeNotificationsState, setHomeNotificationsState] = useState({
+    loading: false,
+    items: [],
+    error: null
+  });
+  const [homeSelectedDate, setHomeSelectedDate] = useState(() => toDateKey(new Date()));
 
   useEffect(() => {
     if (!isCaregiverRole) return;
     if (homePatientId) return;
-    if (linkedPatients.length === 0) return;
-    setHomePatientId(String(linkedPatients[0].id));
+    if (linkedPatients.length > 0) {
+      setHomePatientId("all");
+      return;
+    }
+    setHomePatientId("");
   }, [homePatientId, isCaregiverRole, linkedPatients]);
 
   const activeHomePatient = useMemo(() => {
     if (!isCaregiverRole) return myPatient;
+    if (homePatientId === "all") return null;
     return linkedPatients.find((patient) => String(patient.id) === String(homePatientId)) || linkedPatients[0] || null;
   }, [homePatientId, isCaregiverRole, linkedPatients, myPatient]);
+
+  const homePatientNameMap = useMemo(() => {
+    const map = new Map();
+    linkedPatients.forEach((patient) => {
+      if (!patient?.id) return;
+      map.set(Number(patient.id), patient.name || patient.display_name || `복약자 ${patient.id}`);
+    });
+    if (myPatient?.id) {
+      map.set(Number(myPatient.id), myPatient.name || myPatient.display_name || `복약자 ${myPatient.id}`);
+    }
+    return map;
+  }, [linkedPatients, myPatient]);
+
+  const selectedHomePatientIds = useMemo(() => {
+    if (isCaregiverRole) {
+      if (homePatientId === "all") {
+        return linkedPatients.map((patient) => Number(patient.id)).filter(Boolean);
+      }
+      const targetId = homePatientId ? Number(homePatientId) : Number(linkedPatients[0]?.id);
+      return targetId ? [targetId] : [];
+    }
+
+    const myId = Number(myPatient?.id);
+    return myId ? [myId] : [];
+  }, [homePatientId, isCaregiverRole, linkedPatients, myPatient]);
+
+  const selectedHomePatientKey = useMemo(() => selectedHomePatientIds.join(","), [selectedHomePatientIds]);
+
+  useEffect(() => {
+    if (!accessToken || !isHomePage) return;
+    if (selectedHomePatientIds.length === 0) {
+      setHomeScheduleState({ loading: false, items: [], error: null });
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadHomeSchedules = async () => {
+      setHomeScheduleState((prev) => ({ ...prev, loading: true, error: null }));
+      try {
+        const responses = await Promise.all(
+          selectedHomePatientIds.map((patientId) =>
+            authFetch(`${API_PREFIX}/calendar/hospital?patient_id=${patientId}`)
+          )
+        );
+
+        const jsonList = await Promise.all(
+          responses.map(async (res) => {
+            if (!res.ok) return { items: [] };
+            return (await safeJson(res)) || { items: [] };
+          })
+        );
+
+        const merged = jsonList.flatMap((data) => data.items || []);
+        const dedupedMap = new Map();
+
+        merged.forEach((item) => {
+          dedupedMap.set(item.id, item);
+        });
+
+        const items = Array.from(dedupedMap.values()).sort(
+          (a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)
+        );
+
+        if (isMounted) {
+          setHomeScheduleState({ loading: false, items, error: null });
+        }
+      } catch (error) {
+        if (isMounted) {
+          setHomeScheduleState({ loading: false, items: [], error: error.message || "일정 조회 실패" });
+        }
+      }
+    };
+
+    loadHomeSchedules();
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, isHomePage, selectedHomePatientKey]);
+
+  useEffect(() => {
+    if (!accessToken || !isHomePage) return;
+    if (selectedHomePatientIds.length === 0) {
+      setHomeMedicationState({ loading: false, items: [], summaryByPatient: {}, error: null });
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadHomeMedicationStatus = async () => {
+      const todayKey = toDateKey(new Date());
+      setHomeMedicationState((prev) => ({ ...prev, loading: true, error: null }));
+      try {
+        const rows = await Promise.all(
+          selectedHomePatientIds.map(async (patientId) => {
+            const params = new URLSearchParams();
+            params.set("patient_id", String(patientId));
+            params.set("from", todayKey);
+            params.set("to", todayKey);
+
+            const res = await authFetch(`${API_PREFIX}/schedules/status?${params.toString()}`);
+            if (!res.ok) {
+              return { patientId, items: [], summary: null };
+            }
+
+            const body = await safeJson(res);
+            const data = body?.data || body || {};
+            const days = Array.isArray(data.days) ? data.days : [];
+
+            const items = days.flatMap((dayBlock) => {
+              const day = dayBlock?.day;
+              const dayItems = Array.isArray(dayBlock?.items) ? dayBlock.items : [];
+              return dayItems.map((item, index) => ({
+                id: `${patientId}-${item.schedule_id}-${item.schedule_time_id}-${item.scheduled_at || index}`,
+                patient_id: patientId,
+                patient_med_id: Number(item.patient_med_id),
+                schedule_id: Number(item.schedule_id),
+                schedule_time_id: Number(item.schedule_time_id),
+                scheduled_at: item.scheduled_at,
+                scheduled_date: day,
+                status: normalizeIntakeStatus(item.status),
+                taken_at: item.taken_at
+              }));
+            });
+
+            return {
+              patientId,
+              items,
+              summary: data.summary || null
+            };
+          })
+        );
+
+        const summaryByPatient = {};
+        rows.forEach((row) => {
+          if (row.summary) {
+            summaryByPatient[row.patientId] = row.summary;
+          }
+        });
+
+        const items = rows
+          .flatMap((row) => row.items)
+          .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+
+        if (isMounted) {
+          setHomeMedicationState({
+            loading: false,
+            items,
+            summaryByPatient,
+            error: null
+          });
+        }
+      } catch (error) {
+        if (isMounted) {
+          setHomeMedicationState({
+            loading: false,
+            items: [],
+            summaryByPatient: {},
+            error: error.message || "복약 상태 조회 실패"
+          });
+        }
+      }
+    };
+
+    loadHomeMedicationStatus();
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, isHomePage, selectedHomePatientKey]);
+
+  useEffect(() => {
+    if (!accessToken || !isHomePage) return;
+
+    let isMounted = true;
+
+    const loadHomeNotifications = async () => {
+      setHomeNotificationsState({ loading: true, items: [], error: null });
+      try {
+        const params = new URLSearchParams();
+        params.set("limit", "5");
+        const res = await authFetch(`${API_PREFIX}/notifications?${params.toString()}`);
+        if (!res.ok) {
+          const body = await safeJson(res);
+          throw new Error(formatApiError(body) || `status ${res.status}`);
+        }
+
+        const body = await safeJson(res);
+        const data = body?.data || body || {};
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (isMounted) {
+          setHomeNotificationsState({ loading: false, items, error: null });
+        }
+      } catch (error) {
+        if (isMounted) {
+          setHomeNotificationsState({ loading: false, items: [], error: error.message || "알림 조회 실패" });
+        }
+      }
+    };
+
+    loadHomeNotifications();
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, isHomePage, normalizedLoginMode]);
 
   const checkHealth = async () => {
     setHealthStatus({ loading: true, data: null, error: null });
@@ -1131,21 +1419,9 @@ function App() {
                           value={signupForm.role}
                           onChange={handleSignupChange}
                         >
-                          {roles.length > 0 ? (
-                            roles.map((role) => (
-                              <option key={`${role.code}-${role.name}`} value={role.code || role.name}>
-                                {resolveRoleLabel(role)}
-                              </option>
-                            ))
-                          ) : (
-                            <>
-                              <option value="PATIENT">복약자</option>
-                              <option value="CAREGIVER">보호자</option>
-                              <option value="ADMIN">관리자</option>
-                            </>
-                          )}
+                          <option value="PATIENT">복약자</option>
+                          <option value="CAREGIVER">보호자</option>
                         </select>
-                        {rolesError && <div className="text-danger small mt-1">역할 로딩 실패</div>}
                       </div>
                       <div className="col-12">
                         <label className="form-label">이메일</label>
@@ -1355,13 +1631,9 @@ function App() {
                       >
                         아이디/비밀번호 찾기
                       </button>
-                      <a className="btn btn-outline-secondary" href="/auth-demo/app">
-                        대시보드로 이동
-                      </a>
                     </div>
                   </div>
                   {loginState.error && <div className="alert alert-danger mt-3">{loginState.error}</div>}
-                  <div className="mt-4 small text-muted">테스트 계정이 필요하면 관리자에게 문의하세요.</div>
                 </div>
               </div>
             </div>
@@ -2029,48 +2301,116 @@ function App() {
 
   const homeTitle = "홈";
   const homeDescription = isCaregiverRole
-    ? "연결된 복약자의 복약 상태와 최근 안내를 확인하세요."
-    : "복약자 복약 현황과 문서 상태를 한눈에 확인하세요.";
+    ? "연동된 복약자의 일정과 복약 상태를 확인하세요."
+    : "오늘 복약 일정과 새로운 알림을 확인하세요.";
+  const isCaregiverAllView = isCaregiverRole && homePatientId === "all";
   const selectedHomePatientLabel = isCaregiverRole
-    ? activeHomePatient?.name || "복약자 선택 필요"
+    ? isCaregiverAllView
+      ? "전체 복약자"
+      : activeHomePatient?.name || "복약자 선택 필요"
     : meState.data?.name || "내 계정";
   const heroTitle = isCaregiverRole ? "보호자 관리 홈" : "복약자 서비스 홈";
   const heroSubtitle = isCaregiverRole
-    ? "오늘 확인이 필요한 관리 항목을 먼저 점검하세요."
-    : "지금 필요한 복약 관리 작업을 우선 확인해 주세요.";
-  const patientTodoCards = [
-    {
-      icon: "🗂",
-      title: "문서 점검",
-      desc: "최근 업로드 문서와 인식 상태를 확인하세요.",
-    },
-    {
-      icon: "🤖",
-      title: "가이드 확인",
-      desc: "최신 AI 복약 가이드를 확인하세요.",
-    },
-    {
-      icon: "💊",
-      title: "복약 체크",
-      desc: "오늘 복약 완료 여부를 확인하세요.",
-    },
+    ? "연동된 복약자의 일정과 복약 상태를 확인하세요."
+    : "오늘 복약 일정과 새로운 알림을 확인하세요.";
+
+  const rawHomeNotificationItems = homeNotificationsState.items || [];
+  const homeNotificationItems = (() => {
+    if (isCaregiverRole) {
+      if (homePatientId === "all") {
+        return rawHomeNotificationItems.slice(0, 5);
+      }
+      const targetPatientId = Number(selectedHomePatientIds[0]);
+      if (!targetPatientId) {
+        return rawHomeNotificationItems.slice(0, 5);
+      }
+      return rawHomeNotificationItems
+        .filter((item) => {
+          const patientId = resolveNotificationPatientId(item);
+          if (!patientId) return true;
+          return patientId === targetPatientId;
+        })
+        .slice(0, 5);
+    }
+
+    const myPatientId = Number(myPatient?.id);
+    if (!myPatientId) {
+      return rawHomeNotificationItems.slice(0, 5);
+    }
+
+    return rawHomeNotificationItems
+      .filter((item) => {
+        const patientId = resolveNotificationPatientId(item);
+        if (!patientId) return true;
+        return patientId === myPatientId;
+      })
+      .slice(0, 5);
+  })();
+  const unreadNotificationCount = homeNotificationItems.filter((item) => !item.read_at).length;
+
+  const homeToday = new Date();
+  const todayKey = toDateKey(homeToday);
+  const calendarYear = homeToday.getFullYear();
+  const calendarMonth = homeToday.getMonth();
+  const monthLabel = `${calendarYear}.${String(calendarMonth + 1).padStart(2, "0")}`;
+  const firstDayOffset = new Date(calendarYear, calendarMonth, 1).getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const calendarCells = [
+    ...Array.from({ length: firstDayOffset }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
   ];
-  const patientQuickActions = [
-    { label: "처방전 업로드", href: "/auth-demo/app/documents", variant: "btn-primary" },
-    { label: "AI 가이드", href: "/auth-demo/app/ai", variant: "btn-outline-primary" },
-    { label: "알림센터", href: "/auth-demo/app/caregiver", variant: "btn-outline-secondary" },
-  ];
-  const caregiverPriorityCards = [
-    { icon: "💊", title: "오늘 복약 확인 필요", note: "복약 누락 여부 우선 확인", state: "우선 점검" },
-    { icon: "📄", title: "문서 검토 필요", note: "OCR/약 정보 검토", state: "확인 필요" },
-    { icon: "🤖", title: "가이드 확인 필요", note: "최신 안내 반영 여부 점검", state: "점검 예정" },
-  ];
-  const caregiverHomeSteps = [
-    "설정에서 복약자 연동 정보를 관리하세요.",
-    "현재 관리 대상을 먼저 선택하세요.",
-    "문서/가이드/알림 순서로 점검하세요.",
-    "복약 이슈가 있으면 즉시 리마인드하세요.",
-  ];
+
+  const scheduleItemsThisMonth = (homeScheduleState.items || []).filter((item) => {
+    const date = new Date(item.scheduled_at);
+    return date.getFullYear() === calendarYear && date.getMonth() === calendarMonth;
+  });
+  const calendarEventMap = scheduleItemsThisMonth.reduce((acc, item) => {
+    const date = new Date(item.scheduled_at);
+    const day = date.getDate();
+    const events = acc.get(day) || [];
+    events.push(item);
+    acc.set(day, events);
+    return acc;
+  }, new Map());
+  const selectedScheduleDateKey = homeSelectedDate || todayKey;
+  const selectedScheduleItems = (homeScheduleState.items || [])
+    .filter((item) => toDateKey(item.scheduled_at) === selectedScheduleDateKey)
+    .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+  const selectedScheduleDateLabel = (() => {
+    const date = new Date(selectedScheduleDateKey);
+    if (Number.isNaN(date.getTime())) return "선택 일정";
+    return date.toLocaleDateString("ko-KR", {
+      month: "long",
+      day: "numeric",
+      weekday: "short"
+    });
+  })();
+
+  const medicationItems = (homeMedicationState.items || []).sort(
+    (a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)
+  );
+  const takenMedicationCount = medicationItems.filter((item) => item.status === "taken").length;
+  const pendingMedicationItems = medicationItems.filter((item) => item.status === "pending");
+  const nextMedicationItem =
+    pendingMedicationItems.find((item) => new Date(item.scheduled_at) >= homeToday) ||
+    pendingMedicationItems[0] ||
+    medicationItems[0] ||
+    null;
+  const remainingMedicationCount = Math.max(0, medicationItems.length - takenMedicationCount);
+
+  const caregiverNeedCheckItems = medicationItems.filter(
+    (item) => item.status === "pending" || item.status === "missed"
+  );
+  const caregiverNeedCheckPatientCount = new Set(caregiverNeedCheckItems.map((item) => item.patient_id)).size;
+  const caregiverMissedCount = medicationItems.filter((item) => item.status === "missed").length;
+  const medicationListItems = isCaregiverRole
+    ? (caregiverNeedCheckItems.length > 0 ? caregiverNeedCheckItems : medicationItems).slice(0, 5)
+    : medicationItems.slice(0, 5);
+
+  const getPatientLabel = (patientId) => {
+    if (!patientId) return "복약자";
+    return homePatientNameMap.get(Number(patientId)) || `복약자 ${patientId}`;
+  };
 
   return (
     <AppLayout
@@ -2083,96 +2423,39 @@ function App() {
       currentMode={normalizedLoginMode}
       onModeChange={handleModeChange}
     >
-      <div className="home-hero-banner mb-4">
-        <div className="home-hero-brand">(주)케어브릿지</div>
-        <h1 className="home-hero-title">{heroTitle}</h1>
-        <p className="home-hero-subtitle mb-0">{heroSubtitle}</p>
-      </div>
-
-      {isCaregiverRole ? (
-        <div className="row g-4">
-          <div className="col-12">
-            <div className="home-priority-grid">
-              {caregiverPriorityCards.map((card) => (
-                <div className="home-priority-card" key={card.title}>
-                  <div className="home-priority-icon">{card.icon}</div>
-                  <div className="home-priority-title">{card.title}</div>
-                  <div className="home-priority-note">{card.note}</div>
-                  <div className="home-priority-state">{card.state}</div>
-                </div>
-              ))}
+      <section className={`home-hero-banner home-hero-banner-compact ${isCaregiverRole ? "home-hero-banner-caregiver" : "home-hero-banner-patient"} mb-4`}>
+        <div className="home-hero-main">
+          <div>
+            <div className="home-hero-brand">(주)케어브릿지</div>
+            <h1 className="home-hero-title">{heroTitle}</h1>
+            <p className="home-hero-subtitle mb-0">{heroSubtitle}</p>
+          </div>
+          <div className="home-hero-side home-hero-side-compact">
+            <div className="home-hero-chip">
+              <span className="home-hero-chip-label">{isCaregiverRole ? "현재 선택 복약자" : "사용자"}</span>
+              <strong>{selectedHomePatientLabel}</strong>
+            </div>
+            <div className="home-hero-chip">
+              <span className="home-hero-chip-label">미확인 알림</span>
+              <strong>{unreadNotificationCount}건</strong>
             </div>
           </div>
+        </div>
+        <img className="home-hero-mascot-floating" src={`${import.meta.env.BASE_URL}mascot.png`} alt="" aria-hidden="true" />
+      </section>
 
-          <div className="col-xl-8">
-            <div className="card home-info-card mb-3">
-              <div className="card-body">
-                <h6 className="card-title fw-semibold">📄 최근 문서 상태</h6>
-                <div className="home-action-grid">
-                  <div className="home-action-card">
-                    <div className="home-action-title">인식 대기 문서</div>
-                    <div className="home-action-desc">새 문서 업로드 후 OCR 완료 여부 확인</div>
-                  </div>
-                  <div className="home-action-card">
-                    <div className="home-action-title">약 정보 검토</div>
-                    <div className="home-action-desc">추출된 약 정보를 최종 확인</div>
-                  </div>
-                  <div className="home-action-card">
-                    <div className="home-action-title">가이드 반영</div>
-                    <div className="home-action-desc">문서 변경 시 최신 가이드 재확인</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="row g-3">
-              <div className="col-md-6">
-                <div className="card home-info-card">
-                  <div className="card-body">
-                    <h6 className="card-title fw-semibold">🏥 병원 일정</h6>
-                    <div className="home-kpi-list">
-                      <div className="home-kpi-item">
-                        <span className="home-kpi-label">이번 주 일정</span>
-                        <span className="home-kpi-value">확인 필요</span>
-                      </div>
-                      <div className="home-kpi-item">
-                        <span className="home-kpi-label">재진/검사 일정</span>
-                        <span className="home-kpi-value">놓치지 않기</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="col-md-6">
-                <div className="card home-info-card">
-                  <div className="card-body">
-                    <h6 className="card-title fw-semibold">🧭 보호자 이용 안내</h6>
-                    <div className="home-guide-list">
-                      {caregiverHomeSteps.map((step, index) => (
-                        <div key={step} className="home-guide-item">
-                          <span className="home-guide-index">{index + 1}</span>
-                          <span>{step}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="col-xl-4">
-            <div className="card home-info-card mb-3">
-              <div className="card-body">
-                <h6 className="card-title fw-semibold">👤 현재 선택 복약자</h6>
-                <div className="fw-semibold">{selectedHomePatientLabel}</div>
-                <div className="home-info-note mt-1">연동 복약자 {linkedPatients.length}명</div>
-                <label className="form-label small mt-3 mb-1">관리 대상 선택</label>
+      <div className="home-core-grid">
+        <section className="card home-info-card home-core-card home-core-calendar-card">
+          <div className="card-body">
+            {isCaregiverRole && (
+              <div>
+                <label className="form-label small mb-1">보기 기준</label>
                 <select
                   className="form-select form-select-sm"
-                  value={String(activeHomePatient?.id || "")}
+                  value={homePatientId || ""}
                   onChange={(event) => setHomePatientId(event.target.value)}
                 >
+                  {linkedPatients.length > 0 && <option value="all">전체 복약자</option>}
                   {linkedPatients.length === 0 && <option value="">연동 복약자 없음</option>}
                   {linkedPatients.map((patient) => (
                     <option key={patient.id} value={String(patient.id)}>
@@ -2181,122 +2464,177 @@ function App() {
                   ))}
                 </select>
               </div>
-            </div>
+            )}
 
-            <div className="card home-info-card mb-3">
-              <div className="card-body">
-                <h6 className="card-title fw-semibold">🔔 알림/리마인드</h6>
-                <div className="home-kpi-list">
-                  <div className="home-kpi-item">
-                    <span className="home-kpi-label">복약 리마인드</span>
-                    <span className="home-kpi-value">즉시 발송 가능</span>
-                  </div>
-                  <div className="home-kpi-item">
-                    <span className="home-kpi-label">누락 알림 점검</span>
-                    <span className="home-kpi-value">알림센터 확인</span>
-                  </div>
-                </div>
-                <div className="home-link-stack mt-3">
-                  <a className="btn btn-primary btn-sm" href="/auth-demo/app/caregiver">알림센터 열기</a>
-                  <a className="btn btn-outline-secondary btn-sm" href="/auth-demo/app/settings">설정에서 연동 관리</a>
-                </div>
+            <div className="home-mini-calendar mt-3">
+              <div className="home-mini-calendar-head">
+                <strong>{monthLabel}</strong>
+                <span className="small text-muted">오늘 {homeToday.getDate()}일</span>
+              </div>
+              <div className="home-mini-calendar-weekdays">
+                {["일", "월", "화", "수", "목", "금", "토"].map((day) => (
+                  <span key={day}>{day}</span>
+                ))}
+              </div>
+              <div className="home-mini-calendar-grid">
+                {calendarCells.map((day, index) => {
+                  const dayEvents = day === null ? [] : calendarEventMap.get(day) || [];
+                  return (
+                    <div
+                      key={`${day || "empty"}-${index}`}
+                      className={[
+                        "home-mini-calendar-cell",
+                        day === null ? "is-empty" : "",
+                        day === homeToday.getDate() ? "is-today" : "",
+                        day !== null &&
+                        selectedScheduleDateKey ===
+                          `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+                          ? "is-selected"
+                          : "",
+                        dayEvents.length > 0 ? "has-event" : "",
+                      ].join(" ").trim()}
+                      onClick={() => {
+                        if (day === null) return;
+                        setHomeSelectedDate(
+                          `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+                        );
+                      }}
+                    >
+                      {day !== null && <div className="home-mini-calendar-date">{day}</div>}
+                      {dayEvents.length > 0 && (
+                        <div className="home-mini-calendar-events">
+                          {dayEvents.slice(0, 2).map((eventItem) => {
+                            const patientLabel = getPatientLabel(eventItem.patient_id);
+                            const title = eventItem.title || "일정";
+                            const label = isCaregiverRole && isCaregiverAllView ? `[${patientLabel}] ${title}` : title;
+                            return (
+                              <div key={eventItem.id} className="home-mini-calendar-event" title={label}>
+                                {label}
+                              </div>
+                            );
+                          })}
+                          {dayEvents.length > 2 && (
+                            <div className="home-mini-calendar-more">+{dayEvents.length - 2}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="card home-info-card">
-              <div className="card-body">
-                <h6 className="card-title fw-semibold">🤖 최신 AI 가이드</h6>
-                <div className="home-info-note">복약자 상태 변화가 있다면 가이드를 다시 확인하세요.</div>
-              </div>
+            <div className="home-inline-list mt-3">
+              <div className="home-inline-title">{selectedScheduleDateLabel} 일정</div>
+              {homeScheduleState.loading ? (
+                <div className="home-inline-empty">일정을 불러오는 중...</div>
+              ) : homeScheduleState.error ? (
+                <div className="home-inline-empty">일정을 불러오지 못했습니다.</div>
+              ) : selectedScheduleItems.length === 0 ? (
+                <div className="home-inline-empty">선택한 날짜의 일정이 없습니다.</div>
+              ) : (
+                <div className="home-inline-stack">
+                  {selectedScheduleItems.slice(0, 5).map((item) => {
+                    const patientLabel = getPatientLabel(item.patient_id);
+                    const title = item.title || "일정";
+                    return (
+                      <div key={item.id} className="home-inline-row">
+                        <span className="home-inline-time">{formatClockTime(item.scheduled_at)}</span>
+                        <span className="home-inline-main">
+                          {isCaregiverRole ? `[${patientLabel}] ${title}` : title}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="row g-4">
-          <div className="col-xl-8">
-            <div className="card home-info-card mb-3">
-              <div className="card-body">
-                <h5 className="fw-bold mb-3">🧭 오늘 해야 할 일</h5>
-                <div className="home-action-grid">
-                  {patientTodoCards.map((card) => (
-                    <div key={card.title} className="home-action-card">
-                      <div className="home-action-title">
-                        <span>{card.icon}</span> {card.title}
+        </section>
+
+        <div className="home-side-stack">
+          <a className="card home-info-card home-core-card home-core-link-card" href="/auth-demo/app/medication-check">
+            <div className="card-body">
+              <h6 className="card-title fw-semibold">
+                {isCaregiverRole ? "💊 복약 확인 필요" : "💊 오늘 복약 일정"}
+              </h6>
+              <div className="home-kpi-list">
+                <div className="home-kpi-item">
+                  <span className="home-kpi-label">{isCaregiverRole ? "확인 필요 복약자" : "오늘 복약 횟수"}</span>
+                  <span className="home-kpi-value">
+                    {isCaregiverRole ? `${caregiverNeedCheckPatientCount}명` : `${medicationItems.length}회`}
+                  </span>
+                </div>
+                <div className="home-kpi-item">
+                  <span className="home-kpi-label">{isCaregiverRole ? "미복약/지연" : "다음 복약 시간"}</span>
+                  <span className="home-kpi-value">
+                    {isCaregiverRole ? `${caregiverMissedCount}건` : nextMedicationItem ? formatClockTime(nextMedicationItem.scheduled_at) : "일정 없음"}
+                  </span>
+                </div>
+                <div className="home-kpi-item">
+                  <span className="home-kpi-label">{isCaregiverRole ? "오늘 복약 건수" : "완료/미완료"}</span>
+                  <span className="home-kpi-value">
+                    {isCaregiverRole ? `${medicationItems.length}건` : `${takenMedicationCount}/${takenMedicationCount + remainingMedicationCount}`}
+                  </span>
+                </div>
+              </div>
+
+              <div className="home-inline-list mt-3">
+                <div className="home-inline-title">{isCaregiverRole ? "오늘 확인 항목" : "하루 복약 목록"}</div>
+                {homeMedicationState.loading ? (
+                  <div className="home-inline-empty">복약 상태를 불러오는 중...</div>
+                ) : homeMedicationState.error ? (
+                  <div className="home-inline-empty">복약 상태를 불러오지 못했습니다.</div>
+                ) : medicationListItems.length === 0 ? (
+                  <div className="home-inline-empty">오늘 복약 일정이 없습니다.</div>
+                ) : (
+                  <div className="home-inline-stack">
+                    {medicationListItems.map((item) => (
+                      <div key={item.id} className="home-inline-row">
+                        <span className="home-inline-time">{formatClockTime(item.scheduled_at)}</span>
+                        <span className="home-inline-main">
+                          {isCaregiverRole
+                            ? `${getPatientLabel(item.patient_id)} · 약 #${item.patient_med_id}`
+                            : `약 #${item.patient_med_id}`}
+                        </span>
+                        <span className={`home-med-status status-${item.status}`}>{intakeStatusLabel(item.status)}</span>
                       </div>
-                      <div className="home-action-desc">{card.desc}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </a>
+
+          <a className="card home-info-card home-core-card home-core-link-card" href="/auth-demo/app/caregiver">
+            <div className="card-body">
+              <h6 className="card-title fw-semibold">{isCaregiverRole ? "🔔 알림/리마인드" : "🔔 새로운 알림"}</h6>
+              {homeNotificationsState.loading ? (
+                <div className="home-info-note">알림을 불러오는 중...</div>
+              ) : homeNotificationsState.error ? (
+                <div className="home-info-note">알림을 불러오지 못했습니다.</div>
+              ) : homeNotificationItems.length === 0 ? (
+                <div className="home-info-note">최근 알림이 없습니다.</div>
+              ) : (
+                <div className="home-notification-list">
+                  {homeNotificationItems.map((item) => (
+                    <div key={item.id} className={`home-notification-item ${item.read_at ? "" : "unread"}`}>
+                      <div className="home-notification-head">
+                        <strong>{item.title || "알림"}</strong>
+                        {!item.read_at && <span className="home-notification-badge">미확인</span>}
+                      </div>
+                      <div className="home-notification-body">
+                        {item.body || item.message || "상세 알림은 알림센터에서 확인하세요."}
+                      </div>
+                      <div className="home-notification-time">{formatDateTime(item.created_at || item.sent_at)}</div>
                     </div>
                   ))}
                 </div>
-              </div>
+              )}
             </div>
-
-            <div className="row g-3">
-              <div className="col-md-4">
-                <div className="card home-info-card h-100">
-                  <div className="card-body">
-                    <h6 className="card-title fw-semibold">📄 최근 문서</h6>
-                    <div className="home-info-note">업로드 문서와 인식 상태를 빠르게 확인하세요.</div>
-                  </div>
-                </div>
-              </div>
-              <div className="col-md-4">
-                <div className="card home-info-card h-100">
-                  <div className="card-body">
-                    <h6 className="card-title fw-semibold">🤖 최신 AI 가이드</h6>
-                    <div className="home-info-note">최신 안내를 확인하고 필요한 상담으로 이어가세요.</div>
-                  </div>
-                </div>
-              </div>
-              <div className="col-md-4">
-                <div className="card home-info-card h-100">
-                  <div className="card-body">
-                    <h6 className="card-title fw-semibold">🏥 병원 일정</h6>
-                    <div className="home-info-note">외래/검사 일정과 방문 계획을 확인하세요.</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="col-xl-4">
-            <div className="card home-info-card mb-3">
-              <div className="card-body">
-                <h6 className="card-title fw-semibold">📊 복약 진행 상태</h6>
-                <div className="home-kpi-list">
-                  <div className="home-kpi-item">
-                    <span className="home-kpi-label">오늘 복약 체크</span>
-                    <span className="home-kpi-value">진행 중</span>
-                  </div>
-                  <div className="home-kpi-item">
-                    <span className="home-kpi-label">최근 문서 확인</span>
-                    <span className="home-kpi-value">확인 필요</span>
-                  </div>
-                  <div className="home-kpi-item">
-                    <span className="home-kpi-label">AI 가이드 확인</span>
-                    <span className="home-kpi-value">권장</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="card home-info-card">
-              <div className="card-body">
-                <h6 className="card-title fw-semibold">🚀 빠른 실행</h6>
-                <div className="home-link-stack">
-                  {patientQuickActions.map((button) => (
-                    <a key={button.href} className={`btn btn-sm ${button.variant}`} href={button.href}>
-                      {button.label}
-                    </a>
-                  ))}
-                </div>
-                <div className="home-info-note mt-3">
-                  문서 업로드 → AI 가이드 확인 → 알림센터 점검 순서로 이용하면 빠릅니다.
-                </div>
-              </div>
-            </div>
-          </div>
+          </a>
         </div>
-      )}
+      </div>
     </AppLayout>
   );
 }

@@ -83,6 +83,15 @@ async def admin_signup_page() -> HTMLResponse:
     return HTMLResponse(content=admin_signup_file.read_text(encoding="utf-8"))
 
 
+@app.get("/auth-demo/app/mascot.png", include_in_schema=False)
+async def mascot_image():
+    from fastapi.responses import FileResponse
+    mascot_file = auth_app_dir / "mascot.png"
+    if mascot_file.exists():
+        return FileResponse(mascot_file)
+    return HTMLResponse(content="not found", status_code=404)
+
+
 @app.get("/auth-demo/app", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/dashboard", include_in_schema=False, response_class=HTMLResponse)
@@ -92,6 +101,7 @@ async def admin_signup_page() -> HTMLResponse:
 @app.get("/auth-demo/app/ai", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/drug-search", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/schedule", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/auth-demo/app/medication-check", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/settings", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/auth-demo/app/profile", include_in_schema=False, response_class=HTMLResponse)
 async def auth_app_page() -> HTMLResponse:

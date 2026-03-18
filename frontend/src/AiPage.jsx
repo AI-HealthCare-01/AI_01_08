@@ -5,27 +5,27 @@ const API_PREFIX = "/api/v1";
 
 const pageStyle = {
   minHeight: "100vh",
-  background: "linear-gradient(145deg, #f8fbff 0%, #dfeafb 100%)",
+  background: "linear-gradient(145deg, #f4f6fb 0%, #ecf3fc 100%)",
 };
 
 const mainCardStyle = {
-  borderRadius: "28px",
-  background: "rgba(255, 255, 255, 0.96)",
-  border: "1px solid #d7e3f4",
-  boxShadow: "0 18px 40px rgba(37, 99, 235, 0.1)",
+  borderRadius: "18px",
+  background: "#ffffff",
+  border: "1px solid #e4ebf7",
+  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.06)",
 };
 
 const blockCardStyle = {
-  borderRadius: "22px",
+  borderRadius: "16px",
   background: "#ffffff",
-  border: "1px solid #dbe7f6",
-  boxShadow: "0 12px 28px rgba(37, 99, 235, 0.07)",
+  border: "1px solid #e4ebf7",
+  boxShadow: "0 9px 22px rgba(15, 23, 42, 0.045)",
 };
 
 const metricCardStyle = {
-  borderRadius: "18px",
-  background: "linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%)",
-  border: "1px solid #d7e3f4",
+  borderRadius: "14px",
+  background: "linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%)",
+  border: "1px solid #e2eaf8",
   padding: "20px",
   height: "100%",
 };
@@ -49,12 +49,12 @@ const statusColorMap = {
 };
 
 const heroBannerStyle = {
-  borderRadius: "24px",
+  borderRadius: "18px",
   padding: "28px",
   marginBottom: "28px",
-  background: "linear-gradient(135deg, #0f3d91 0%, #2563eb 58%, #4f8df7 100%)",
+  background: "linear-gradient(135deg, #13448e 0%, #2563eb 58%, #4b85e0 100%)",
   color: "#ffffff",
-  boxShadow: "0 18px 40px rgba(37, 99, 235, 0.22)",
+  boxShadow: "0 14px 32px rgba(37, 99, 235, 0.2)",
 };
 
 const primaryActionButtonStyle = {
@@ -1409,7 +1409,7 @@ function AiPage({
                           padding: "18px",
                         }}
                       >
-                        <img src="/mascot.png" alt="약속이 챗봇 열기" style={{ width: "84px", height: "auto" }} />
+                        <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이 챗봇 열기" style={{ width: "84px", height: "auto" }} />
                         <div className="fw-semibold" style={{ color: "#1d4ed8" }}>약속이 AI 상담</div>
                         <div className="small text-muted text-center">가이드 내용을 이어서 질문하고 답변을 확인하세요.</div>
                       </button>
@@ -1448,7 +1448,7 @@ function AiPage({
         onClick={openChatPanel}
         style={{
           position: "fixed",
-          right: "28px",
+          right: "calc(28px + (100vw - 100%))",
           bottom: "28px",
           width: "78px",
           height: "78px",
@@ -1460,7 +1460,7 @@ function AiPage({
           zIndex: 1050,
         }}
       >
-        <img src="/mascot.png" alt="약속이 열기" style={{ width: "48px", height: "48px" }} />
+        <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이 열기" style={{ width: "48px", height: "48px" }} />
       </button>
 
       {chatState.open && (
@@ -1496,7 +1496,7 @@ function AiPage({
             >
               <div className="d-flex justify-content-between align-items-start gap-3">
                 <div className="d-flex gap-3">
-                  <img src="/mascot.png" alt="약속이" style={{ width: "56px", height: "56px" }} />
+                  <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: "56px", height: "56px" }} />
                   <div>
                     <div className="small text-muted">AI 상담</div>
                     <div className="fw-semibold fs-5">약속이와 대화하기</div>
@@ -1562,7 +1562,7 @@ function AiPage({
                     gap: "12px",
                   }}
                 >
-                  <img src="/mascot.png" alt="약속이" style={{ width: "88px", height: "88px" }} />
+                  <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: "88px", height: "88px" }} />
                   <div className="fw-semibold">안녕하세요, 약속이예요.</div>
                   <div className="small">약 설명, 복약 일정, 가이드 내용, 생활 관리 포인트를 이어서 물어보세요.</div>
                 </div>

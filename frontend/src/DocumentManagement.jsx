@@ -150,6 +150,9 @@ function DocumentManagement({
   const [drugs, setDrugs] = useState([]);
   const [drugsLoading, setDrugsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingDocument, setDeletingDocument] = useState(false);
+  const [bulkDeletingDocuments, setBulkDeletingDocuments] = useState(false);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
   const [saveMsg, setSaveMsg] = useState(null);
   const [pollingId, setPollingId] = useState(null);
   const [showReviewOnly, setShowReviewOnly] = useState(false);
@@ -262,6 +265,16 @@ function DocumentManagement({
     if (listPatientFilter === "all") return documents;
     return documents.filter((doc) => String(doc.patient_id) === String(listPatientFilter));
   }, [documents, isCaregiver, listPatientFilter]);
+  const filteredDocumentIdKeys = useMemo(
+    () => filteredDocuments.map((doc) => String(doc.document_id || doc.id)).filter(Boolean),
+    [filteredDocuments],
+  );
+  const isAllFilteredSelected =
+    filteredDocumentIdKeys.length > 0 && filteredDocumentIdKeys.every((docId) => selectedDocumentIds.includes(docId));
+
+  useEffect(() => {
+    setSelectedDocumentIds((prev) => prev.filter((docId) => filteredDocumentIdKeys.includes(docId)));
+  }, [filteredDocumentIdKeys]);
 
   const getPatientDisplayLabel = useCallback(
     (targetPatientId) => {
@@ -566,6 +579,110 @@ function DocumentManagement({
     }
   };
 
+  const handleDeleteDocument = async (documentId, options = {}) => {
+    if (!documentId || deletingDocument || bulkDeletingDocuments) return;
+    const shouldDelete = window.confirm("이 문서를 삭제하시겠습니까?\n삭제 후 문서 목록에서 숨김 처리됩니다.");
+    if (!shouldDelete) return;
+
+    setDeletingDocument(true);
+    setError(null);
+    setUploadNotice(null);
+    setSaveMsg(null);
+    try {
+      const res = await authFetch(`${API_PREFIX}/documents/${documentId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const detail =
+          typeof body?.detail === "object"
+            ? body?.detail?.message
+            : body?.detail;
+        throw new Error(detail || `status ${res.status}`);
+      }
+
+      if (options.afterDelete === "backToList") {
+        setUploadNotice("문서가 삭제되었습니다.");
+        goBackToList();
+      } else {
+        setSelectedDocumentIds((prev) => prev.filter((docId) => docId !== String(documentId)));
+        setUploadNotice("문서가 삭제되었습니다.");
+        await loadDocuments();
+      }
+    } catch (err) {
+      setError(err?.message || "문서 삭제에 실패했습니다.");
+    } finally {
+      setDeletingDocument(false);
+    }
+  };
+
+  const toggleSelectDocument = (documentId, checked) => {
+    const targetId = String(documentId);
+    setSelectedDocumentIds((prev) => {
+      if (checked) {
+        if (prev.includes(targetId)) return prev;
+        return [...prev, targetId];
+      }
+      return prev.filter((id) => id !== targetId);
+    });
+  };
+
+  const toggleSelectAllFilteredDocuments = (checked) => {
+    setSelectedDocumentIds((prev) => {
+      if (!checked) {
+        return prev.filter((id) => !filteredDocumentIdKeys.includes(id));
+      }
+      return Array.from(new Set([...prev, ...filteredDocumentIdKeys]));
+    });
+  };
+
+  const handleDeleteSelectedDocuments = async () => {
+    if (selectedDocumentIds.length === 0 || deletingDocument || bulkDeletingDocuments) return;
+    const shouldDelete = window.confirm(
+      `선택한 문서 ${selectedDocumentIds.length}건을 삭제하시겠습니까?\n삭제 후 문서 목록에서 숨김 처리됩니다.`,
+    );
+    if (!shouldDelete) return;
+
+    setBulkDeletingDocuments(true);
+    setError(null);
+    setUploadNotice(null);
+
+    const deletedIds = [];
+    let firstErrorMessage = "";
+
+    try {
+      for (const documentId of selectedDocumentIds) {
+        const res = await authFetch(`${API_PREFIX}/documents/${documentId}`, { method: "DELETE" });
+        if (res.ok) {
+          deletedIds.push(documentId);
+          continue;
+        }
+
+        if (!firstErrorMessage) {
+          const body = await res.json().catch(() => ({}));
+          const detail = typeof body?.detail === "object" ? body?.detail?.message : body?.detail;
+          firstErrorMessage = detail || `status ${res.status}`;
+        }
+      }
+
+      if (deletedIds.length > 0) {
+        setSelectedDocumentIds((prev) => prev.filter((id) => !deletedIds.includes(id)));
+      }
+      await loadDocuments();
+
+      if (deletedIds.length === selectedDocumentIds.length) {
+        setUploadNotice(`${deletedIds.length}건의 문서를 삭제했습니다.`);
+      } else if (deletedIds.length > 0) {
+        setUploadNotice(`${deletedIds.length}건 삭제, ${selectedDocumentIds.length - deletedIds.length}건 실패`);
+        if (firstErrorMessage) setError(firstErrorMessage);
+      } else {
+        setError(firstErrorMessage || "선택한 문서 삭제에 실패했습니다.");
+      }
+    } catch (err) {
+      setError(err?.message || "선택한 문서 삭제 중 오류가 발생했습니다.");
+    } finally {
+      setBulkDeletingDocuments(false);
+    }
+  };
+
   const goBackToList = () => {
     setView("list");
     setCurrentDoc(null);
@@ -610,12 +727,27 @@ function DocumentManagement({
       >
           <div className="doc-header">
             <h4 className="fw-bold mb-0">인식 결과 상세</h4>
-            {isSuccess && (
-              <span className="badge bg-success-subtle text-success px-3 py-2" style={{ fontSize: "0.85rem" }}>
-                ✅ 문서 인식 완료
-              </span>
-            )}
+            <div className="d-flex align-items-center gap-2">
+              {isSuccess && (
+                <span className="badge bg-success-subtle text-success px-3 py-2" style={{ fontSize: "0.85rem" }}>
+                  ✅ 문서 인식 완료
+                </span>
+              )}
+              <button
+                className="btn btn-outline-danger btn-sm"
+                onClick={() => currentDoc?.document_id && handleDeleteDocument(currentDoc.document_id, { afterDelete: "backToList" })}
+                disabled={deletingDocument || !currentDoc?.document_id}
+              >
+                {deletingDocument ? "삭제 중..." : "문서 삭제"}
+              </button>
+            </div>
           </div>
+          {error && (
+            <div className="alert alert-danger alert-dismissible mt-3">
+              {error}
+              <button type="button" className="btn-close" onClick={() => setError(null)} />
+            </div>
+          )}
 
           {/* OCR 처리 중 */}
           {isProcessing && (
@@ -705,6 +837,13 @@ function DocumentManagement({
                     <button className="btn btn-outline-secondary btn-sm flex-fill" onClick={() => {
                       document.getElementById("reuploadInput")?.click();
                     }}>↑ 다시 업로드</button>
+                    <button
+                      className="btn btn-outline-danger btn-sm flex-fill"
+                      onClick={() => handleDeleteDocument(currentDoc.document_id, { afterDelete: "backToList" })}
+                      disabled={deletingDocument}
+                    >
+                      {deletingDocument ? "삭제 중..." : "삭제"}
+                    </button>
                     <input
                       type="file"
                       id="reuploadInput"
@@ -775,7 +914,7 @@ function DocumentManagement({
               )}
               <div className="doc-bottom-actions">
                 <button className="btn btn-outline-secondary" onClick={handleTempSave} disabled={saving}>
-                  📋 임시저장
+                  임시저장
                 </button>
                 <button className="btn btn-primary btn-lg px-5" onClick={handleConfirm} disabled={saving}>
                   확정하기
@@ -900,6 +1039,18 @@ function DocumentManagement({
                 <button className="btn btn-outline-secondary btn-sm" onClick={loadDocuments} disabled={loading}>
                   {loading ? "로딩..." : "새로고침"}
                 </button>
+                <button
+                  className="btn btn-outline-danger btn-sm"
+                  onClick={handleDeleteSelectedDocuments}
+                  disabled={
+                    selectedDocumentIds.length === 0
+                    || deletingDocument
+                    || bulkDeletingDocuments
+                    || loading
+                  }
+                >
+                  {bulkDeletingDocuments ? "선택 삭제 중..." : `선택 삭제 (${selectedDocumentIds.length})`}
+                </button>
               </div>
             </div>
             {filteredDocuments.length === 0 ? (
@@ -909,6 +1060,15 @@ function DocumentManagement({
                 <table className="table table-hover align-middle">
                   <thead>
                     <tr>
+                      <th style={{ width: "42px" }}>
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={isAllFilteredSelected}
+                          onChange={(event) => toggleSelectAllFilteredDocuments(event.target.checked)}
+                          disabled={filteredDocumentIdKeys.length === 0 || deletingDocument || bulkDeletingDocuments}
+                        />
+                      </th>
                       <th>ID</th>
                       <th>파일명</th>
                       <th>대상 복약자</th>
@@ -920,24 +1080,43 @@ function DocumentManagement({
                   <tbody>
                     {filteredDocuments.map((doc) => {
                       const docId = doc.document_id || doc.id;
+                      const docIdKey = String(docId);
                       const st = doc.ocr_status || doc.status;
                       const badgeCls = { queued: "bg-warning", processing: "bg-info", success: "bg-success", failed: "bg-danger" }[st] || "bg-secondary";
                       const stText = { queued: "대기 중", processing: "처리 중", success: "완료", failed: "실패" }[st] || st;
                       return (
                         <tr key={docId}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={selectedDocumentIds.includes(docIdKey)}
+                              onChange={(event) => toggleSelectDocument(docIdKey, event.target.checked)}
+                              disabled={deletingDocument || bulkDeletingDocuments}
+                            />
+                          </td>
                           <td>{docId}</td>
                           <td>{doc.original_filename || "—"}</td>
                           <td>{getPatientDisplayLabel(doc.patient_id)}</td>
                           <td><span className={`badge ${badgeCls}`}>{stText}</span></td>
                           <td>{new Date(doc.created_at).toLocaleString("ko-KR")}</td>
                           <td>
-                            <button className="btn btn-outline-primary btn-sm" onClick={() => openOcrView({
-                              document_id: docId, patient_id: doc.patient_id,
-                              original_filename: doc.original_filename, created_at: doc.created_at,
-                              uploaded_by_user_id: doc.uploaded_by_user_id,
-                            })}>
-                              인식 결과
-                            </button>
+                            <div className="d-flex gap-2">
+                              <button className="btn btn-outline-primary btn-sm" onClick={() => openOcrView({
+                                document_id: docId, patient_id: doc.patient_id,
+                                original_filename: doc.original_filename, created_at: doc.created_at,
+                                uploaded_by_user_id: doc.uploaded_by_user_id,
+                              })}>
+                                인식 결과
+                              </button>
+                              <button
+                                className="btn btn-outline-danger btn-sm"
+                                onClick={() => handleDeleteDocument(docId)}
+                                disabled={deletingDocument || bulkDeletingDocuments}
+                              >
+                                {deletingDocument ? "삭제 중..." : "삭제"}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

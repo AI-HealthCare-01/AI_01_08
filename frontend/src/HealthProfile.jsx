@@ -4,42 +4,42 @@ import AppLayout from "./components/AppLayout.jsx";
 const API_PREFIX = "/api/v1";
 
 const pageToneStyle = {
-  minHeight: "100vh",
-  background: "linear-gradient(145deg, #f8fbff 0%, #dfeafb 100%)",
+  minHeight: "100%",
+  background: "transparent",
 };
 
 const shellCardStyle = {
-  borderRadius: "28px",
-  background: "rgba(255, 255, 255, 0.96)",
-  border: "1px solid #d7e3f4",
-  boxShadow: "0 18px 42px rgba(37, 99, 235, 0.1)",
+  borderRadius: "16px",
+  background: "var(--app-surface-bg)",
+  border: "1px solid var(--app-surface-border)",
+  boxShadow: "var(--app-surface-shadow)",
 };
 
 const softPanelStyle = {
-  border: "1px solid #d5e2f6",
-  borderRadius: "20px",
-  background: "linear-gradient(180deg, #f8fbff 0%, #edf4ff 100%)",
-  boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.7)",
+  border: "1px solid var(--app-surface-border)",
+  borderRadius: "14px",
+  background: "var(--app-surface-bg)",
+  boxShadow: "none",
 };
 
 const metricPanelStyle = {
-  border: "1px solid #dbe7f6",
-  borderRadius: "18px",
-  background: "linear-gradient(180deg, #ffffff 0%, #f7faff 100%)",
-  boxShadow: "0 8px 20px rgba(37, 99, 235, 0.05)",
+  border: "1px solid var(--app-surface-border)",
+  borderRadius: "14px",
+  background: "var(--app-surface-bg)",
+  boxShadow: "none",
 };
 
 const primaryButtonStyle = {
   background: "#2563eb",
   borderColor: "#2563eb",
   color: "#ffffff",
-  boxShadow: "0 8px 18px rgba(37, 99, 235, 0.18)",
+  boxShadow: "none",
 };
 
 const secondaryButtonStyle = {
-  borderColor: "#cfddf1",
-  color: "#1d4ed8",
-  background: "#f7fbff",
+  borderColor: "#d4deee",
+  color: "#475569",
+  background: "#ffffff",
 };
 
 const dangerButtonStyle = {
@@ -49,11 +49,11 @@ const dangerButtonStyle = {
 };
 
 const titleAccentStyle = {
-  borderRadius: "22px",
-  padding: "18px 22px",
-  background: "linear-gradient(135deg, #eff5ff 0%, #dfeafb 100%)",
-  border: "1px solid #d3e1f5",
-  boxShadow: "0 12px 24px rgba(37, 99, 235, 0.08)",
+  borderRadius: "14px",
+  padding: "16px 18px",
+  background: "var(--app-surface-subtle)",
+  border: "1px solid var(--app-surface-border)",
+  boxShadow: "none",
 };
 
 const emptyForm = {
@@ -130,7 +130,9 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
 
   const [loginRole, setLoginRole] = useState(() => localStorage.getItem("login_role") || "PATIENT");
   const [linksState, setLinksState] = useState({ loading: false, data: null, error: null });
-  const [selectedLinkId, setSelectedLinkId] = useState(requestedLinkId || "me");
+  const [selectedLinkId, setSelectedLinkId] = useState(
+    requestedLinkId && requestedLinkId !== "me" ? requestedLinkId : ""
+  );
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -158,7 +160,6 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
     (linksState.data?.links || []).find((link) => String(link.link_id) === String(selectedLinkId)) || null;
   const selectedPatientLabel =
     selectedLink?.patient_name || (selectedLink?.patient_id ? `복약자 #${selectedLink.patient_id}` : null);
-  const isCaregiverOwnProfile = isCaregiver && selectedLinkId === "me";
 
   const hydrateForm = (data) => {
     if (!data) {
@@ -200,10 +201,12 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
           ? (body?.links || []).filter((link) => String(link.patient_id) !== String(selfPatient.id))
           : body?.links || [];
       setLinksState({ loading: false, data: { ...(body || {}), links }, error: null });
-      if (!selectedLinkId) {
-        setSelectedLinkId("me");
-      } else if (selectedLinkId !== "me" && links.length > 0 && !links.some((link) => String(link.link_id) === String(selectedLinkId))) {
-        setSelectedLinkId(String(links[0].link_id));
+      if (links.length === 0) {
+        setSelectedLinkId("");
+      } else if (selectedLinkId === "me") {
+        setSelectedLinkId("");
+      } else if (selectedLinkId && !links.some((link) => String(link.link_id) === String(selectedLinkId))) {
+        setSelectedLinkId("");
       }
     } catch (err) {
       setLinksState({ loading: false, data: null, error: err?.message || String(err) });
@@ -211,7 +214,6 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
   };
 
   const loadProfile = async () => {
-    // Louis수정(코드삭제): 보호자도 무조건 /users/me/health-profile 를 치던 기존 단일 흐름 제거
     if (isCaregiver && !selectedLinkId) {
       setProfile(null);
       hydrateForm(null);
@@ -331,7 +333,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
     isCaregiver ? "건강 프로필 관리" : "건강 프로필";
 
   const handleCaregiverPatientChange = (nextValue) => {
-    setSelectedLinkId(nextValue || "me");
+    setSelectedLinkId(nextValue && nextValue !== "me" ? nextValue : "");
     setEditing(false);
     setNotice(null);
     setError(null);
@@ -365,14 +367,14 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
       currentMode={currentMode}
       onModeChange={onModeChange}
     >
-      <div style={pageToneStyle} className="rounded-4 p-3">
+      <div style={pageToneStyle} className="p-2">
       <div className="row justify-content-center">
         <div className="col-lg-9">
           <div className="card shadow-sm" style={shellCardStyle}>
             <div className="card-body">
               <div className="d-flex justify-content-between align-items-center mb-4">
                 <div>
-                  <h3 className="mb-1" style={{ color: "#1e40af" }}>{title}</h3>
+                  <h3 className="mb-1" style={{ color: "#1f2937" }}>{title}</h3>
                   <div className="text-muted small">
                     {isCaregiver
                       ? "내 정보와 연동된 복약자 프로필을 한 화면에서 관리할 수 있습니다."
@@ -380,6 +382,15 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                   </div>
                 </div>
                 <div className="d-flex gap-2">
+                  {isCaregiver && selectedLinkId && !editing && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={secondaryButtonStyle}
+                      onClick={() => handleCaregiverPatientChange("")}
+                    >
+                      뒤로가기
+                    </button>
+                  )}
                   {profile && !editing && (
                     <>
                       <button className="btn btn-primary btn-sm" style={primaryButtonStyle} onClick={() => setEditing(true)}>
@@ -401,12 +412,12 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
               <div style={titleAccentStyle} className="mb-4">
                 <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
                   <div>
-                    <div className="small" style={{ color: "#64748b" }}>프로필 활용 안내</div>
-                    <div className="fw-semibold" style={{ color: "#1e3a8a" }}>
+                    <div className="small" style={{ color: "#6b7280" }}>프로필 활용 안내</div>
+                    <div className="fw-semibold" style={{ color: "#334155" }}>
                       정리된 건강 정보는 가이드, 상담, 복약 관리 화면에서 공통으로 활용됩니다.
                     </div>
                   </div>
-                  <div className="small" style={{ color: "#475569" }}>
+                  <div className="small" style={{ color: "#6b7280" }}>
                     수면 · 운동 · 알레르기 · 기저질환 · 복용약
                   </div>
                 </div>
@@ -422,7 +433,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                         value={selectedLinkId}
                         onChange={(event) => handleCaregiverPatientChange(event.target.value)}
                       >
-                        <option value="me">내 건강 프로필</option>
+                        <option value="">선택</option>
                         {(!linksState.data?.links || linksState.data.links.length === 0) && (
                           <option value="" disabled>연동된 복약자 없음</option>
                         )}
@@ -451,35 +462,31 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                   {linksState.error && <div className="alert alert-danger mt-3 mb-0">{linksState.error}</div>}
                   {!linksState.error && (!linksState.data?.links || linksState.data.links.length === 0) && (
                     <div className="alert alert-secondary mt-3 mb-0">
-                      아직 연동된 복약자가 없습니다. 그래도 내 건강 프로필은 이 화면에서 바로 작성할 수 있습니다.
+                      아직 연동된 복약자가 없습니다. 연동된 복약자만 프로필을 등록·관리할 수 있습니다.
                     </div>
                   )}
                 </div>
               )}
 
-              {isCaregiver && (isCaregiverOwnProfile || selectedLink) && (
+              {isCaregiver && selectedLink && (
                 <div className="border rounded p-3 mb-4" style={softPanelStyle}>
                   <div className="d-flex flex-wrap justify-content-between align-items-start gap-3">
                     <div>
-                      <div className="text-muted small">{isCaregiverOwnProfile ? "현재 선택된 프로필" : "현재 선택된 복약자"}</div>
-                      <div className="fw-semibold fs-5">
-                        {isCaregiverOwnProfile ? "내 건강 프로필" : selectedPatientLabel}
+                      <div className="text-muted small">현재 선택된 복약자</div>
+                      <div className="fw-semibold fs-5">{selectedPatientLabel}</div>
+                      <div className="small text-muted mt-1">
+                        연동 상태: {selectedLink.status === "active" ? "활성" : selectedLink.status || "—"}
                       </div>
-                      {!isCaregiverOwnProfile && (
-                        <div className="small text-muted mt-1">
-                          연동 상태: {selectedLink.status === "active" ? "활성" : selectedLink.status || "—"}
-                        </div>
-                      )}
-                      {!isCaregiverOwnProfile && selectedLink.linked_at && (
+                      {selectedLink.linked_at && (
                         <div className="small text-muted">
                           연동일 {new Date(selectedLink.linked_at).toLocaleDateString("ko-KR")}
                         </div>
                       )}
                     </div>
                     <div className="small text-muted">
-                      {!isCaregiverOwnProfile && "보호자 연동 정보는 설정에서 관리할 수 있습니다."}
-                      {!isCaregiverOwnProfile && <br />}
-                      {!isCaregiverOwnProfile && "문서 확인은 처방전 업로드 메뉴에서 할 수 있습니다."}
+                      보호자 연동 정보는 설정에서 관리할 수 있습니다.
+                      <br />
+                      문서 확인은 처방전 업로드 메뉴에서 할 수 있습니다.
                     </div>
                   </div>
                 </div>
@@ -493,8 +500,6 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                   <p className="text-muted mb-3">
                     {isCaregiver && selectedLink && profileMissing
                       ? `${selectedLink.patient_name || "선택한 복약자"}의 건강 프로필이 없습니다.`
-                      : isCaregiverOwnProfile && profileMissing
-                        ? "내 건강 프로필이 아직 등록되지 않았습니다."
                       : isCaregiver
                           ? "연동된 복약자를 선택해 주세요."
                         : "등록된 건강 프로필이 없습니다."}
@@ -504,12 +509,12 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                       복약자 기본 정보와 생활습관을 먼저 등록해 두면 이후 가이드, 상담, 일정 기능에서 재사용됩니다.
                     </div>
                   )}
-                  {isCaregiverOwnProfile && (
+                  {isCaregiver && !selectedLink && (
                     <div className="small text-muted mb-3">
-                      보호자 본인도 복약자가 될 수 있으므로 내 건강 프로필을 따로 관리할 수 있습니다.
+                      보호자 모드에서는 연동된 복약자의 건강 프로필만 등록·관리할 수 있습니다.
                     </div>
                   )}
-                  {(!isCaregiver || selectedLinkId) && (
+                  {(!isCaregiver || selectedLink) && (
                     <button className="btn btn-primary" style={primaryButtonStyle} onClick={() => setEditing(true)}>
                       건강 프로필 등록
                     </button>
@@ -694,7 +699,7 @@ function HealthProfile({ modeOptions = [], currentMode = "PATIENT", onModeChange
                         {profile.birth_year || "—"} / {profile.sex || "—"}
                       </div>
                       <div className="small text-muted mt-1">
-                        {isCaregiverOwnProfile ? "보호자 본인 프로필" : selectedPatientLabel || "본인 프로필"}
+                        {isCaregiver ? selectedPatientLabel || "선택된 복약자" : "본인 프로필"}
                       </div>
                     </div>
                   </div>
