@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
+from tortoise.expressions import Q
+
 from app.models.notification_settings import NotificationSettings
 from app.models.notifications import Notification
 from app.models.schedules import IntakeLog, MedSchedule, MedScheduleTime
@@ -13,7 +15,6 @@ from app.services.medication_intake_service import (
     _parse_days_of_week,
 )
 from app.services.queue_service import enqueue_send_notification
-from tortoise.expressions import Q
 
 INTAKE_REMINDER_TYPE = "intake_reminder"
 MISSED_ALERT_TYPE = "missed_alert"
@@ -42,10 +43,7 @@ def _daterange(date_from: date, date_to: date) -> list[date]:
 
 
 def _build_reminder_key(slot: MedicationSlot, stage: str) -> str:
-    return (
-        f"med:{slot.patient_id}:{slot.schedule_id}:{slot.schedule_time_id}:"
-        f"{slot.scheduled_at.isoformat()}:{stage}"
-    )
+    return f"med:{slot.patient_id}:{slot.schedule_id}:{slot.schedule_time_id}:{slot.scheduled_at.isoformat()}:{stage}"
 
 
 def _build_slot_payload(slot: MedicationSlot, stage: str) -> dict[str, object]:
@@ -94,7 +92,7 @@ async def _notification_already_created(user_id: int, notification_type: str, re
     ).exists()
 
 
-async def _load_candidate_slots(window_start: datetime, window_end: datetime) -> list[MedicationSlot]:
+async def _load_candidate_slots(window_start: datetime, window_end: datetime) -> list[MedicationSlot]:  # noqa: C901
     grace = timedelta(minutes=GRACE_MINUTES)
     range_start = (window_start - grace).date()
     range_end = window_end.date()
@@ -178,13 +176,17 @@ async def dispatch_due_medication_notifications(*, window_start: datetime, windo
 
         if intake_due and slot.patient_user_id:
             reminder_key = _build_reminder_key(slot, "intake")
-            if await _is_notification_enabled(slot.patient_user_id, "intake_reminder") and not await _notification_already_created(
+            if await _is_notification_enabled(
+                slot.patient_user_id, "intake_reminder"
+            ) and not await _notification_already_created(
                 slot.patient_user_id,
                 INTAKE_REMINDER_TYPE,
                 reminder_key,
             ):
                 title, body = _build_intake_message(slot)
-                payload_json = json.dumps(_build_slot_payload(slot, "intake"), ensure_ascii=False, separators=(",", ":"))
+                payload_json = json.dumps(
+                    _build_slot_payload(slot, "intake"), ensure_ascii=False, separators=(",", ":")
+                )
                 notif = await Notification.create(
                     user_id=slot.patient_user_id,
                     patient_id=slot.patient_id,
