@@ -110,9 +110,20 @@ async def ensure_user_roles_schema_compatibility() -> None:
         )
 
 
+async def ensure_notification_settings_schema_compatibility() -> None:
+    if not await _table_exists("notification_settings"):
+        return
+
+    if not await _column_exists("notification_settings", "hospital_schedule_reminder"):
+        await _safe_exec(
+            "ALTER TABLE notification_settings ADD COLUMN hospital_schedule_reminder BOOL NOT NULL DEFAULT 1;"
+        )
+
+
 async def bootstrap_database() -> None:
     # Create missing tables for current models without dropping existing data.
     await Tortoise.generate_schemas(safe=True)
     await ensure_users_schema_compatibility()
     await ensure_roles_schema_compatibility()
     await ensure_user_roles_schema_compatibility()
+    await ensure_notification_settings_schema_compatibility()

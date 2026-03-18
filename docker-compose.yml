@@ -139,6 +139,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
+      - ./app:/app/app
       - ./app_worker:/app/app_worker
 
 volumes:
