@@ -21,7 +21,9 @@ class InvitationService:
 
         patient = await Patient.get_or_none(user_id=user.id)
         if not patient:
-            patient = await Patient.create(user_id=user.id, owner_user_id=user.id, display_name=user.name)
+            patient = await Patient.create(
+                user_id=user.id, owner_user_id=user.id, display_name=user.name
+            )
 
         now = datetime.now(config.TIMEZONE)
         expires_at = now + timedelta(minutes=expires_in_minutes)
@@ -158,7 +160,9 @@ class InvitationService:
         if is_patient:
             patient = await Patient.get_or_none(user_id=user.id)
             if not patient:
-                patient = await Patient.create(user_id=user.id, owner_user_id=user.id, display_name=user.name)
+                patient = await Patient.create(
+                    user_id=user.id, owner_user_id=user.id, display_name=user.name
+                )
 
             links = (
                 await CaregiverPatientLink.filter(
