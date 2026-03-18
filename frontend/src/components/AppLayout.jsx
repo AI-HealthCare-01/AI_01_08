@@ -432,7 +432,7 @@ function AppLayout({
             }}
             aria-label="챗봇 열기"
           >
-            <img src="/mascot.png" alt="약속이 열기" style={{ width: "48px", height: "48px" }} />
+            <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이 열기" style={{ width: "48px", height: "48px" }} />
           </button>
 
           {chatOpen && (
@@ -468,7 +468,7 @@ function AppLayout({
                 >
                   <div className="d-flex justify-content-between align-items-start gap-3">
                     <div className="d-flex gap-3">
-                      <img src="/mascot.png" alt="약속이" style={{ width: "52px", height: "52px" }} />
+                      <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: "52px", height: "52px" }} />
                       <div>
                         <div className="small text-muted">AI 상담</div>
                         <div className="fw-semibold fs-5">약속이와 대화하기</div>
