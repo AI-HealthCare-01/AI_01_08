@@ -31,6 +31,7 @@ class LoginRole(StrEnum):
     PATIENT = "PATIENT"
     CAREGIVER = "CAREGIVER"
     GUARDIAN = "GUARDIAN"
+    ADMIN = "ADMIN"
 
 
 class SocialProvider(StrEnum):

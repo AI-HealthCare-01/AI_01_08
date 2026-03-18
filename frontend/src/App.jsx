@@ -1306,7 +1306,7 @@ function App() {
                       >
                         <option value="PATIENT">복약자</option>
                         <option value="CAREGIVER">보호자</option>
-                        <option value="GUARDIAN">보호자(보조)</option>
+                        <option value="ADMIN">관리자</option>
                       </select>
                     </div>
                     <div className="d-grid gap-2">
@@ -1532,6 +1532,21 @@ function App() {
       }
       window.location.href = "/auth-demo/login";
       return null;
+    }
+    if (normalizedLoginMode !== "ADMIN") {
+      return (
+        <AppLayout
+          activeKey="admin-dashboard"
+          title="접근 불가"
+          description="관리자만 접근할 수 있는 페이지입니다."
+          loginRole={loginRole}
+          modeOptions={modeOptions}
+          currentMode={normalizedLoginMode}
+          onModeChange={handleModeChange}
+        >
+          <div className="alert alert-danger mt-3">관리자 계정으로 로그인해주세요.</div>
+        </AppLayout>
+      );
     }
     return (
       <AdminDashboard

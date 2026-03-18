@@ -99,6 +99,8 @@ class AuthService:
 
     @staticmethod
     def _role_candidates(role: LoginRole) -> list[str]:
+        if role == LoginRole.ADMIN:
+            return [LoginRole.ADMIN.value]
         if role == LoginRole.GUARDIAN:
             return [LoginRole.GUARDIAN.value, LoginRole.CAREGIVER.value]
         if role == LoginRole.CAREGIVER:
