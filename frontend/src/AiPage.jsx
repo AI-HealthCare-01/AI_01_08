@@ -64,6 +64,38 @@ const primaryActionButtonStyle = {
   boxShadow: "0 8px 18px rgba(37, 99, 235, 0.18)",
 };
 
+const chatFeedbackReasons = [
+  { value: "wrong_context", label: "문맥이 어긋나요" },
+  { value: "not_helpful", label: "도움이 부족해요" },
+  { value: "fact_error", label: "정보가 부정확해요" },
+  { value: "too_generic", label: "너무 일반적이에요" },
+];
+
+const feedbackBaseButtonStyle = {
+  borderRadius: "999px",
+  border: "1px solid #d9e4f2",
+  background: "#f8fbff",
+  color: "#48627d",
+  fontSize: "0.8rem",
+  fontWeight: 600,
+  padding: "7px 12px",
+  lineHeight: 1,
+  transition: "all 0.18s ease",
+};
+
+const feedbackSelectedButtonStyle = {
+  background: "#eef9f2",
+  borderColor: "#bfe6cb",
+  color: "#1f7a45",
+  boxShadow: "0 6px 14px rgba(31, 122, 69, 0.08)",
+};
+
+const feedbackNegativeButtonStyle = {
+  background: "#fff5f5",
+  borderColor: "#f1c8c8",
+  color: "#c44a4a",
+};
+
 const scrollPanelStyle = {
   maxHeight: "320px",
   overflowY: "auto",
@@ -359,6 +391,36 @@ const getGuideStatusMeta = (status) => statusColorMap[status] || { bg: "#f1f5f9"
 
 const getChatStorageKey = (role, patientId) => `ai-chat-session:${role || "UNKNOWN"}:${patientId || "unknown"}`;
 
+const resolveChatSetupHint = ({ isCaregiver, selectedPatientId, profileMissing, profileError }) => {
+  if (isCaregiver && !selectedPatientId) {
+    return {
+      title: "상담 대상을 먼저 선택해 주세요",
+      description: "연동된 복약자를 선택하면 약속이가 해당 환자 기준으로 답변을 이어갑니다.",
+      ctaLabel: null,
+    };
+  }
+
+  if (!selectedPatientId && profileMissing) {
+    return {
+      title: "건강 프로필을 먼저 등록해 주세요",
+      description: "프로필을 한 번 등록하면 상담 대상이 연결되고, 약속이가 환자 기준으로 대화를 시작할 수 있습니다.",
+      ctaLabel: "건강 프로필 등록하기",
+    };
+  }
+
+  if (!selectedPatientId && !isCaregiver) {
+    return {
+      title: "상담 대상을 불러오지 못했어요",
+      description: profileError
+        ? "현재 계정의 복약자 정보를 불러오지 못해 상담을 시작할 수 없습니다. 건강 프로필 페이지에서 다시 연결해 주세요."
+        : "현재 계정의 복약자 정보가 연결되지 않아 상담을 시작할 수 없습니다. 건강 프로필 페이지에서 먼저 정보를 확인해 주세요.",
+      ctaLabel: "건강 프로필 확인하기",
+    };
+  }
+
+  return null;
+};
+
 function AiPage({
   modeOptions = [],
   currentMode = "PATIENT",
@@ -402,6 +464,7 @@ function AiPage({
     error: null,
   });
   const [chatInput, setChatInput] = useState("");
+  const [chatFeedbackState, setChatFeedbackState] = useState({});
   const [selectedPatientId, setSelectedPatientId] = useState(requestedPatientId || "");
   const [selectedGuideId, setSelectedGuideId] = useState("");
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
@@ -476,6 +539,12 @@ function AiPage({
   const profileBriefing = buildProfileBriefing(profileState.data);
   const medicationSnapshot = buildMedicationSnapshot(medGuideState.data);
   const medicationScheduleBriefing = buildMedicationScheduleBriefing(medGuideState.data);
+  const chatSetupHint = resolveChatSetupHint({
+    isCaregiver,
+    selectedPatientId,
+    profileMissing: profileState.missing,
+    profileError: profileState.error,
+  });
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -491,6 +560,7 @@ function AiPage({
     setSelectedGuideId("");
     setSelectedDocumentId("");
     setGuideActionState({ submitting: false, error: null, success: null });
+    setChatFeedbackState({});
     setChatState((prev) => ({
       ...prev,
       sessionId: null,
@@ -666,6 +736,7 @@ function AiPage({
 
   const loadChatMessages = async (sessionId) => {
     if (!sessionId) {
+      setChatFeedbackState({});
       setChatState((prev) => ({ ...prev, sessionId: null, messages: [] }));
       return;
     }
@@ -682,6 +753,7 @@ function AiPage({
         error: null,
         messages: body?.data?.items || [],
       }));
+      setChatFeedbackState({});
     } catch (error) {
       setChatState((prev) => ({
         ...prev,
@@ -693,8 +765,54 @@ function AiPage({
     }
   };
 
+  const ensurePatientContextForChat = async () => {
+    if (selectedPatientId || isCaregiver) {
+      return selectedPatientId;
+    }
+
+    if (profileState.data?.patient_id) {
+      const patientId = String(profileState.data.patient_id);
+      setSelectedPatientId(patientId);
+      return patientId;
+    }
+
+    const profileRes = await authFetch(`${API_PREFIX}/users/me/health-profile`);
+    if (profileRes.ok) {
+      const profileBody = await profileRes.json();
+      const patientId = String(profileBody?.data?.patient_id || "");
+      if (patientId) {
+        setProfileState({ loading: false, data: profileBody?.data || null, error: null, missing: false });
+        setSelectedPatientId(patientId);
+        return patientId;
+      }
+    }
+
+    const createRes = await authFetch(`${API_PREFIX}/users/me/health-profile`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (!createRes.ok) {
+      throw new Error("상담을 시작할 환자 정보를 준비하지 못했습니다. 건강 프로필 페이지에서 먼저 확인해 주세요.");
+    }
+
+    const createBody = await createRes.json();
+    const patientId = String(createBody?.data?.patient_id || "");
+    if (!patientId) {
+      throw new Error("상담 대상 정보를 확인하지 못했습니다. 건강 프로필을 한 번 확인해 주세요.");
+    }
+
+    setProfileState({ loading: false, data: createBody?.data || null, error: null, missing: false });
+    setSelectedPatientId(patientId);
+    return patientId;
+  };
+
   const ensureChatSession = async () => {
-    if (!selectedPatientId) {
+    let resolvedPatientId = selectedPatientId;
+    if (!resolvedPatientId && !isCaregiver) {
+      resolvedPatientId = await ensurePatientContextForChat();
+    }
+
+    if (!resolvedPatientId) {
       throw new Error("먼저 환자를 선택해 주세요.");
     }
 
@@ -702,7 +820,7 @@ function AiPage({
       return chatState.sessionId;
     }
 
-    const storageKey = getChatStorageKey(effectiveMode, selectedPatientId);
+    const storageKey = getChatStorageKey(effectiveMode, resolvedPatientId);
     const savedSessionId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
     if (savedSessionId) {
       try {
@@ -718,7 +836,7 @@ function AiPage({
     const res = await authFetch(`${API_PREFIX}/chat/sessions`, {
       method: "POST",
       body: JSON.stringify({
-        patient_id: Number(selectedPatientId),
+        patient_id: Number(resolvedPatientId),
         mode: isCaregiver ? "caregiver" : "general",
       }),
     });
@@ -733,6 +851,7 @@ function AiPage({
     if (typeof window !== "undefined") {
       window.localStorage.setItem(storageKey, sessionId);
     }
+    setChatFeedbackState({});
     setChatState((prev) => ({ ...prev, sessionId, messages: [] }));
     return sessionId;
   };
@@ -742,7 +861,12 @@ function AiPage({
     try {
       await ensureChatSession();
     } catch (error) {
-      setChatState((prev) => ({ ...prev, error: error?.message || String(error) }));
+      const rawMessage = error?.message || String(error);
+      const friendlyMessage =
+        rawMessage === "먼저 환자를 선택해 주세요."
+          ? chatSetupHint?.description || "상담 대상 정보가 아직 연결되지 않아 채팅을 시작할 수 없습니다."
+          : rawMessage;
+      setChatState((prev) => ({ ...prev, error: friendlyMessage }));
     }
   };
 
@@ -778,6 +902,84 @@ function AiPage({
         sending: false,
         error: error?.message || String(error),
       }));
+    }
+  };
+
+  const updateFeedbackState = (messageId, updater) => {
+    setChatFeedbackState((prev) => {
+      const current = prev[messageId] || {
+        helpful: null,
+        expanded: false,
+        feedbackType: "",
+        comment: "",
+        submitting: false,
+        success: false,
+        error: null,
+      };
+      return {
+        ...prev,
+        [messageId]: typeof updater === "function" ? updater(current) : { ...current, ...updater },
+      };
+    });
+  };
+
+  const submitChatFeedback = async (messageId, draftState = null) => {
+    if (!chatState.sessionId) return;
+    const current = draftState || chatFeedbackState[messageId];
+    if (!current || typeof current.helpful !== "boolean") return;
+    if (current.helpful === false && !current.feedbackType) {
+      updateFeedbackState(messageId, { error: "어떤 점이 아쉬웠는지 한 가지 선택해 주세요." });
+      return;
+    }
+
+    updateFeedbackState(messageId, { submitting: true, error: null });
+    try {
+      const res = await authFetch(`${API_PREFIX}/chat/sessions/${chatState.sessionId}/feedback`, {
+        method: "POST",
+        body: JSON.stringify({
+          assistant_message_id: Number(messageId),
+          helpful: current.helpful,
+          feedback_type: current.helpful ? null : current.feedbackType || null,
+          comment: current.comment?.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
+      updateFeedbackState(messageId, (prev) => ({
+        ...prev,
+        submitting: false,
+        success: true,
+        expanded: false,
+        error: null,
+      }));
+    } catch (error) {
+      updateFeedbackState(messageId, {
+        submitting: false,
+        error: error?.message || String(error),
+      });
+    }
+  };
+
+  const handleFeedbackVote = (messageId, helpful) => {
+    const nextState = {
+      ...(chatFeedbackState[messageId] || {
+        helpful: null,
+        expanded: false,
+        feedbackType: "",
+        comment: "",
+        submitting: false,
+        success: false,
+        error: null,
+      }),
+      helpful,
+      expanded: helpful ? false : true,
+      success: false,
+      error: null,
+      feedbackType: helpful ? "" : chatFeedbackState[messageId]?.feedbackType || "",
+      comment: helpful ? "" : chatFeedbackState[messageId]?.comment || "",
+    };
+    updateFeedbackState(messageId, nextState);
+    if (helpful) {
+      submitChatFeedback(messageId, nextState);
     }
   };
 
@@ -1563,47 +1765,225 @@ function AiPage({
                   }}
                 >
                   <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: "88px", height: "88px" }} />
-                  <div className="fw-semibold">안녕하세요, 약속이예요.</div>
-                  <div className="small">약 설명, 복약 일정, 가이드 내용, 생활 관리 포인트를 이어서 물어보세요.</div>
+                  <div className="fw-semibold">{chatSetupHint?.title || "안녕하세요, 약속이예요."}</div>
+                  <div className="small" style={{ maxWidth: "360px", lineHeight: 1.75 }}>
+                    {chatSetupHint?.description || "약 설명, 복약 일정, 가이드 내용, 생활 관리 포인트를 이어서 물어보세요."}
+                  </div>
+                  {chatSetupHint?.ctaLabel && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      style={primaryActionButtonStyle}
+                      onClick={() => {
+                        window.location.href = "/auth-demo/app/profile";
+                      }}
+                    >
+                      {chatSetupHint.ctaLabel}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="d-grid gap-3">
-                  {chatState.messages.map((message) => (
-                    <div
-                      key={message.message_id || `${message.role}-${message.created_at}-${message.content.slice(0, 12)}`}
-                      style={{
-                        display: "flex",
-                        justifyContent: message.role === "user" ? "flex-end" : "flex-start",
-                      }}
-                    >
+                  {(() => {
+                    let assistantOrder = 0;
+                    return chatState.messages.map((message) => {
+                    const isAssistant = message.role === "assistant";
+                    if (isAssistant) assistantOrder += 1;
+                    const shouldShowFeedback =
+                      isAssistant &&
+                      !!message.message_id &&
+                      assistantOrder % 4 === 0 &&
+                      String(message.content || "").trim().length >= 40;
+                    const feedback = chatFeedbackState[message.message_id] || {
+                      helpful: null,
+                      expanded: false,
+                      feedbackType: "",
+                      comment: "",
+                      submitting: false,
+                      success: false,
+                      error: null,
+                    };
+
+                    return (
                       <div
+                        key={message.message_id || `${message.role}-${message.created_at}-${message.content.slice(0, 12)}`}
                         style={{
-                          maxWidth: "90%",
-                          borderRadius: "20px",
-                          padding: "16px 18px",
-                          background: message.role === "user" ? "#1f6fb2" : "#ffffff",
-                          color: message.role === "user" ? "#ffffff" : "#243648",
-                          border: message.role === "user" ? "none" : "1px solid #dfe7ef",
-                          boxShadow: "0 8px 18px rgba(15, 23, 42, 0.06)",
-                          whiteSpace: "pre-wrap",
-                          lineHeight: 1.8,
-                          fontSize: "0.98rem",
+                          display: "flex",
+                          justifyContent: message.role === "user" ? "flex-end" : "flex-start",
                         }}
                       >
-                        <div>{renderChatContent(message.content)}</div>
-                        {message.emergency_message && (
-                          <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "#c0392b", lineHeight: 1.7 }}>
-                            {message.emergency_message}
-                          </div>
-                        )}
-                        {message.disclaimer && (
-                          <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "#718096", lineHeight: 1.7 }}>
-                            {message.disclaimer}
-                          </div>
-                        )}
+                        <div
+                          style={{
+                            maxWidth: "90%",
+                            borderRadius: "20px",
+                            padding: "16px 18px",
+                            background: message.role === "user" ? "#1f6fb2" : "#ffffff",
+                            color: message.role === "user" ? "#ffffff" : "#243648",
+                            border: message.role === "user" ? "none" : "1px solid #dfe7ef",
+                            boxShadow: "0 8px 18px rgba(15, 23, 42, 0.06)",
+                            whiteSpace: "pre-wrap",
+                            lineHeight: 1.8,
+                            fontSize: "0.98rem",
+                          }}
+                        >
+                          <div>{renderChatContent(message.content)}</div>
+                          {message.emergency_message && (
+                            <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "#c0392b", lineHeight: 1.7 }}>
+                              {message.emergency_message}
+                            </div>
+                          )}
+                          {message.disclaimer && (
+                            <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "#718096", lineHeight: 1.7 }}>
+                              {message.disclaimer}
+                            </div>
+                          )}
+                          {shouldShowFeedback && (
+                            <div
+                              className="mt-3"
+                              style={{
+                                borderTop: "1px solid #edf2f7",
+                                paddingTop: "12px",
+                              }}
+                            >
+                              <div
+                                className="d-flex flex-wrap align-items-center gap-2"
+                                style={{ marginBottom: feedback.expanded || feedback.success || feedback.error ? "10px" : 0 }}
+                              >
+                                <span className="small" style={{ color: "#7a8798", fontWeight: 600, marginRight: "2px" }}>
+                                  답변이 어떠셨나요?
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm"
+                                  onClick={() => handleFeedbackVote(message.message_id, true)}
+                                  disabled={feedback.submitting}
+                                  style={{
+                                    ...feedbackBaseButtonStyle,
+                                    ...(feedback.helpful === true ? feedbackSelectedButtonStyle : {}),
+                                  }}
+                                >
+                                  🙂 만족했어요
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm"
+                                  onClick={() => handleFeedbackVote(message.message_id, false)}
+                                  disabled={feedback.submitting}
+                                  style={{
+                                    ...feedbackBaseButtonStyle,
+                                    ...(feedback.helpful === false ? feedbackNegativeButtonStyle : {}),
+                                  }}
+                                >
+                                  🙁 아쉬워요
+                                </button>
+                                {feedback.success && (
+                                  <span
+                                    className="small"
+                                    style={{
+                                      color: feedback.helpful ? "#256c3d" : "#7c4f16",
+                                      background: feedback.helpful ? "#edf9f1" : "#fff6e8",
+                                      border: `1px solid ${feedback.helpful ? "#c9e8d1" : "#f5ddb3"}`,
+                                      borderRadius: "999px",
+                                      padding: "6px 10px",
+                                      lineHeight: 1,
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {feedback.helpful ? "만족한 답변으로 기록했어요" : "아쉬운 점을 기록했어요"}
+                                  </span>
+                                )}
+                              </div>
+
+                              {feedback.expanded && (
+                                <div
+                                  style={{
+                                    borderRadius: "16px",
+                                    background: "linear-gradient(180deg, #fbfdff 0%, #f6f9fe 100%)",
+                                    border: "1px solid #e4ebf7",
+                                    padding: "14px",
+                                  }}
+                                >
+                                  <div className="small mb-2" style={{ color: "#6a7a8d", fontWeight: 600 }}>
+                                    어떤 점이 아쉬웠나요?
+                                  </div>
+                                  <div className="d-flex flex-wrap gap-2 mb-3">
+                                    {chatFeedbackReasons.map((reason) => (
+                                      <button
+                                        key={reason.value}
+                                        type="button"
+                                        className="btn btn-sm"
+                                        onClick={() =>
+                                          updateFeedbackState(message.message_id, {
+                                            feedbackType: reason.value,
+                                            error: null,
+                                          })
+                                        }
+                                        disabled={feedback.submitting}
+                                        style={{
+                                          ...feedbackBaseButtonStyle,
+                                          ...(feedback.feedbackType === reason.value ? feedbackSelectedButtonStyle : {}),
+                                        }}
+                                      >
+                                        {reason.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <textarea
+                                    className="form-control form-control-sm"
+                                    rows={2}
+                                    placeholder="원하시면 짧게 덧붙여 주세요."
+                                    value={feedback.comment}
+                                    disabled={feedback.submitting}
+                                    onChange={(event) =>
+                                      updateFeedbackState(message.message_id, {
+                                        comment: event.target.value,
+                                        error: null,
+                                      })
+                                    }
+                                    style={{
+                                      resize: "none",
+                                      borderRadius: "12px",
+                                      borderColor: "#dbe5f2",
+                                      background: "#ffffff",
+                                    }}
+                                  />
+                                  {feedback.error && (
+                                    <div className="small mt-2" style={{ color: "#c24141" }}>
+                                      {feedback.error}
+                                    </div>
+                                  )}
+                                  <div className="d-flex justify-content-end gap-2 mt-3">
+                                    <button
+                                      type="button"
+                                      className="btn btn-light btn-sm"
+                                      disabled={feedback.submitting}
+                                      onClick={() =>
+                                        updateFeedbackState(message.message_id, {
+                                          expanded: false,
+                                          error: null,
+                                        })
+                                      }
+                                    >
+                                      닫기
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-primary btn-sm"
+                                      disabled={feedback.submitting}
+                                      style={primaryActionButtonStyle}
+                                      onClick={() => submitChatFeedback(message.message_id)}
+                                    >
+                                      {feedback.submitting ? "저장 중" : "의견 보내기"}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })})()}
                 </div>
               )}
             </div>

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+from difflib import SequenceMatcher
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from typing import Any
 import httpx
 
 from app.dtos.chat import (
+    ChatFeedbackCreateData,
+    ChatFeedbackCreateResponse,
     ChatMessageCreateData,
     ChatMessageCreateResponse,
     ChatMessageItem,
@@ -20,11 +23,13 @@ from app.dtos.chat import (
     ChatSessionCreateResponse,
     RequesterRole,
 )
-from app.models.chat import ChatMessage, ChatSession
+from app.models.chat import ChatFeedback, ChatMessage, ChatSession, ChatSessionMemory
+from app.models.dur import DurAlert
 from app.models.guides import Guide, GuideStatus
+from app.models.hospital_schedules import HospitalSchedule
 from app.models.medications import PatientMed
 from app.models.patients import Patient, PatientProfile
-from app.models.schedules import MedSchedule, MedScheduleTime
+from app.models.schedules import IntakeLog, MedSchedule, MedScheduleTime
 from app.models.users import User
 from app.services.kids_client import KIDSClient
 from app.services.mfds import MfdsService
@@ -94,8 +99,29 @@ _PROFILE_SMOKING_KEYWORDS = ["담배", "흡연", "몇 갑", "주에 평균", "�
 _PROFILE_ALCOHOL_KEYWORDS = ["술", "음주", "몇 병", "주간 음주"]
 _PROFILE_SLEEP_KEYWORDS = ["수면", "잠", "몇 시간"]
 _PROFILE_EXERCISE_KEYWORDS = ["운동", "몇 분", "운동량"]
+_PROFILE_CONDITION_KEYWORDS = ["기저질환", "건강 상태", "질환", "질병", "지병", "아픈 곳"]
+_PROFILE_ALLERGY_KEYWORDS = ["알레르기", "알레지", "알러지"]
+_PROFILE_HOSPITALIZATION_KEYWORDS = ["입원", "퇴원", "입퇴원", "입원 여부", "퇴원일"]
+_PROFILE_BODY_KEYWORDS = ["bmi", "BMI", "체중", "몸무게", "키", "키 몸무게", "건강프로필", "건강 프로필"]
+_PROFILE_SUMMARY_KEYWORDS = ["건강프로필 요약", "건강 프로필 요약", "프로필 요약", "내 프로필 요약"]
 _SCHEDULE_KEYWORDS = ["복약스케줄", "복약 스케줄", "언제 먹", "언제 복용", "몇 시", "스케줄", "일정"]
-_GUIDE_SUMMARY_KEYWORDS = ["전반적", "가이드", "약 설명", "무슨 약"]
+_HOSPITAL_SCHEDULE_KEYWORDS = [
+    "병원 예약",
+    "병원 일정",
+    "외래 예약",
+    "외래 일정",
+    "검사 예약",
+    "검사 일정",
+    "진료 예약",
+    "진료 일정",
+    "예약 언제",
+    "언제였지",
+    "다음 병원",
+    "다음 외래",
+    "다음 진료",
+    "병원 가는 날",
+]
+_GUIDE_SUMMARY_KEYWORDS = ["가이드", "가이드 요약", "생활 가이드", "복약 가이드"]
 _MED_LIST_KEYWORDS = [
     "복용하고있는 약",
     "복용하고 있는 약",
@@ -180,7 +206,19 @@ _EMERGENCY_GUIDANCE_KEYWORDS = [
     "위험하면",
     "병원 가야",
 ]
-_TONIGHT_CHECK_KEYWORDS = ["오늘 밤", "오늘 저녁", "취침 전", "오늘 밤에", "꼭 챙겨야", "오늘 꼭 챙겨"]
+_TONIGHT_CHECK_KEYWORDS = [
+    "오늘 밤",
+    "오늘 저녁",
+    "취침 전",
+    "오늘 밤에",
+    "꼭 챙겨야",
+    "오늘 꼭 챙겨",
+    "오늘 내가 먹어야",
+    "오늘 먹어야 할",
+    "오늘 먹어야하는",
+    "오늘 약 뭐",
+    "오늘 복용할 약",
+]
 _SCHEDULE_ORDER_KEYWORDS = ["순서대로", "정리해줘", "정리해 줘", "아침에 약이 너무 많", "복용 순서"]
 _ADHERENCE_PRIORITY_KEYWORDS = ["제일 중요한 약", "놓치면 안 되는 약", "까먹", "놓치면 안", "자주 까먹"]
 _SYMPTOM_CAUSE_KEYWORDS = ["약 때문", "부작용일 수도", "의심해야", "원인일 수도", "때문일 수도"]
@@ -225,6 +263,8 @@ _BOT_CAPABILITY_KEYWORDS = [
     "뭘 할 수",
     "무엇을 할 수",
     "뭐 도와줄 수",
+    "뭘 도와주는",
+    "뭐 도와주는",
     "어떤 걸 도와줄 수",
     "어떤걸 도와줄 수",
     "무엇을 도와줄 수",
@@ -236,7 +276,66 @@ _BOT_CAPABILITY_KEYWORDS = [
 ]
 _MED_DETAIL_KEYWORDS = ["어떤 약", "무슨 약", "뭐하는 약", "설명해줘", "설명해 줘", "약 설명"]
 _FOLLOWUP_MED_REFERENCES = ["그 약", "이 약", "그거", "이거", "저 약", "해당 약"]
-_GENERAL_CAUTION_KEYWORDS = ["주의", "조심", "주의할 게", "조심할 게", "주의해야", "조심해야", "주의해", "조심해"]
+_AFFIRMATIVE_SHORT_REPLIES = ["어", "응", "네", "넵", "예", "맞아", "그래", "맞아요", "그렇지", "좋아"]
+_GENERAL_CAUTION_KEYWORDS = [
+    "주의",
+    "조심",
+    "주의할 게",
+    "조심할 게",
+    "주의해야",
+    "조심해야",
+    "주의해",
+    "조심해",
+    "먼저 뭐 봐야",
+    "먼저 무엇을 봐야",
+    "먼저 확인해야",
+]
+_MED_QUERY_STOPWORDS = {
+    "약",
+    "알려줘",
+    "알려",
+    "설명해줘",
+    "설명",
+    "대해서",
+    "에대해서",
+    "정보",
+    "어떤약이야",
+    "어떤약이니",
+    "무슨약",
+    "무슨약이야",
+    "무슨약이니",
+    "뭐야",
+    "뭐니",
+}
+_PERSONALIZED_INTENTS = {
+    "profile_body",
+    "profile_summary",
+    "profile_guidance",
+    "profile_smoking",
+    "profile_alcohol",
+    "profile_sleep",
+    "profile_exercise",
+    "profile_conditions",
+    "profile_allergies",
+    "profile_hospitalization",
+    "med_list",
+    "med_detail",
+    "med_time_split",
+    "med_regularity",
+    "med_prn",
+    "schedule",
+    "hospital_schedule",
+    "medication_caution",
+    "general_caution",
+    "tonight_check",
+    "schedule_order",
+    "adherence_priority",
+    "observation_check",
+    "school_observation",
+    "self_check",
+    "caregiver_check",
+    "session_summary",
+}
 _CONDITION_TREATMENT_KEYWORDS = [
     "좋은약",
     "좋은 약",
@@ -298,6 +397,14 @@ _EXTERNAL_DRUG_STOPWORDS = {
     "내용",
     "정보좀",
     "설명",
+    "하는지",
+    "하는지는",
+    "언제인지",
+    "어디로",
+    "가야",
+    "장소도",
+    "알려줘",
+    "알려",
 }
 _EXTERNAL_DRUG_SUFFIXES = ["정", "시럽", "캡슐", "현탁액", "산", "주사", "크림", "패치", "정제", "액", "연질캡슐"]
 _EXTERNAL_DRUG_CONTEXT_KEYWORDS = ["용도", "부작용", "주의사항", "정보", "처방", "감기", "독감"]
@@ -337,6 +444,85 @@ def _contains_keyword(message: str, keyword: str) -> bool:
 
 def _contains_any(message: str, keywords: list[str]) -> bool:
     return any(_contains_keyword(message, keyword) for keyword in keywords)
+
+
+def _strip_korean_postposition(token: str) -> str:
+    clean = str(token or "").strip()
+    for suffix in (
+        "이에요",
+        "예요",
+        "이야",
+        "야",
+        "이니",
+        "니",
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를",
+        "에",
+        "도",
+        "만",
+    ):
+        if clean.endswith(suffix) and len(clean) > len(suffix) + 1:
+            return clean[: -len(suffix)]
+    return clean
+
+
+def _extract_med_query_tokens(message: str) -> list[str]:
+    normalized = str(message or "").strip()
+    if not normalized:
+        return []
+
+    candidates = [normalized]
+    for token in re.split(r"[\s,./()]+", normalized):
+        stripped = _strip_korean_postposition(token)
+        compact = _compact_text(stripped)
+        if len(compact) < 2:
+            continue
+        if compact.lower() in {item.lower() for item in _MED_QUERY_STOPWORDS}:
+            continue
+        candidates.append(stripped)
+
+    return _dedupe_lines(candidates, limit=8)
+
+
+def _find_best_med_match(
+    *,
+    query: str,
+    meds: list[dict[str, Any]],
+    threshold: float = 0.72,
+) -> dict[str, Any] | None:
+    tokens = _extract_med_query_tokens(query)
+    if not tokens or not meds:
+        return None
+
+    exact_candidates = [_compact_text(token).lower() for token in tokens]
+    for med in meds:
+        med_name = str(med.get("display_name") or "").strip()
+        compact_name = _compact_text(med_name).lower()
+        if not compact_name:
+            continue
+        if any(compact_name in token or token in compact_name for token in exact_candidates if len(token) >= 2):
+            return med
+
+    best_med: dict[str, Any] | None = None
+    best_score = 0.0
+    for med in meds:
+        med_name = str(med.get("display_name") or "").strip()
+        compact_name = _compact_text(med_name).lower()
+        if len(compact_name) < 2:
+            continue
+        for token in exact_candidates:
+            if len(token) < 2:
+                continue
+            score = SequenceMatcher(None, token, compact_name).ratio()
+            if score > best_score:
+                best_score = score
+                best_med = med
+
+    return best_med if best_score >= threshold else None
 
 
 def _split_text_items(value: Any) -> list[str]:
@@ -440,7 +626,11 @@ class PatientChatContext:
     latest_guide: Guide | None
     meds: list[dict[str, Any]]
     schedules: list[dict[str, Any]]
+    hospital_schedules: list[HospitalSchedule]
+    dur_alerts: list[dict[str, Any]]
+    adherence_summary: dict[str, Any]
     recent_messages: list[ChatMessage]
+    session_memory: ChatSessionMemory | None
     kids_evidence: list[dict[str, Any]]
     rag_context: list[dict[str, Any]]
 
@@ -457,6 +647,95 @@ class QuestionAnalysis:
     is_emergency: bool
     emergency_message: str | None
     answer_mode: str
+
+
+@dataclass
+class ChatPlan:
+    topic: str
+    requested_fields: list[str]
+    referenced_drug_name: str | None
+    needs_clarification: bool
+    clarification_question: str | None
+    use_record_data: list[str]
+    answer_style: str
+
+
+def _harmonize_chat_plan(*, analysis: QuestionAnalysis, plan: ChatPlan | None) -> ChatPlan | None:
+    if not plan:
+        return None
+
+    primary = analysis.primary_intent
+
+    if primary == "daily":
+        return None
+
+    # These domains are more stable when answered from local medical data and
+    # deterministic policy instead of planner-led clarifications.
+    if primary in {"external_med", "medication_caution", "profile_guidance", "tonight_check", "schedule_order", "adherence_priority"}:
+        return None
+
+    if primary == "hospital_schedule":
+        plan.topic = "hospital_schedule"
+        return plan
+
+    if primary in {"med_detail", "med_prn", "med_time_split", "med_regularity"}:
+        if analysis.target_med:
+            plan.topic = "current_meds" if primary == "med_detail" else "med_schedule"
+            plan.referenced_drug_name = str(analysis.target_med.get("display_name") or "").strip() or plan.referenced_drug_name
+            return plan
+        return None
+
+    if primary in {"med_list", "schedule", "tonight_check", "schedule_order", "adherence_priority"}:
+        plan.topic = "med_schedule" if primary != "med_list" else "current_meds"
+        return plan
+
+    if primary in {
+        "profile_body",
+        "profile_summary",
+        "profile_guidance",
+        "profile_smoking",
+        "profile_alcohol",
+        "profile_sleep",
+        "profile_exercise",
+        "profile_conditions",
+        "profile_allergies",
+        "profile_hospitalization",
+    }:
+        plan.topic = "profile"
+        requested = set(plan.requested_fields)
+        if primary == "profile_body":
+            requested.update({"body_metrics"})
+        elif primary == "profile_summary":
+            requested.update({"summary"})
+        elif primary == "profile_guidance":
+            requested = {"guidance", "lifestyle", "risk"}
+        elif primary == "profile_smoking":
+            requested.add("smoking")
+        elif primary == "profile_alcohol":
+            requested.add("alcohol")
+        elif primary == "profile_sleep":
+            requested.add("sleep")
+        elif primary == "profile_exercise":
+            requested.add("exercise")
+        elif primary == "profile_conditions":
+            requested.add("conditions")
+        elif primary == "profile_allergies":
+            requested.add("allergies")
+        elif primary == "profile_hospitalization":
+            requested.add("hospitalization")
+        plan.requested_fields = list(requested)
+        return plan
+
+    if primary == "condition_general":
+        plan.topic = "condition_general"
+        if analysis.target_condition and not plan.referenced_drug_name:
+            plan.referenced_drug_name = analysis.target_condition
+        return plan
+
+    if primary in {"general_caution", "lifestyle_top", "session_summary", "self_check", "caregiver_check"}:
+        return None
+
+    return plan
 
 
 # 요청자 역할 판별
@@ -485,6 +764,10 @@ def _read_prompt_template(filename: str) -> str:
     if not path.exists():
         raise RuntimeError(f"Prompt template not found: {path}")
     return path.read_text(encoding="utf-8")
+
+
+def _has_openai_api_key() -> bool:
+    return bool((os.getenv("OPENAI_API_KEY", "") or "").strip())
 
 
 # 응급 키워드 감지
@@ -594,6 +877,360 @@ def _build_profile_text(profile: PatientProfile | None) -> str:
     return "\n".join(lines) if lines else "등록된 건강 프로필 없음"
 
 
+def _bmi_category_text(bmi: Any) -> str | None:
+    try:
+        value = float(bmi)
+    except Exception:
+        return None
+
+    if value < 18.5:
+        return "저체중 범위"
+    if value < 23:
+        return "정상 범위"
+    if value < 25:
+        return "과체중 범위"
+    return "비만 범위"
+
+
+def _build_profile_summary_lines(profile: PatientProfile) -> list[str]:
+    lines: list[str] = []
+    conditions = _split_text_items(getattr(profile, "conditions", None))
+    allergies = _split_text_items(getattr(profile, "allergies", None))
+
+    body_chunks: list[str] = []
+    if getattr(profile, "height_cm", None) is not None:
+        body_chunks.append(f"키 {profile.height_cm}cm")
+    if getattr(profile, "weight_kg", None) is not None:
+        body_chunks.append(f"몸무게 {profile.weight_kg}kg")
+    if getattr(profile, "bmi", None) is not None:
+        bmi_category = _bmi_category_text(profile.bmi)
+        if bmi_category:
+            body_chunks.append(f"BMI {profile.bmi}({bmi_category})")
+        else:
+            body_chunks.append(f"BMI {profile.bmi}")
+    if body_chunks:
+        lines.append(", ".join(body_chunks))
+
+    lifestyle_chunks: list[str] = []
+    if getattr(profile, "avg_sleep_hours_per_day", None) is not None:
+        lifestyle_chunks.append(f"수면 {profile.avg_sleep_hours_per_day}시간")
+    if getattr(profile, "avg_exercise_minutes_per_day", None) is not None:
+        lifestyle_chunks.append(f"운동 {profile.avg_exercise_minutes_per_day}분")
+    if getattr(profile, "is_smoker", None) is not None:
+        smoker_text = "흡연 중" if profile.is_smoker else "비흡연"
+        packs = getattr(profile, "avg_cig_packs_per_week", None)
+        if packs is not None:
+            smoker_text += f", 주간 흡연량 {packs}갑"
+        lifestyle_chunks.append(smoker_text)
+    if getattr(profile, "avg_alcohol_bottles_per_week", None) is not None:
+        lifestyle_chunks.append(f"주간 음주량 {profile.avg_alcohol_bottles_per_week}병")
+    if lifestyle_chunks:
+        lines.append("생활 습관: " + ", ".join(lifestyle_chunks))
+
+    if conditions:
+        lines.append("건강 상태: " + ", ".join(conditions[:3]))
+    if allergies:
+        lines.append("알레르기: " + ", ".join(allergies[:3]))
+    if getattr(profile, "is_hospitalized", None) is not None:
+        admission_text = "입원 중" if profile.is_hospitalized else "현재 입원 기록 없음"
+        if getattr(profile, "discharge_date", None):
+            admission_text += f", 퇴원일 {profile.discharge_date}"
+        lines.append("입원 정보: " + admission_text)
+    if getattr(profile, "notes", None):
+        note = _summarize_text(profile.notes, max_sentences=1)
+        if note:
+            lines.append("메모: " + note)
+
+    return lines
+
+
+def _build_profile_guidance_points(*, profile: PatientProfile | None, guide: Guide | None) -> list[str]:
+    points: list[str] = []
+    if profile:
+        sleep_hours = getattr(profile, "avg_sleep_hours_per_day", None)
+        exercise_minutes = getattr(profile, "avg_exercise_minutes_per_day", None)
+        smoker = getattr(profile, "is_smoker", None)
+        cig_packs = getattr(profile, "avg_cig_packs_per_week", None)
+        alcohol = getattr(profile, "avg_alcohol_bottles_per_week", None)
+        conditions = _split_text_items(getattr(profile, "conditions", None))
+        allergies = _split_text_items(getattr(profile, "allergies", None))
+        notes = _summarize_text(getattr(profile, "notes", None), max_sentences=1)
+
+        if sleep_hours is not None:
+            if float(sleep_hours) < 6:
+                points.append(f"현재 기록상 수면은 하루 평균 {sleep_hours}시간으로 짧은 편이라 수면 부족 원인을 먼저 점검하는 것이 좋습니다.")
+            elif float(sleep_hours) > 9:
+                points.append(f"현재 기록상 수면은 하루 평균 {sleep_hours}시간으로 긴 편이라 피로감이나 복용약 영향도 함께 확인해 볼 수 있습니다.")
+            else:
+                points.append(f"현재 기록상 수면은 하루 평균 {sleep_hours}시간입니다.")
+
+        if exercise_minutes is not None:
+            if int(exercise_minutes) < 20:
+                points.append(f"운동은 하루 평균 {exercise_minutes}분으로 적은 편이라 가벼운 활동량 유지 여부를 같이 보는 것이 좋습니다.")
+            else:
+                points.append(f"운동은 하루 평균 {exercise_minutes}분으로 기록되어 있습니다.")
+
+        if smoker is True:
+            if cig_packs is not None:
+                points.append(f"흡연 중이며 주간 흡연량은 {cig_packs}갑으로 기록되어 있어 증상 변화나 약 복용 시 주의사항을 함께 확인하는 것이 좋습니다.")
+            else:
+                points.append("흡연 중으로 기록되어 있어 호흡기 증상이나 약물 주의사항을 함께 보는 것이 좋습니다.")
+        elif smoker is False:
+            points.append("흡연은 하지 않는 것으로 기록되어 있습니다.")
+
+        if alcohol is not None:
+            points.append(f"주간 음주량은 {alcohol}병으로 기록되어 있어 복용 중 약과의 음주 주의가 필요한지 같이 확인할 수 있습니다.")
+
+        if conditions:
+            points.append("현재 건강 상태로는 " + ", ".join(conditions[:2]) + "가 기록되어 있습니다.")
+        if allergies:
+            points.append("알레르기 정보는 " + ", ".join(allergies[:2]) + "입니다.")
+        if getattr(profile, "is_hospitalized", None) is True:
+            discharge_date = getattr(profile, "discharge_date", None)
+            if discharge_date:
+                points.append(f"현재 입원/퇴원 정보도 중요합니다. 기록상 퇴원일은 {discharge_date}입니다.")
+            else:
+                points.append("현재 입원 중으로 기록되어 있어 병원 지시사항을 우선 확인하는 것이 좋습니다.")
+        if notes:
+            points.append("건강 메모: " + notes)
+
+    if guide and isinstance(guide.content_json, dict):
+        for section in guide.content_json.get("sections") or []:
+            title = str(section.get("title") or "")
+            body = str(section.get("body") or "").strip()
+            if ("생활" in title or "주의" in title or "복약" in title) and body:
+                first_line = _first_clean_line(body)
+                if first_line:
+                    points.append(first_line)
+            if len(points) >= 8:
+                break
+
+    return _dedupe_lines(points, limit=6)
+
+
+def _build_adherence_guidance_points(*, adherence_summary: dict[str, Any] | None) -> list[str]:
+    if not adherence_summary:
+        return []
+
+    points: list[str] = []
+    missed = int(adherence_summary.get("missed", 0) or 0)
+    taken = int(adherence_summary.get("taken", 0) or 0)
+    pending = int(adherence_summary.get("pending", 0) or 0)
+    recent_missed_names = adherence_summary.get("recent_missed_names") or []
+    recent_lines = adherence_summary.get("recent_lines") or []
+
+    if missed > 0:
+        if recent_missed_names:
+            names = ", ".join(
+                _dedupe_lines([str(name).strip() for name in recent_missed_names if str(name).strip()], limit=3)
+            )
+            points.append(f"최근 복약 기록에서는 놓친 약이 있어 {names}부터 다시 일정대로 챙기는지 확인하는 것이 좋습니다.")
+        else:
+            points.append("최근 복약 기록에서는 놓친 일정이 있어 미복용이 반복되지 않는지 먼저 확인하는 것이 좋습니다.")
+    elif taken > 0:
+        points.append("최근 복약 기록상 이미 복용한 일정이 있어 현재 복약 흐름은 어느 정도 이어지고 있는 것으로 보입니다.")
+
+    if pending > 0:
+        points.append(f"아직 복용 대기 상태로 남아 있는 일정이 {pending}건 있어 오늘 남은 약도 함께 확인하는 것이 좋습니다.")
+
+    for line in recent_lines[:2]:
+        clean = str(line).strip()
+        if clean:
+            points.append("최근 복약 상태: " + clean)
+
+    return _dedupe_lines(points, limit=3)
+
+
+def _build_profile_guidance_sections(
+    *,
+    message: str,
+    profile: PatientProfile | None,
+    guide: Guide | None,
+    adherence_summary: dict[str, Any] | None,
+) -> tuple[list[str], list[str], list[str]]:
+    normalized = (message or "").strip()
+    current_points: list[str] = []
+    general_points: list[str] = []
+    next_points: list[str] = []
+
+    if profile:
+        sleep_hours = getattr(profile, "avg_sleep_hours_per_day", None)
+        exercise_minutes = getattr(profile, "avg_exercise_minutes_per_day", None)
+        smoker = getattr(profile, "is_smoker", None)
+        cig_packs = getattr(profile, "avg_cig_packs_per_week", None)
+        alcohol = getattr(profile, "avg_alcohol_bottles_per_week", None)
+        conditions = _split_text_items(getattr(profile, "conditions", None))
+        allergies = _split_text_items(getattr(profile, "allergies", None))
+
+        if _contains_any(normalized, _PROFILE_SLEEP_KEYWORDS) and sleep_hours is not None:
+            current_points.append(f"현재 기록상 수면은 하루 평균 {sleep_hours}시간입니다.")
+            if float(sleep_hours) < 6:
+                next_points.append("수면 시간이 짧은 편이라 최근 증상 변화나 복용약 영향이 있는지도 함께 확인하는 것이 좋습니다.")
+            elif float(sleep_hours) > 9:
+                next_points.append("수면 시간이 긴 편이라 피로감이 계속되는지, 복용약 이후 졸림이 심해지지는 않는지 같이 보는 것이 좋습니다.")
+
+        if _contains_any(normalized, _PROFILE_EXERCISE_KEYWORDS) and exercise_minutes is not None:
+            current_points.append(f"현재 기록상 운동은 하루 평균 {exercise_minutes}분입니다.")
+            if int(exercise_minutes) < 20:
+                next_points.append("운동량이 적은 편이라 무리 없는 범위에서 가벼운 활동을 유지하는지 함께 보는 것이 좋습니다.")
+
+        if _contains_any(normalized, _PROFILE_SMOKING_KEYWORDS):
+            if smoker is True and cig_packs is not None:
+                current_points.append(f"현재 기록상 흡연 중이며 주간 흡연량은 {cig_packs}갑입니다.")
+            elif smoker is True:
+                current_points.append("현재 기록상 흡연 중으로 되어 있습니다.")
+            elif smoker is False:
+                current_points.append("현재 기록상 흡연하지 않는 것으로 되어 있습니다.")
+
+        if _contains_any(normalized, _PROFILE_ALCOHOL_KEYWORDS) and alcohol is not None:
+            current_points.append(f"현재 기록상 주간 음주량은 {alcohol}병입니다.")
+
+        if not current_points:
+            if conditions:
+                current_points.append("현재 건강 상태로는 " + ", ".join(conditions[:2]) + "가 기록되어 있습니다.")
+            if allergies:
+                current_points.append("알레르기 정보는 " + ", ".join(allergies[:2]) + "입니다.")
+            if sleep_hours is not None:
+                current_points.append(f"수면은 하루 평균 {sleep_hours}시간으로 기록되어 있습니다.")
+            if exercise_minutes is not None:
+                current_points.append(f"운동은 하루 평균 {exercise_minutes}분으로 기록되어 있습니다.")
+
+    if guide and isinstance(guide.content_json, dict):
+        for section in guide.content_json.get("sections") or []:
+            title = str(section.get("title") or "")
+            body = str(section.get("body") or "").strip()
+            if not body:
+                continue
+            if _contains_any(normalized, _PROFILE_SLEEP_KEYWORDS) and ("수면" in title or "수면" in body):
+                line = _first_clean_line(body)
+                if line:
+                    general_points.append(line)
+            elif _contains_any(normalized, _PROFILE_EXERCISE_KEYWORDS) and ("운동" in title or "활동" in body):
+                line = _first_clean_line(body)
+                if line:
+                    general_points.append(line)
+            elif _contains_any(normalized, _PROFILE_SMOKING_KEYWORDS) and ("흡연" in title or "흡연" in body):
+                line = _first_clean_line(body)
+                if line:
+                    general_points.append(line)
+            elif _contains_any(normalized, _PROFILE_ALCOHOL_KEYWORDS) and ("음주" in title or "음주" in body):
+                line = _first_clean_line(body)
+                if line:
+                    general_points.append(line)
+            elif any(keyword in title for keyword in ["생활", "주의", "복약"]):
+                line = _first_clean_line(body)
+                if line:
+                    general_points.append(line)
+            if len(general_points) >= 3:
+                break
+
+    next_points.extend(_build_adherence_guidance_points(adherence_summary=adherence_summary))
+
+    if _contains_any(normalized, ["잠", "수면", "못 자", "잠을 못", "잠이 안"]):
+        next_points.append("최근 복용약 중 졸림이나 각성에 영향을 줄 수 있는 약이 있는지도 함께 보는 것이 좋습니다.")
+        if profile and getattr(profile, "avg_sleep_hours_per_day", None) is not None:
+            next_points.append("기록상 수면 시간이 충분해 보여도 실제로는 자주 깨는지, 자고 일어나도 피곤한지 같은 체감 변화를 함께 확인하는 것이 좋습니다.")
+    if _contains_any(normalized, ["술", "음주"]):
+        next_points.append("음주와 현재 복용약의 조합은 따로 확인하는 것이 안전합니다.")
+    if _contains_any(normalized, ["담배", "흡연"]):
+        next_points.append("흡연 여부는 호흡기 증상이나 일부 약 복용 시 주의점과 함께 보는 것이 좋습니다.")
+
+    if not general_points:
+        general_points.extend(_build_profile_guidance_points(profile=profile, guide=guide)[:2])
+
+    if not next_points:
+        next_points.append("현재 기록에서 가장 먼저는 생활 습관 변화와 복약 흐름이 함께 흔들리고 있지 않은지부터 확인하는 것이 좋습니다.")
+
+    return (
+        _dedupe_lines(current_points, limit=3),
+        _dedupe_lines(general_points, limit=3),
+        _dedupe_lines(next_points, limit=3),
+    )
+
+
+def _build_med_adherence_points(*, med_name: str, adherence_summary: dict[str, Any] | None) -> list[str]:
+    if not adherence_summary:
+        return []
+
+    compact_med = _compact_text(med_name).lower()
+    recent_lines = adherence_summary.get("recent_lines") or []
+    recent_missed_names = adherence_summary.get("recent_missed_names") or []
+    points: list[str] = []
+
+    if any(compact_med and compact_med in _compact_text(str(name)).lower() for name in recent_missed_names):
+        points.append(f"{med_name}은 최근 복약 기록에서 놓친 이력이 있어 다음 복용 전 일정 재확인이 필요합니다.")
+
+    for line in recent_lines:
+        clean = str(line).strip()
+        if compact_med and compact_med in _compact_text(clean).lower():
+            points.append("최근 복약 상태: " + clean)
+            if len(points) >= 2:
+                break
+
+    return _dedupe_lines(points, limit=2)
+
+
+def _extract_dur_alert_points(
+    *,
+    dur_alerts: list[dict[str, Any]],
+    med_name: str | None = None,
+    limit: int = 3,
+) -> list[str]:
+    if not dur_alerts:
+        return []
+
+    points: list[str] = []
+    compact_med = _compact_text(med_name).lower() if med_name else ""
+    for alert in dur_alerts:
+        patient_med_name = str(alert.get("patient_med_name") or "").strip()
+        related_med_name = str(alert.get("related_patient_med_name") or "").strip()
+        if compact_med:
+            candidates = [_compact_text(patient_med_name).lower(), _compact_text(related_med_name).lower()]
+            if compact_med not in candidates and all(compact_med not in item for item in candidates if item):
+                continue
+
+        level = str(alert.get("level") or "").strip()
+        message = str(alert.get("message") or "").strip()
+        alert_type = str(alert.get("alert_type") or "").strip()
+        if message:
+            if level:
+                points.append(f"DUR {level}: {message}")
+            else:
+                points.append(f"DUR {message}")
+        elif alert_type:
+            parts = [part for part in [patient_med_name, related_med_name] if part]
+            joined = " / ".join(parts)
+            if joined:
+                points.append(f"DUR {alert_type}: {joined}")
+            else:
+                points.append(f"DUR {alert_type}")
+
+    return _dedupe_lines(points, limit=limit)
+
+
+def _build_med_guidance_points(*, guide: Guide | None, med_name: str) -> list[str]:
+    if not guide or not isinstance(guide.content_json, dict):
+        return []
+
+    compact_med = _compact_text(med_name).lower()
+    points: list[str] = []
+    for section in guide.content_json.get("sections") or []:
+        title = str(section.get("title") or "").strip()
+        body = str(section.get("body") or "").strip()
+        full_text = f"{title}\n{body}".strip()
+        if compact_med and compact_med in _compact_text(full_text).lower():
+            first_line = _first_clean_line(body)
+            if first_line:
+                points.append(first_line)
+        elif any(keyword in title for keyword in ["주의", "복약", "생활"]):
+            first_line = _first_clean_line(body)
+            if first_line:
+                points.append(first_line)
+        if len(points) >= 2:
+            break
+    return _dedupe_lines(points, limit=2)
+
+
 # 약 정보 텍스트 구성
 def _build_meds_text(meds: list[dict[str, Any]]) -> str:
     if not meds:
@@ -692,6 +1329,31 @@ def _humanize_days(days_text: str | None) -> str:
     return ",".join(items) if items else "요일 정보 없음"
 
 
+def _format_datetime_korean(value: Any) -> str:
+    if value is None:
+        return "일정 시간 미정"
+    try:
+        hour = int(value.strftime("%H"))
+        minute = int(value.strftime("%M"))
+        date_part = value.strftime("%Y-%m-%d")
+    except Exception:
+        return str(value)
+
+    if hour == 0 and minute == 0:
+        time_part = "자정"
+    elif hour < 12:
+        time_part = f"오전 {12 if hour == 0 else hour}시"
+    elif hour == 12:
+        time_part = "정오" if minute == 0 else f"정오 {minute}분"
+    else:
+        time_part = f"오후 {hour - 12}시"
+
+    if minute and hour != 12:
+        time_part += f" {minute}분"
+
+    return f"{date_part} {time_part}"
+
+
 # 일정 텍스트 구성
 def _build_schedule_text(schedules: list[dict[str, Any]], meds: list[dict[str, Any]]) -> str:
     if not schedules:
@@ -732,6 +1394,40 @@ def _build_schedule_text(schedules: list[dict[str, Any]], meds: list[dict[str, A
     return "\n".join(lines) if lines else "등록된 복약 일정 없음"
 
 
+def _build_hospital_schedule_text(hospital_schedules: list[HospitalSchedule]) -> str:
+    if not hospital_schedules:
+        return "등록된 병원 일정 없음"
+
+    lines: list[str] = []
+    for item in hospital_schedules:
+        title = str(getattr(item, "title", "") or "병원 일정").strip()
+        hospital_name = str(getattr(item, "hospital_name", "") or "").strip()
+        location = str(getattr(item, "location", "") or "").strip()
+        scheduled_at = _format_datetime_korean(getattr(item, "scheduled_at", None))
+        line = f"- {scheduled_at}: {title}"
+        if hospital_name:
+            line += f" / {hospital_name}"
+        if location:
+            line += f" / {location}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _build_hospital_schedule_brief(hospital_schedules: list[HospitalSchedule]) -> str:
+    if not hospital_schedules:
+        return "병원 일정 없음"
+    lines: list[str] = []
+    for item in hospital_schedules[:3]:
+        title = str(getattr(item, "title", "") or "병원 일정").strip()
+        scheduled_at = _format_datetime_korean(getattr(item, "scheduled_at", None))
+        hospital_name = str(getattr(item, "hospital_name", "") or "").strip()
+        chunk = f"{scheduled_at} {title}"
+        if hospital_name:
+            chunk += f" / {hospital_name}"
+        lines.append(chunk)
+    return " ; ".join(lines)
+
+
 # 최신 guide 텍스트 구성
 def _build_guide_text(guide: Guide | None) -> str:
     if not guide:
@@ -757,6 +1453,102 @@ def _build_history_text(messages: list[ChatMessage]) -> str:
     for msg in messages:
         lines.append(f"- {msg.role}: {msg.content}")
     return "\n".join(lines)
+
+
+def _build_recent_history_for_planner(messages: list[ChatMessage]) -> str:
+    if not messages:
+        return "이전 대화 없음"
+
+    recent = messages[-6:]
+    lines: list[str] = []
+    for msg in recent:
+        role = "user" if msg.role == "user" else "assistant"
+        lines.append(f"- {role}: {msg.content}")
+    return "\n".join(lines)
+
+
+def _build_session_memory_text(memory: ChatSessionMemory | None) -> str:
+    if not memory:
+        return "구조화 메모리 없음"
+
+    lines: list[str] = []
+    if getattr(memory, "recent_topic", None):
+        lines.append(f"- 최근 주제: {memory.recent_topic}")
+    if getattr(memory, "recent_drug_name", None):
+        lines.append(f"- 최근 현재 약: {memory.recent_drug_name}")
+    if getattr(memory, "recent_external_drug_name", None):
+        lines.append(f"- 최근 외부 약: {memory.recent_external_drug_name}")
+    if getattr(memory, "recent_profile_focus", None):
+        lines.append(f"- 최근 프로필 초점: {memory.recent_profile_focus}")
+    if getattr(memory, "recent_hospital_focus", None):
+        lines.append(f"- 최근 병원 일정 초점: {memory.recent_hospital_focus}")
+    if getattr(memory, "pending_clarification", None):
+        lines.append(f"- 대기 중 명확화: {memory.pending_clarification}")
+    if getattr(memory, "clarification_question", None):
+        lines.append(f"- 직전 확인 질문: {memory.clarification_question}")
+    return "\n".join(lines) if lines else "구조화 메모리 없음"
+
+
+async def _update_session_memory(
+    *,
+    session_id: int,
+    analysis: QuestionAnalysis,
+    plan: ChatPlan | None,
+    assistant_content: str,
+    context: PatientChatContext,
+) -> None:
+    memory = context.session_memory or await ChatSessionMemory.get_or_none(session_id=session_id)
+    if not memory:
+        memory = await ChatSessionMemory.create(session_id=session_id)
+
+    topic = plan.topic if plan and plan.topic else analysis.primary_intent
+    memory.recent_topic = str(topic or "")[:50] or None
+
+    target_med_name = None
+    if analysis.target_med:
+        target_med_name = str(analysis.target_med.get("display_name") or "").strip() or None
+    if not target_med_name and analysis.primary_intent in {"tonight_check", "schedule_order", "adherence_priority", "schedule"}:
+        for med in context.meds:
+            name = str(med.get("display_name") or "").strip()
+            if name and name in assistant_content:
+                target_med_name = name
+                break
+    if target_med_name:
+        memory.recent_drug_name = target_med_name
+
+    external_name = analysis.external_drug_name or (plan.referenced_drug_name if plan else None)
+    if external_name:
+        memory.recent_external_drug_name = str(external_name).strip()[:255] or None
+
+    if analysis.primary_intent.startswith("profile") or (plan and plan.topic == "profile"):
+        focus = plan.requested_fields if plan and plan.requested_fields else analysis.intents
+        memory.recent_profile_focus = ", ".join(focus[:5])[:255] or None
+
+    if analysis.primary_intent == "hospital_schedule" or (plan and plan.topic == "hospital_schedule"):
+        normalized = str(analysis.raw_message or "").strip()
+        if _contains_any(normalized, ["검사"]):
+            memory.recent_hospital_focus = "검사 일정"
+        elif _contains_any(normalized, ["외래", "진료"]):
+            memory.recent_hospital_focus = "외래/진료 일정"
+        else:
+            memory.recent_hospital_focus = "가장 가까운 병원 일정"
+
+    pending_clarification = None
+    clarification_question = None
+    if plan and plan.needs_clarification and plan.clarification_question:
+        clarification_question = plan.clarification_question
+        if plan.topic == "drug_interaction":
+            pending_clarification = "interaction_scope"
+        else:
+            pending_clarification = f"{plan.topic}_clarification"
+    elif "현재 복용약끼리 비교할지, 새로 받은 약까지 포함할지" in assistant_content:
+        pending_clarification = "interaction_scope"
+        clarification_question = "현재 복용약끼리 비교할지, 새로 받은 약까지 포함할지 먼저 알려 주세요."
+
+    memory.pending_clarification = pending_clarification
+    memory.clarification_question = clarification_question
+    await memory.save()
+    context.session_memory = memory
 
 
 # KIDS evidence 텍스트 구성
@@ -786,12 +1578,25 @@ async def _get_active_meds(patient_id: int) -> list[dict[str, Any]]:
             is_active=True,
             confirmed_at__not_isnull=True,
         )
+        .prefetch_related("drug_info_cache", "drug_catalog")
         .order_by("id")
         .all()
     )
+    if not rows:
+        rows = (
+            await PatientMed.filter(
+                patient_id=patient_id,
+                is_active=True,
+            )
+            .prefetch_related("drug_info_cache", "drug_catalog")
+            .order_by("id")
+            .all()
+        )
 
     results: list[dict[str, Any]] = []
     for row in rows:
+        cache = getattr(row, "drug_info_cache", None)
+        catalog = getattr(row, "drug_catalog", None)
         results.append(
             {
                 "patient_med_id": int(row.id),
@@ -799,6 +1604,24 @@ async def _get_active_meds(patient_id: int) -> list[dict[str, Any]]:
                 "dosage": row.dosage,
                 "route": row.route,
                 "notes": row.notes,
+                "source_document_id": getattr(row, "source_document_id", None),
+                "confirmed_at": row.confirmed_at.isoformat() if row.confirmed_at else None,
+                "drug_info": {
+                    "drug_name_display": getattr(cache, "drug_name_display", None),
+                    "manufacturer": getattr(cache, "manufacturer", None),
+                    "efficacy": getattr(cache, "efficacy", None),
+                    "dosage_info": getattr(cache, "dosage_info", None),
+                    "precautions": getattr(cache, "precautions", None),
+                    "interactions": getattr(cache, "interactions", None),
+                    "side_effects": getattr(cache, "side_effects", None),
+                    "storage_method": getattr(cache, "storage_method", None),
+                },
+                "drug_catalog": {
+                    "name": getattr(catalog, "name", None),
+                    "ingredients": getattr(catalog, "ingredients", None),
+                    "warnings": getattr(catalog, "warnings", None),
+                    "manufacturer": getattr(catalog, "manufacturer", None),
+                },
             }
         )
     return results
@@ -846,6 +1669,91 @@ async def _get_active_schedules(patient_id: int) -> list[dict[str, Any]]:
 # 건강 프로필 조회
 async def _get_profile(patient_id: int) -> PatientProfile | None:
     return await PatientProfile.get_or_none(patient_id=patient_id, is_deleted=False)
+
+
+async def _get_hospital_schedules(patient_id: int) -> list[HospitalSchedule]:
+    return await HospitalSchedule.filter(patient_id=patient_id).order_by("scheduled_at", "id").all()
+
+
+async def _get_active_dur_alerts(patient_id: int) -> list[dict[str, Any]]:
+    rows = (
+        await DurAlert.filter(patient_id=patient_id, is_active=True)
+        .prefetch_related("patient_med", "related_patient_med")
+        .order_by("-created_at", "-id")
+        .all()
+    )
+
+    results: list[dict[str, Any]] = []
+    for row in rows:
+        patient_med = getattr(row, "patient_med", None)
+        related_med = getattr(row, "related_patient_med", None)
+        results.append(
+            {
+                "alert_type": str(getattr(row, "alert_type", "") or "").strip(),
+                "level": str(getattr(row, "level", "") or "").strip(),
+                "message": str(getattr(row, "message", "") or "").strip(),
+                "basis_json": str(getattr(row, "basis_json", "") or "").strip(),
+                "patient_med_name": str(getattr(patient_med, "display_name", "") or "").strip(),
+                "related_patient_med_name": str(getattr(related_med, "display_name", "") or "").strip(),
+            }
+        )
+    return results
+
+
+async def _get_recent_adherence_summary(patient_id: int, meds: list[dict[str, Any]]) -> dict[str, Any]:
+    med_name_map = {
+        int(med.get("patient_med_id")): str(med.get("display_name") or "").strip()
+        for med in meds
+        if med.get("patient_med_id") is not None
+    }
+    rows = await IntakeLog.filter(patient_id=patient_id).order_by("-scheduled_at", "-id").limit(20).all()
+
+    if not rows:
+        return {
+            "total": 0,
+            "taken": 0,
+            "missed": 0,
+            "pending": 0,
+            "skipped": 0,
+            "recent_missed_names": [],
+            "recent_lines": [],
+        }
+
+    counts = {"taken": 0, "missed": 0, "pending": 0, "skipped": 0}
+    recent_missed_names: list[str] = []
+    recent_lines: list[str] = []
+    for row in rows:
+        status = str(getattr(row, "status", "") or "").strip().lower()
+        if status in counts:
+            counts[status] += 1
+        med_name = med_name_map.get(
+            int(getattr(row, "patient_med_id", 0) or 0),
+            f"약 #{getattr(row, 'patient_med_id', '')}",
+        )
+        scheduled_at = _format_datetime_korean(getattr(row, "scheduled_at", None))
+        if status == "missed" and med_name:
+            recent_missed_names.append(med_name)
+        status_label = {
+            "taken": "복용 완료",
+            "missed": "놓침",
+            "pending": "대기",
+            "skipped": "건너뜀",
+        }.get(status, status or "기록")
+        recent_lines.append(f"{scheduled_at} {med_name} - {status_label}")
+
+    return {
+        "total": len(rows),
+        "taken": counts["taken"],
+        "missed": counts["missed"],
+        "pending": counts["pending"],
+        "skipped": counts["skipped"],
+        "recent_missed_names": _dedupe_lines(recent_missed_names, limit=4),
+        "recent_lines": _dedupe_lines(recent_lines, limit=4),
+    }
+
+
+async def _get_session_memory(session_id: int) -> ChatSessionMemory | None:
+    return await ChatSessionMemory.get_or_none(session_id=session_id)
 
 
 # KIDS
@@ -1010,6 +1918,10 @@ async def _build_patient_chat_context(*, session_id: int, patient_id: int) -> Pa
     latest_guide = await _get_latest_done_guide(patient_id)
     meds = await _get_active_meds(patient_id)
     schedules = await _get_active_schedules(patient_id)
+    hospital_schedules = await _get_hospital_schedules(patient_id)
+    dur_alerts = await _get_active_dur_alerts(patient_id)
+    adherence_summary = await _get_recent_adherence_summary(patient_id, meds)
+    session_memory = await _get_session_memory(session_id)
     recent_messages = (
         await ChatMessage.filter(session_id=session_id).order_by("-created_at", "-id").limit(CHAT_HISTORY_TURNS).all()
     )
@@ -1024,7 +1936,11 @@ async def _build_patient_chat_context(*, session_id: int, patient_id: int) -> Pa
         latest_guide=latest_guide,
         meds=meds,
         schedules=schedules,
+        hospital_schedules=hospital_schedules,
+        dur_alerts=dur_alerts,
+        adherence_summary=adherence_summary,
         recent_messages=recent_messages,
+        session_memory=session_memory,
         kids_evidence=kids_evidence,
         rag_context=rag_context,
     )
@@ -1060,6 +1976,16 @@ def _analyze_intents(message: str) -> list[str]:
         _append_unique(intents, "profile_sleep")
     if _contains_any(normalized, _PROFILE_EXERCISE_KEYWORDS):
         _append_unique(intents, "profile_exercise")
+    if _contains_any(normalized, _PROFILE_CONDITION_KEYWORDS):
+        _append_unique(intents, "profile_conditions")
+    if _contains_any(normalized, _PROFILE_ALLERGY_KEYWORDS):
+        _append_unique(intents, "profile_allergies")
+    if _contains_any(normalized, _PROFILE_HOSPITALIZATION_KEYWORDS):
+        _append_unique(intents, "profile_hospitalization")
+    if _is_profile_body_query(normalized):
+        _append_unique(intents, "profile_body")
+    if _is_profile_summary_query(normalized):
+        _append_unique(intents, "profile_summary")
     if (
         _contains_any(normalized, ["아침", "오전"])
         and _contains_any(normalized, ["저녁", "오후", "취침 전"])
@@ -1088,6 +2014,8 @@ def _analyze_intents(message: str) -> list[str]:
         _append_unique(intents, "allergy_food")
     if _contains_any(normalized, _MED_LIST_KEYWORDS):
         _append_unique(intents, "med_list")
+    if _contains_any(normalized, _HOSPITAL_SCHEDULE_KEYWORDS):
+        _append_unique(intents, "hospital_schedule")
     if _contains_any(normalized, _SCHEDULE_KEYWORDS):
         _append_unique(intents, "schedule")
     if _contains_any(normalized, _CAREGIVER_CHECK_KEYWORDS):
@@ -1128,10 +2056,16 @@ def _resolve_answer_mode(*, intents: list[str], is_emergency: bool) -> str:
     if any(intent in intents for intent in {"missed_dose", "emergency_guidance", "rash"}):
         return "safety_guidance"
     if len(intents) == 1 and intents[0] in {
+        "profile_body",
+        "profile_summary",
+        "profile_guidance",
         "profile_smoking",
         "profile_alcohol",
         "profile_sleep",
         "profile_exercise",
+        "profile_conditions",
+        "profile_allergies",
+        "profile_hospitalization",
         "med_list",
         "med_time_split",
         "med_regularity",
@@ -1144,10 +2078,11 @@ def _resolve_answer_mode(*, intents: list[str], is_emergency: bool) -> str:
         "observation_check",
         "school_observation",
         "cold_med_caution",
+        "hospital_schedule",
     }:
         return "direct_fact"
     if any(
-        intent in intents for intent in {"caregiver_check", "self_check", "lifestyle_top", "general_caution", "guide"}
+        intent in intents for intent in {"caregiver_check", "self_check", "lifestyle_top", "general_caution", "guide", "profile_guidance"}
     ):
         return "record_counseling"
     return "general_counseling"
@@ -1190,7 +2125,45 @@ def _is_profile_caution_query(message: str) -> bool:
             "조심할 점",
             "내가 주의",
             "내 기록으로",
+            "건강프로필 기준으로",
+            "건강 프로필 기준으로",
         ],
+    )
+
+
+def _is_guidance_query(message: str) -> bool:
+    normalized = (message or "").strip()
+    return _contains_any(
+        normalized,
+        [
+            "먼저 뭐 봐야",
+            "먼저 봐야",
+            "먼저 봐야 할",
+            "먼저 무엇을 봐야",
+            "먼저 확인해야",
+            "어떻게 관리",
+            "관리해야",
+            "전반적으로 조언",
+            "조언해줘",
+            "생활관리에서",
+            "생활 관리에서",
+            "중요한 점",
+            "제일 중요한 점",
+            "무엇이 중요",
+        ],
+    )
+
+
+def _is_profile_body_query(message: str) -> bool:
+    normalized = (message or "").strip()
+    return _contains_any(normalized, _PROFILE_BODY_KEYWORDS)
+
+
+def _is_profile_summary_query(message: str) -> bool:
+    normalized = (message or "").strip()
+    return _contains_any(normalized, _PROFILE_SUMMARY_KEYWORDS) or (
+        _contains_any(normalized, ["전반적으로", "전반적", "요약"])
+        and _contains_any(normalized, ["건강프로필", "건강 프로필", "내 프로필"])
     )
 
 
@@ -1205,6 +2178,40 @@ def _detect_time_period(message: str) -> str | None:
     return None
 
 
+def _was_waiting_for_interaction_scope(
+    recent_messages: list[ChatMessage],
+    session_memory: ChatSessionMemory | None = None,
+) -> bool:
+    if session_memory and getattr(session_memory, "pending_clarification", None) == "interaction_scope":
+        return True
+    for recent in reversed(recent_messages):
+        role = str(getattr(recent, "role", "") or "")
+        content = str(getattr(recent, "content", "") or "")
+        if role == "assistant" and "현재 복용약끼리 비교할지, 새로 받은 약까지 포함할지" in content:
+            return True
+        if role == "user" and content.strip():
+            break
+    return False
+
+
+def _is_hospital_followup_query(message: str, session_memory: ChatSessionMemory | None) -> bool:
+    normalized = (message or "").strip()
+    if not normalized or not session_memory:
+        return False
+    recent_topic = str(getattr(session_memory, "recent_topic", "") or "").strip()
+    pending = str(getattr(session_memory, "pending_clarification", "") or "").strip()
+    if recent_topic != "hospital_schedule" and pending != "hospital_schedule_clarification":
+        return False
+    if normalized in _AFFIRMATIVE_SHORT_REPLIES:
+        return True
+    if _contains_any(
+        normalized,
+        ["그 다음", "그다음", "다다음", "다음 외래", "다음 진료", "다음 검사", "다음 일정", "그 일정", "그거"],
+    ):
+        return True
+    return False
+
+
 def _analyze_question(
     *,
     message: str,
@@ -1212,14 +2219,42 @@ def _analyze_question(
     recent_messages: list[ChatMessage],
     requester_role: RequesterRole,
     profile: PatientProfile | None,
+    session_memory: ChatSessionMemory | None,
 ) -> QuestionAnalysis:
     normalized = (message or "").strip()
+    profile_query = _is_profile_body_query(normalized) or _is_profile_summary_query(normalized)
+    hospital_query = _contains_any(normalized, _HOSPITAL_SCHEDULE_KEYWORDS)
+    hospital_followup_query = _is_hospital_followup_query(normalized, session_memory)
+    med_list_query = _contains_any(normalized, _MED_LIST_KEYWORDS)
+    current_meds_interaction_query = (
+        _contains_any(normalized, _MED_LIST_KEYWORDS)
+        and _contains_any(
+            normalized,
+            ["같이", "상호작용", "함께", "조합", "조심", "주의", "같이 먹", "함께 먹"],
+        )
+    )
     target_med = _extract_target_med(
         message=normalized,
         meds=meds,
         recent_messages=recent_messages,
+        session_memory=session_memory,
     )
-    external_drug_name = None if target_med else _extract_external_drug_name(normalized, recent_messages)
+    external_drug_name = None
+    if not profile_query and not hospital_query and not hospital_followup_query and not med_list_query and not current_meds_interaction_query:
+        external_drug_name = None if target_med else _extract_external_drug_name(
+            normalized,
+            recent_messages,
+            session_memory=session_memory,
+        )
+    explicit_external_caution_query = bool(
+        external_drug_name
+        and _contains_any(normalized, ["주의사항", "주의할 점", "부작용", "용도", "무슨 약", "어떤 약", "뭐야"])
+        and not _contains_any(normalized, ["같이 먹", "함께 먹", "추가로 먹", "먹어도 돼", "복용해도 돼", "조합", "상호작용"])
+    )
+    explicit_new_drug_interaction_query = bool(
+        _contains_any(normalized, ["같이 먹", "함께 먹", "추가로 먹", "먹어도 돼", "복용해도 돼", "괜찮아", "조합", "상호작용"])
+        and (external_drug_name or _contains_any(normalized, ["새 감기약", "새 약", "감기약"]))
+    )
     target_condition = _extract_condition_name(normalized, profile)
     time_period = _detect_time_period(normalized)
     if (
@@ -1229,6 +2264,21 @@ def _analyze_question(
     ):
         external_drug_name = None
     is_emergency, emergency_message = _detect_emergency(normalized)
+    if _was_waiting_for_interaction_scope(recent_messages, session_memory) and _contains_any(
+        normalized, ["현재 복용약끼리", "현재 약끼리", "복용약끼리", "현재 먹는 약끼리"]
+    ):
+        return QuestionAnalysis(
+            raw_message=normalized,
+            intents=["medication_caution"],
+            primary_intent="medication_caution",
+            target_med=None,
+            external_drug_name=None,
+            target_condition=target_condition,
+            time_period=time_period,
+            is_emergency=is_emergency,
+            emergency_message=emergency_message,
+            answer_mode="record_counseling",
+        )
 
     raw_intents: list[str]
     if is_emergency:
@@ -1243,17 +2293,47 @@ def _analyze_question(
         )
     elif _contains_any(normalized, _RASH_KEYWORDS):
         raw_intents = ["rash"]
-    elif external_drug_name:
+    elif current_meds_interaction_query:
+        raw_intents = ["medication_caution", "med_list"]
+    elif explicit_new_drug_interaction_query:
+        raw_intents = ["medication_caution", "external_med"]
+    elif explicit_external_caution_query:
         raw_intents = ["external_med"]
+    elif _is_guidance_query(normalized):
+        raw_intents = ["profile_guidance"]
+    elif _is_profile_summary_query(normalized):
+        raw_intents = ["profile_summary"]
+        if _contains_any(normalized, _PROFILE_SLEEP_KEYWORDS):
+            raw_intents.append("profile_sleep")
+        if _contains_any(normalized, _PROFILE_EXERCISE_KEYWORDS):
+            raw_intents.append("profile_exercise")
+    elif hospital_query or hospital_followup_query:
+        raw_intents = ["hospital_schedule"]
+    elif _is_profile_body_query(normalized):
+        raw_intents = ["profile_body"]
+        if _contains_any(normalized, _PROFILE_SLEEP_KEYWORDS):
+            raw_intents.append("profile_sleep")
+        if _contains_any(normalized, _PROFILE_EXERCISE_KEYWORDS):
+            raw_intents.append("profile_exercise")
+    elif external_drug_name:
+        if _contains_any(
+            normalized,
+            _MEDICATION_CAUTION_KEYWORDS
+            + _COLD_MED_CAUTION_KEYWORDS
+            + ["같이 먹", "함께 먹", "추가로 먹", "먹어도 돼", "복용해도 돼", "괜찮아", "같이 복용"],
+        ):
+            raw_intents = ["medication_caution", "external_med"]
+        else:
+            raw_intents = ["external_med"]
     elif target_condition and _contains_any(normalized, _CONDITION_TREATMENT_KEYWORDS + _MED_DETAIL_KEYWORDS):
         raw_intents = ["condition_general"]
     elif _is_profile_caution_query(normalized):
         raw_intents = ["general_caution"]
-    elif _contains_any(normalized, _TONIGHT_CHECK_KEYWORDS):
+    elif _contains_any(normalized, _TONIGHT_CHECK_KEYWORDS + ["오늘 약", "오늘 먹을 약", "오늘 복용할 약", "오늘 내가 먹어야 할 약"]):
         raw_intents = ["tonight_check"]
     elif _contains_any(normalized, _SCHEDULE_ORDER_KEYWORDS):
         raw_intents = ["schedule_order"]
-    elif _contains_any(normalized, _ADHERENCE_PRIORITY_KEYWORDS + ["안 빼먹어야", "꼭 안 빼먹어야", "꼭 챙겨야"]):
+    elif _contains_any(normalized, _ADHERENCE_PRIORITY_KEYWORDS + ["안 빼먹어야", "꼭 안 빼먹어야", "꼭 챙겨야", "자주 놓치는 약", "자주 놓치", "놓치는 약"]):
         raw_intents = ["adherence_priority"]
     elif _contains_any(normalized, _SCHOOL_OBSERVATION_KEYWORDS):
         raw_intents = ["school_observation"]
@@ -1273,7 +2353,7 @@ def _analyze_question(
             raw_intents.append("medication_caution")
         if _contains_any(normalized, _PRN_KEYWORDS + _MED_REGULARITY_KEYWORDS):
             raw_intents.append("med_prn")
-    elif _contains_any(normalized, _MED_LIST_KEYWORDS):
+    elif med_list_query:
         raw_intents = ["med_list"]
         if _contains_any(normalized, _MED_TIME_SPLIT_KEYWORDS):
             raw_intents.append("med_time_split")
@@ -1281,6 +2361,12 @@ def _analyze_question(
             raw_intents.append("med_regularity")
     elif _contains_any(normalized, _LIFESTYLE_TOP_KEYWORDS):
         raw_intents = ["lifestyle_top"]
+    elif _is_guidance_query(normalized) and _contains_any(
+        normalized, _PROFILE_SLEEP_KEYWORDS + _PROFILE_EXERCISE_KEYWORDS + ["건강프로필", "건강 프로필"]
+    ):
+        raw_intents = ["profile_guidance"]
+    elif _contains_any(normalized, _PROFILE_SLEEP_KEYWORDS) and _contains_any(normalized, _PROFILE_EXERCISE_KEYWORDS):
+        raw_intents = ["profile_sleep", "profile_exercise"]
     elif _contains_any(normalized, _PROFILE_SLEEP_KEYWORDS):
         raw_intents = ["profile_sleep"]
     elif _contains_any(normalized, _PROFILE_EXERCISE_KEYWORDS):
@@ -1297,7 +2383,7 @@ def _analyze_question(
         raw_intents = ["schedule"]
     elif _contains_any(normalized, _SESSION_SUMMARY_KEYWORDS):
         raw_intents = ["session_summary"]
-    elif _contains_any(normalized, _GUIDE_SUMMARY_KEYWORDS):
+    elif _contains_any(normalized, _GUIDE_SUMMARY_KEYWORDS) and not target_med and not external_drug_name:
         raw_intents = ["guide"]
     else:
         raw_intents = ["general"]
@@ -1343,11 +2429,17 @@ def _answer_profile_intent(
         )
 
     if intent == "profile_smoking":
+        smoker = getattr(profile, "is_smoker", None)
         value = getattr(profile, "avg_cig_packs_per_week", None)
-        if value is None:
-            base = f"{target_label} 기준으로 주간 흡연량 정보가 등록되어 있지 않습니다."
+        if value is None and smoker is None:
+            base = f"{target_label} 기준으로 흡연 정보가 등록되어 있지 않습니다."
+        elif value is None and smoker is False:
+            base = f"{target_label} 기준으로 비흡연으로 기록되어 있습니다."
+        elif value is None:
+            base = f"{target_label} 기준으로 흡연 중으로 보이지만 주간 흡연량은 등록되어 있지 않습니다."
         else:
-            base = f"{target_label} 기준으로 주에 평균 {value}갑 정도 흡연하는 것으로 기록되어 있습니다."
+            prefix = "흡연 중이며 " if smoker is not False else "현재 비흡연으로 기록되어 있으나, "
+            base = f"{target_label} 기준으로 {prefix}주에 평균 {value}갑 정도 흡연하는 것으로 기록되어 있습니다."
         return (
             _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
         )
@@ -1382,7 +2474,114 @@ def _answer_profile_intent(
             _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
         )
 
+    if intent == "profile_body":
+        height_cm = getattr(profile, "height_cm", None)
+        weight_kg = getattr(profile, "weight_kg", None)
+        bmi = getattr(profile, "bmi", None)
+        points: list[str] = []
+        if height_cm is not None:
+            points.append(f"키는 {height_cm}cm입니다.")
+        if weight_kg is not None:
+            points.append(f"몸무게는 {weight_kg}kg입니다.")
+        if bmi is not None:
+            bmi_category = _bmi_category_text(bmi)
+            if bmi_category:
+                points.append(f"BMI는 {bmi}이며 {bmi_category}입니다.")
+            else:
+                points.append(f"BMI는 {bmi}입니다.")
+        if not points:
+            base = f"{target_label} 기준으로 키, 몸무게, BMI 정보가 등록되어 있지 않습니다."
+        else:
+            base = f"{target_label} 기준 건강 프로필 수치는 다음과 같습니다.\n" + "\n".join(f"- {point}" for point in points)
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
+
+    if intent == "profile_summary":
+        lines = _build_profile_summary_lines(profile)
+        if not lines:
+            base = f"{target_label} 기준으로 요약할 건강 프로필 정보가 아직 충분하지 않습니다."
+        else:
+            base = f"{target_label} 기준 건강 프로필을 요약하면 다음과 같습니다.\n" + "\n".join(
+                f"- {line}" for line in lines[:6]
+            )
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
+
+    if intent == "profile_conditions":
+        conditions = _split_text_items(getattr(profile, "conditions", None))
+        if not conditions:
+            base = f"{target_label} 기준으로 등록된 기저질환이나 건강 상태 정보가 없습니다."
+        else:
+            base = f"{target_label} 기준 건강 상태는 다음과 같이 기록되어 있습니다.\n" + "\n".join(
+                f"- {condition}" for condition in conditions[:5]
+            )
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
+
+    if intent == "profile_allergies":
+        allergies = _split_text_items(getattr(profile, "allergies", None))
+        if not allergies:
+            base = f"{target_label} 기준으로 등록된 알레르기 정보가 없습니다."
+        else:
+            base = f"{target_label} 기준 알레르기 정보는 다음과 같습니다.\n" + "\n".join(
+                f"- {allergy}" for allergy in allergies[:5]
+            )
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
+
+    if intent == "profile_hospitalization":
+        is_hospitalized = getattr(profile, "is_hospitalized", None)
+        discharge_date = getattr(profile, "discharge_date", None)
+        if is_hospitalized is None and discharge_date is None:
+            base = f"{target_label} 기준으로 입원/퇴원 정보가 등록되어 있지 않습니다."
+        elif is_hospitalized is True:
+            base = f"{target_label} 기준으로 현재 입원 중으로 기록되어 있습니다."
+            if discharge_date:
+                base += f"\n- 퇴원 예정 또는 기록된 퇴원일: {discharge_date}"
+        else:
+            base = f"{target_label} 기준으로 현재 입원 중은 아닌 것으로 기록되어 있습니다."
+            if discharge_date:
+                base += f"\n- 기록된 퇴원일: {discharge_date}"
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
+
     return None
+
+
+def _answer_profile_guidance_intent(
+    *,
+    message: str,
+    profile: PatientProfile | None,
+    guide: Guide | None,
+    adherence_summary: dict[str, Any] | None,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str | None:
+    if not profile and not guide:
+        return None
+
+    current_points, general_points, next_points = _build_profile_guidance_sections(
+        message=message,
+        profile=profile,
+        guide=guide,
+        adherence_summary=adherence_summary,
+    )
+
+    if not current_points and not general_points and not next_points:
+        return None
+
+    base = _compose_medical_sections(
+        current_record_points=current_points,
+        general_info_points=general_points,
+        next_check_points=next_points,
+    )
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
 
 # 현재 복용 약 목록 직접 응답
@@ -1420,12 +2619,17 @@ def _extract_target_med(
     message: str,
     meds: list[dict[str, Any]],
     recent_messages: list[ChatMessage] | None = None,
+    session_memory: ChatSessionMemory | None = None,
 ) -> dict[str, Any] | None:
     normalized = (message or "").strip()
     for med in meds:
         name = str(med.get("display_name") or "").strip()
         if name and _contains_keyword(normalized, name):
             return med
+
+    fuzzy_matched = _find_best_med_match(query=normalized, meds=meds)
+    if fuzzy_matched:
+        return fuzzy_matched
 
     if recent_messages and _contains_any(normalized, _FOLLOWUP_MED_REFERENCES):
         for recent in reversed(recent_messages):
@@ -1435,11 +2639,183 @@ def _extract_target_med(
                 if name and _contains_keyword(recent_content, name):
                     return med
 
+    if session_memory and _contains_any(normalized, _FOLLOWUP_MED_REFERENCES):
+        remembered_name = str(getattr(session_memory, "recent_drug_name", "") or "").strip()
+        if remembered_name:
+            for med in meds:
+                name = str(med.get("display_name") or "").strip()
+                if name and name == remembered_name:
+                    return med
+
     return None
 
 
-def _extract_external_drug_name(message: str, recent_messages: list[ChatMessage] | None = None) -> str | None:
+def _has_record_context(context: PatientChatContext) -> bool:
+    return bool(
+        context.profile
+        or context.meds
+        or context.schedules
+        or context.hospital_schedules
+        or context.latest_guide
+    )
+
+
+def _has_required_context_for_request(
+    *,
+    analysis: QuestionAnalysis,
+    plan: ChatPlan | None,
+    context: PatientChatContext,
+) -> bool:
+    primary = analysis.primary_intent
+    topic = plan.topic if plan else ""
+
+    if primary in {"daily", "general", "external_med", "condition_general", "guide"}:
+        return True
+
+    if primary in {
+        "profile_body",
+        "profile_summary",
+        "profile_smoking",
+        "profile_alcohol",
+        "profile_sleep",
+        "profile_exercise",
+        "profile_conditions",
+        "profile_allergies",
+        "profile_hospitalization",
+    }:
+        return context.profile is not None
+
+    if primary == "profile_guidance":
+        return bool(context.profile or context.latest_guide or context.adherence_summary.get("total"))
+
+    if primary in {
+        "med_list",
+        "med_detail",
+        "med_time_split",
+        "med_regularity",
+        "med_prn",
+        "schedule",
+        "tonight_check",
+        "schedule_order",
+        "adherence_priority",
+        "missed_dose",
+        "self_check",
+        "caregiver_check",
+    }:
+        return bool(context.meds or context.schedules or context.adherence_summary.get("total"))
+
+    if primary == "medication_caution":
+        return bool(context.meds or analysis.external_drug_name)
+
+    if primary == "general_caution":
+        return bool(
+            context.profile
+            or context.latest_guide
+            or context.meds
+            or context.schedules
+            or context.adherence_summary.get("total")
+        )
+
+    if primary == "hospital_schedule":
+        return bool(context.hospital_schedules)
+
+    if primary in {"session_summary", "lifestyle_top"}:
+        return _has_record_context(context)
+
+    if topic == "profile":
+        return bool(context.profile or context.latest_guide or context.adherence_summary.get("total"))
+    if topic in {"current_meds", "med_schedule", "drug_interaction"}:
+        return bool(context.meds or context.schedules or context.adherence_summary.get("total"))
+    if topic == "hospital_schedule":
+        return bool(context.hospital_schedules)
+
+    return _has_record_context(context)
+
+
+def _resolve_data_readiness(context: PatientChatContext) -> str:
+    has_profile = context.profile is not None
+    has_meds = bool(context.meds)
+    has_schedules = bool(context.schedules)
+    has_hospital = bool(context.hospital_schedules)
+    has_guide = context.latest_guide is not None
+    has_adherence = bool(context.adherence_summary.get("total"))
+
+    score = sum([has_profile, has_meds, has_schedules, has_hospital, has_guide, has_adherence])
+    if score == 0:
+        return "empty"
+    if score <= 2:
+        return "partial"
+    return "rich"
+
+
+def _is_personalized_request(*, analysis: QuestionAnalysis, plan: ChatPlan | None) -> bool:
+    if analysis.primary_intent in _PERSONALIZED_INTENTS:
+        return True
+    if analysis.primary_intent in {"daily", "general", "external_med", "condition_general"}:
+        return False
+    if plan and plan.topic in {"profile", "hospital_schedule", "current_meds", "med_schedule", "drug_interaction"}:
+        return True
+    return False
+
+
+def _build_record_required_reply(
+    *,
+    analysis: QuestionAnalysis,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    if analysis.primary_intent in {"daily", "general", "external_med", "condition_general"}:
+        base = (
+            "현재 기록이 충분하지 않아도 일반적인 기준으로는 안내드릴 수 있습니다. "
+            "맞춤형 설명이 필요하면 건강 프로필이나 복약 정보를 더 등록해 주세요."
+        )
+        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+    if analysis.primary_intent in {"med_list", "schedule", "med_detail", "medication_caution", "tonight_check", "schedule_order"}:
+        base = (
+            "현재 등록된 복약 정보가 없어 맞춤 복약 답변은 아직 어렵습니다. "
+            "대신 일반적인 약 정보나 복용 시 주의점은 안내할 수 있습니다. 정확한 복약 상담을 원하시면 처방 문서나 복약 정보를 먼저 등록해 주세요."
+        )
+    elif analysis.primary_intent in {
+        "profile_body",
+        "profile_summary",
+        "profile_guidance",
+        "profile_sleep",
+        "profile_exercise",
+        "profile_conditions",
+        "profile_allergies",
+    }:
+        base = (
+            "현재 등록된 건강 프로필이 충분하지 않아 맞춤 건강 답변은 제한됩니다. "
+            "건강 프로필을 입력하면 BMI, 수면, 운동, 알레르기, 기저질환 기준으로 더 정확히 안내드릴 수 있습니다."
+        )
+    elif analysis.primary_intent == "hospital_schedule":
+        base = (
+            "현재 연결된 병원 일정이 없어 맞춤 예약 확인은 어렵습니다. "
+            "일정이 등록되면 다음 외래나 검사 일정을 바로 안내드릴 수 있습니다."
+        )
+    else:
+        base = (
+            f"{target_label} 기준 기록이 아직 충분하지 않아 개인화 답변은 제한됩니다. "
+            "일반적인 약 정보나 건강 정보는 안내할 수 있고, 건강 프로필이나 처방 문서를 등록하면 더 정확히 도와드릴 수 있습니다."
+        )
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _extract_external_drug_name(
+    message: str,
+    recent_messages: list[ChatMessage] | None = None,
+    *,
+    session_memory: ChatSessionMemory | None = None,
+) -> str | None:
     normalized = str(message or "").strip()
+    if _contains_any(
+        normalized,
+        _MED_LIST_KEYWORDS
+        + ["현재 약", "지금 먹는 약", "복용약", "현재 복용약", "같이 먹", "함께 먹", "조합", "상호작용"],
+    ):
+        return None
     patterns = [
         r"([가-힣A-Za-z0-9]+)라고\s*알아",
         r"([가-힣A-Za-z0-9]+)라는\s*약",
@@ -1501,6 +2877,10 @@ def _extract_external_drug_name(message: str, recent_messages: list[ChatMessage]
                         preferred.append(token)
                 if preferred:
                     return preferred[0]
+    if session_memory and _contains_any(normalized, _FOLLOWUP_MED_REFERENCES + _EXTERNAL_MED_FOLLOWUP_KEYWORDS):
+        remembered_name = str(getattr(session_memory, "recent_external_drug_name", "") or "").strip()
+        if remembered_name:
+            return remembered_name
     return None
 
 
@@ -1574,7 +2954,7 @@ def _build_external_drug_text(*, drug_name: str | None, lookup: dict[str, Any] |
 
 
 def _should_prefer_llm(*, analysis: QuestionAnalysis) -> bool:
-    return analysis.answer_mode not in {"emergency", "direct_fact", "safety_guidance"}
+    return analysis.answer_mode in {"record_counseling", "general_counseling", "condition_counseling"}
 
 
 def _answer_med_time_split_intent(
@@ -1707,12 +3087,21 @@ async def _answer_med_detail_intent(
     meds: list[dict[str, Any]],
     schedules: list[dict[str, Any]],
     recent_messages: list[ChatMessage] | None,
+    session_memory: ChatSessionMemory | None = None,
     matched_med: dict[str, Any] | None = None,
+    dur_alerts: list[dict[str, Any]] | None = None,
+    adherence_summary: dict[str, Any] | None = None,
+    guide: Guide | None = None,
     target_label: str,
     requester_role: RequesterRole,
     audience: str,
 ) -> str | None:
-    matched = matched_med or _extract_target_med(message=message, meds=meds, recent_messages=recent_messages)
+    matched = matched_med or _extract_target_med(
+        message=message,
+        meds=meds,
+        recent_messages=recent_messages,
+        session_memory=session_memory,
+    )
     if not matched:
         return None
 
@@ -1733,26 +3122,54 @@ async def _answer_med_detail_intent(
     lookup = await _lookup_external_med_info(name)
     mfds_item = lookup.get("mfds")
     kids_items = lookup.get("kids") or []
+    med_info = matched.get("drug_info") or {}
+    catalog_info = matched.get("drug_catalog") or {}
 
-    parts = [f"{target_label} 기준으로 {name} 정보는 다음과 같습니다."]
+    record_points: list[str] = []
+    general_points: list[str] = []
+    next_points: list[str] = []
     efficacy = _first_clean_line(getattr(mfds_item, "efficacy", None)) if mfds_item else ""
+    if not efficacy:
+        efficacy = _summarize_text(med_info.get("efficacy"), max_sentences=1)
     if dosage:
-        parts.append(f"- 용량: {dosage}")
+        record_points.append(f"{name} 용량은 {dosage}로 기록되어 있습니다.")
     if efficacy:
-        parts.append(f"- 용도: {efficacy}")
+        general_points.append(f"{name}은 보통 {efficacy}")
     if schedule_lines:
-        parts.append("- 복용 시간: " + ", ".join(schedule_lines[:3]))
+        record_points.append("복용 시간은 " + ", ".join(schedule_lines[:3]) + "입니다.")
     if notes:
-        parts.append(f"- 복용 메모: {notes}")
+        record_points.append(f"복용 메모에는 `{notes}`로 남아 있습니다.")
     precautions = _summarize_text(getattr(mfds_item, "precautions", None), max_sentences=1) if mfds_item else ""
+    if not precautions:
+        precautions = _summarize_text(med_info.get("precautions"), max_sentences=1)
     if precautions:
-        parts.append(f"- 주의사항: {precautions}")
+        general_points.append(f"주의사항으로는 {precautions}")
+    if med_info.get("storage_method"):
+        general_points.append(f"보관 방법은 {_first_clean_line(str(med_info.get('storage_method') or ''))}")
+    ingredients = _first_clean_line(str(catalog_info.get("ingredients") or ""))
+    if ingredients:
+        general_points.append(f"성분 참고로는 {ingredients}")
     if kids_items:
         kids_summary = _first_clean_line(kids_items[0].get("content"))
         if kids_summary:
-            parts.append(f"- 추가 안전 근거: {kids_summary}")
+            general_points.append(f"추가 안전 근거로는 {kids_summary}")
+    dur_points = _extract_dur_alert_points(dur_alerts=dur_alerts or [], med_name=name, limit=2)
+    if dur_points:
+        next_points.extend(dur_points)
+    med_adherence_points = _build_med_adherence_points(med_name=name, adherence_summary=adherence_summary)
+    if med_adherence_points:
+        record_points.extend(med_adherence_points)
+    guide_points = _build_med_guidance_points(guide=guide, med_name=name)
+    if guide_points:
+        next_points.extend(guide_points[:2])
+    if not next_points:
+        next_points.append("복용 시간과 추가 복용 여부를 임의로 바꾸기보다 현재 일정과 처방 지시를 먼저 확인해 주세요.")
 
-    base = "\n".join(parts)
+    base = _compose_medical_sections(
+        current_record_points=record_points,
+        general_info_points=general_points,
+        next_check_points=next_points,
+    )
     return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
 
@@ -1888,11 +3305,14 @@ def _answer_lifestyle_top_intent(
     *,
     guide: Guide | None,
     profile: PatientProfile | None,
+    adherence_summary: dict[str, Any] | None,
     target_label: str,
     requester_role: RequesterRole,
     audience: str,
 ) -> str:
-    points: list[str] = []
+    record_points: list[str] = []
+    general_points: list[str] = []
+    next_points: list[str] = []
     if guide and isinstance(guide.content_json, dict):
         for section in guide.content_json.get("sections") or []:
             title = str(section.get("title") or "")
@@ -1901,34 +3321,50 @@ def _answer_lifestyle_top_intent(
                 for line in body.split("\n"):
                     clean = line.strip().replace("- ", "")
                     if clean:
-                        points.append(clean)
-    if not points and guide and guide.content_text:
-        points.extend([line.strip() for line in guide.content_text.split(".") if line.strip()])
+                        general_points.append(clean)
+    if not general_points and guide and guide.content_text:
+        general_points.extend([line.strip() for line in guide.content_text.split(".") if line.strip()])
 
     if profile:
         sleep_hours = getattr(profile, "avg_sleep_hours_per_day", None)
         exercise_minutes = getattr(profile, "avg_exercise_minutes_per_day", None)
         allergies = _split_text_items(getattr(profile, "allergies", None))
+        smoker = getattr(profile, "is_smoker", None)
+        alcohol = getattr(profile, "avg_alcohol_bottles_per_week", None)
 
         if allergies:
-            points.insert(0, f"음식/알레르기 주의: {', '.join(allergies)}")
+            record_points.append(f"알레르기 주의 정보는 {', '.join(allergies[:2])}입니다.")
         if sleep_hours is not None:
-            points.insert(
-                1, f"수면: 하루 평균 {sleep_hours}시간으로 기록되어 있어 수면 리듬을 일정하게 유지하는 것이 좋습니다."
-            )
+            record_points.append(f"수면은 하루 평균 {sleep_hours}시간으로 기록되어 있습니다.")
         if exercise_minutes is not None:
-            points.insert(
-                2,
-                f"운동: 하루 평균 {exercise_minutes}분 정도로 기록되어 있어 무리하지 않는 범위에서 꾸준히 유지하는 것이 좋습니다.",
-            )
+            record_points.append(f"운동은 하루 평균 {exercise_minutes}분 정도로 기록되어 있습니다.")
+        if smoker is True:
+            record_points.append("흡연 중으로 기록되어 있어 호흡기 증상이나 약 복용 시 주의점을 함께 보는 것이 좋습니다.")
+        if alcohol is not None:
+            record_points.append(f"주간 음주량은 {alcohol}병으로 기록되어 있습니다.")
+        if sleep_hours is not None and float(sleep_hours) < 6:
+            next_points.append("수면 시간이 짧은 편이라 먼저 수면 리듬과 최근 복용약 영향을 함께 보는 것이 좋습니다.")
+        if exercise_minutes is not None and int(exercise_minutes) < 20:
+            next_points.append("활동량이 적은 편이라 무리 없는 범위에서 가벼운 활동을 유지하는지 확인하는 것이 좋습니다.")
 
-    deduped = _dedupe_lines(points, limit=3)
-    base = (
-        f"{target_label} 기준으로 생활관리에서 특히 중요한 점 3가지는 다음과 같습니다.\n"
-        + "\n".join(f"- {item}" for item in deduped)
-        if deduped
-        else f"{target_label} 기준 생활관리 요약 정보가 아직 충분하지 않습니다."
-    )
+    next_points.extend(_build_adherence_guidance_points(adherence_summary=adherence_summary))
+
+    if not next_points:
+        if profile and getattr(profile, "is_smoker", None) is True:
+            next_points.append("생활관리에서는 흡연과 음주가 현재 증상이나 약 복용에 영향을 주지 않는지 먼저 같이 보는 것이 좋습니다.")
+        elif profile and getattr(profile, "avg_sleep_hours_per_day", None) is not None:
+            next_points.append("기록상 수면 시간은 유지되고 있어도 실제 피로감, 중간 각성, 복용 후 졸림 같은 체감 변화가 있는지 함께 확인하는 것이 좋습니다.")
+        else:
+            next_points.append("생활관리에서는 현재 복약 일정과 생활 습관이 서로 영향을 주는 부분부터 먼저 확인하는 것이 좋습니다.")
+
+    if not record_points and not general_points and not next_points:
+        base = f"{target_label} 기준 생활관리 요약 정보가 아직 충분하지 않습니다."
+    else:
+        base = _compose_medical_sections(
+            current_record_points=record_points,
+            general_info_points=general_points,
+            next_check_points=next_points,
+        )
 
     return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
@@ -2024,17 +3460,45 @@ def _answer_session_summary_intent(
     *,
     meds: list[dict[str, Any]],
     profile: PatientProfile | None,
+    adherence_summary: dict[str, Any] | None,
     target_label: str,
     requester_role: RequesterRole,
     audience: str,
 ) -> str:
-    med_names = (
-        ", ".join([str(med.get("display_name")) for med in meds if med.get("display_name")]) or "복용 약 정보 없음"
-    )
+    med_names = [str(med.get("display_name")).strip() for med in meds if str(med.get("display_name") or "").strip()]
     conditions = _split_text_items(getattr(profile, "conditions", None) if profile else None)
-    cond_text = ", ".join(conditions) if conditions else "기저질환 정보 확인 필요"
-    base = (
-        f"{target_label}는 {cond_text}가 있고 현재 {med_names} 중심으로 복약 관리가 필요한 상태로 요약할 수 있습니다."
+    allergies = _split_text_items(getattr(profile, "allergies", None) if profile else None)
+    current_points: list[str] = []
+    general_points: list[str] = []
+    next_points: list[str] = []
+
+    if conditions:
+        current_points.append("현재 건강 상태로는 " + ", ".join(conditions[:2]) + "가 기록되어 있습니다.")
+    if allergies:
+        current_points.append("알레르기 정보는 " + ", ".join(allergies[:2]) + "입니다.")
+    if med_names:
+        current_points.append("현재 복약 관리는 " + ", ".join(_dedupe_lines(med_names, limit=4)) + " 중심입니다.")
+    else:
+        current_points.append("현재 복용 약 정보는 아직 충분하지 않습니다.")
+
+    general_points.append("기록된 건강 상태와 복약 일정, 최근 복약 흐름을 같이 보면서 관리 우선순위를 정리하는 것이 좋습니다.")
+
+    if adherence_summary and int(adherence_summary.get("total", 0) or 0) > 0:
+        taken = int(adherence_summary.get("taken", 0) or 0)
+        missed = int(adherence_summary.get("missed", 0) or 0)
+        pending = int(adherence_summary.get("pending", 0) or 0)
+        current_points.append(f"최근 복약 기록은 완료 {taken}건, 놓침 {missed}건, 대기 {pending}건입니다.")
+        if missed > 0:
+            next_points.append("최근 놓친 약부터 오늘 일정에 다시 들어 있는지 먼저 확인하는 것이 좋습니다.")
+        elif pending > 0:
+            next_points.append("아직 복용 대기 상태인 일정이 남아 있는지 함께 확인하는 것이 좋습니다.")
+    else:
+        next_points.append("복약 기록이 충분하지 않다면 오늘 일정과 실제 복용 여부를 먼저 맞춰 보는 것이 좋습니다.")
+
+    base = _compose_medical_sections(
+        current_record_points=current_points,
+        general_info_points=general_points,
+        next_check_points=next_points,
     )
     return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
@@ -2081,10 +3545,15 @@ def _answer_tonight_check_intent(
     *,
     meds: list[dict[str, Any]],
     schedules: list[dict[str, Any]],
+    adherence_summary: dict[str, Any] | None,
     target_label: str,
     requester_role: RequesterRole,
     audience: str,
 ) -> str:
+    if not meds and not schedules:
+        base = f"{target_label} 기준으로 등록된 복용약이나 복약 일정이 아직 없습니다."
+        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
     tonight_lines = _collect_schedule_lines_for_period(meds=meds, schedules=schedules, period="night")
     extra_points: list[str] = []
     for med in meds:
@@ -2098,6 +3567,10 @@ def _answer_tonight_check_intent(
         )
         if extra_points:
             base += "\n" + "\n".join(f"- {line}" for line in _dedupe_lines(extra_points, limit=2))
+        if adherence_summary and int(adherence_summary.get("missed", 0) or 0) > 0:
+            recent_missed_names = adherence_summary.get("recent_missed_names") or []
+            if recent_missed_names:
+                base += "\n- 최근 놓친 기록이 있는 약: " + ", ".join(recent_missed_names[:2])
     else:
         base = f"{target_label} 기준으로 오늘 밤에 해당하는 복약 일정은 현재 뚜렷하게 확인되지 않습니다."
     return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
@@ -2128,10 +3601,24 @@ def _answer_adherence_priority_intent(
     *,
     meds: list[dict[str, Any]],
     schedules: list[dict[str, Any]],
+    adherence_summary: dict[str, Any] | None,
     target_label: str,
     requester_role: RequesterRole,
     audience: str,
 ) -> str:
+    missed_names = []
+    if adherence_summary:
+        missed_names = [
+            str(name).strip() for name in adherence_summary.get("recent_missed_names") or [] if str(name).strip()
+        ]
+    if missed_names:
+        base = (
+            f"{target_label} 기준 최근 복약 기록에서 자주 놓친 약으로는 "
+            f"{', '.join(_dedupe_lines(missed_names, limit=3))}이 보입니다.\n"
+            "복용 우선순위를 임의로 바꾸기보다, 최근 놓친 약이 오늘 일정에도 있는지 먼저 확인해 빠뜨리지 않는 것이 좋습니다."
+        )
+        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
     evening_lines = _collect_schedule_lines_for_period(meds=meds, schedules=schedules, period="evening")
     if evening_lines:
         base = (
@@ -2308,6 +3795,575 @@ def _answer_schedule_intent(
     return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
 
+def _answer_hospital_schedule_intent(
+    *,
+    hospital_schedules: list[HospitalSchedule],
+    message: str,
+    session_memory: ChatSessionMemory | None,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    if not hospital_schedules:
+        base = f"{target_label} 기준으로 등록된 병원 예약이나 검사 일정이 없습니다."
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
+
+    normalized = (message or "").strip()
+    upcoming = [item for item in hospital_schedules if getattr(item, "scheduled_at", None) is not None]
+    focus = str(getattr(session_memory, "recent_hospital_focus", "") or "").strip()
+
+    filtered = upcoming or hospital_schedules
+    if _contains_any(normalized, ["외래", "진료"]) or "외래/진료" in focus:
+        filtered = [
+            item
+            for item in filtered
+            if _contains_any(str(getattr(item, "title", "") or ""), ["외래", "진료"])
+        ] or filtered
+    elif _contains_any(normalized, ["검사"]) or "검사" in focus:
+        filtered = [
+            item
+            for item in filtered
+            if _contains_any(str(getattr(item, "title", "") or ""), ["검사"])
+        ] or filtered
+
+    schedule_index = 0
+    if _contains_any(normalized, ["그 다음", "다다음"]) or normalized in _AFFIRMATIVE_SHORT_REPLIES:
+        schedule_index = 1
+
+    target_schedules = filtered or hospital_schedules
+    has_followup_request = schedule_index == 1
+    if has_followup_request and len(target_schedules) <= 1:
+        title_hint = "외래/진료 일정" if (_contains_any(normalized, ["외래", "진료"]) or "외래/진료" in focus) else (
+            "검사 일정" if (_contains_any(normalized, ["검사"]) or "검사" in focus) else "병원 일정"
+        )
+        first_schedule = target_schedules[0]
+        first_title = str(getattr(first_schedule, "title", "") or "병원 일정").strip()
+        first_time = _format_datetime_korean(getattr(first_schedule, "scheduled_at", None))
+        base = (
+            f"{target_label} 기준 그 다음 {title_hint}은 아직 등록되어 있지 않습니다.\n"
+            f"현재 확인되는 가장 가까운 일정은 {first_time}의 {first_title}입니다."
+        )
+        hospital_name = str(getattr(first_schedule, "hospital_name", "") or "").strip()
+        location = str(getattr(first_schedule, "location", "") or "").strip()
+        if hospital_name:
+            base += f"\n병원: {hospital_name}"
+        if location:
+            base += f"\n장소: {location}"
+        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+    target_schedule = target_schedules[schedule_index] if len(target_schedules) > schedule_index else target_schedules[0]
+
+    if _contains_any(normalized, ["언제", "다음", "가장 가까운", "최근", "예약 언제였지"]):
+        title = str(getattr(target_schedule, "title", "") or "병원 일정").strip()
+        hospital_name = str(getattr(target_schedule, "hospital_name", "") or "").strip()
+        location = str(getattr(target_schedule, "location", "") or "").strip()
+        scheduled_at = _format_datetime_korean(getattr(target_schedule, "scheduled_at", None))
+        parts = [
+            (
+                f"{target_label} 기준 그 다음 병원 일정은 {scheduled_at}의 {title}입니다."
+                if schedule_index == 1 and len(target_schedules) > 1
+                else f"{target_label} 기준 가장 가까운 병원 일정은 {scheduled_at}의 {title}입니다."
+            )
+        ]
+        if hospital_name:
+            parts.append(f"병원: {hospital_name}")
+        if location:
+            parts.append(f"장소: {location}")
+        base = "\n".join(parts)
+    else:
+        base = f"{target_label} 기준 등록된 병원 일정은 다음과 같습니다.\n{_build_hospital_schedule_text(hospital_schedules[:3])}"
+
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _med_category_flags(name: str) -> set[str]:
+    normalized = _compact_text(name).lower()
+    flags: set[str] = set()
+    if any(token in normalized for token in ["아세트아미노펜", "타이레놀", "게보린"]):
+        flags.add("acetaminophen")
+    if any(token in normalized for token in ["탁센", "이부프로펜", "나프록센", "덱시", "록소", "아스피린"]):
+        flags.add("nsaid")
+    if any(token in normalized for token in ["비염", "항히스타민", "세티리진", "로라타딘", "펙소"]):
+        flags.add("antihistamine")
+    return flags
+
+
+def _build_interaction_focus_points(*, med_names: list[str], adherence_summary: dict[str, Any] | None) -> tuple[list[str], list[str], list[str]]:
+    record_points: list[str] = []
+    general_points: list[str] = []
+    next_points: list[str] = []
+
+    if med_names:
+        record_points.append("현재 확인되는 복용약은 " + ", ".join(_dedupe_lines(med_names, limit=4)) + "입니다.")
+
+    if adherence_summary and int(adherence_summary.get("missed", 0) or 0) > 0:
+        missed_names = adherence_summary.get("recent_missed_names") or []
+        if missed_names:
+            record_points.append("최근 놓친 기록이 있는 약은 " + ", ".join(_dedupe_lines(missed_names, limit=3)) + "입니다.")
+
+    flags_by_med = {name: _med_category_flags(name) for name in med_names}
+    nsaid_meds = [name for name, flags in flags_by_med.items() if "nsaid" in flags]
+    acet_meds = [name for name, flags in flags_by_med.items() if "acetaminophen" in flags]
+    antihistamine_meds = [name for name, flags in flags_by_med.items() if "antihistamine" in flags]
+
+    if len(nsaid_meds) >= 2:
+        general_points.append("진통소염제 계열이 겹칠 수 있어 위장 증상, 신장 부담, 출혈 위험을 특히 조심해 보는 것이 좋습니다.")
+    if nsaid_meds and acet_meds:
+        general_points.append("해열진통제와 소염진통제를 함께 쓰는 형태일 수 있어 추가 복용을 임의로 늘리지 않는 것이 좋습니다.")
+    if len(antihistamine_meds) >= 2:
+        general_points.append("항히스타민 계열이 겹치면 졸림이나 집중력 저하를 더 주의해서 보는 것이 좋습니다.")
+    if not general_points:
+        general_points.append("현재 약 이름만으로 중대한 상호작용을 단정하긴 어렵지만, 성분 중복 여부를 먼저 확인하는 것이 안전합니다.")
+
+    next_points.append("처방 외 진통제나 감기약을 추가할 때는 성분표와 현재 복용약 이름을 같이 확인해 주세요.")
+    if adherence_summary and int(adherence_summary.get("missed", 0) or 0) > 0:
+        next_points.append("상호작용 확인과 함께 복약 누락이 반복되지 않는지도 같이 보는 것이 좋습니다.")
+
+    return record_points, general_points, next_points
+
+
+def _build_external_interaction_points(
+    *,
+    external_drug_name: str,
+    meds: list[dict[str, Any]],
+    profile: PatientProfile | None,
+    adherence_summary: dict[str, Any] | None,
+    lookup: dict[str, Any] | None,
+) -> tuple[list[str], list[str], list[str]]:
+    med_names = [str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()]
+    record_points: list[str] = [f"현재 복용약은 {', '.join(_dedupe_lines(med_names, limit=4))}입니다."] if med_names else []
+    general_points: list[str] = []
+    next_points: list[str] = []
+
+    external_flags = _med_category_flags(external_drug_name)
+    current_flags = {name: _med_category_flags(name) for name in med_names}
+
+    overlapping_nsaids = [name for name, flags in current_flags.items() if "nsaid" in flags and "nsaid" in external_flags]
+    overlapping_ace = [name for name, flags in current_flags.items() if "acetaminophen" in flags and "acetaminophen" in external_flags]
+    overlapping_antihistamine = [name for name, flags in current_flags.items() if "antihistamine" in flags and "antihistamine" in external_flags]
+
+    if overlapping_nsaids:
+        general_points.append(
+            f"{external_drug_name}은 진통소염제 계열로 보이며 현재 복용약 중 {', '.join(overlapping_nsaids[:3])}과 계열이 겹칠 수 있습니다."
+        )
+    if overlapping_ace:
+        general_points.append(
+            f"{external_drug_name}은 아세트아미노펜 계열로 보이며 현재 복용약 중 {', '.join(overlapping_ace[:3])}과 중복 여부를 먼저 확인하는 것이 좋습니다."
+        )
+    if overlapping_antihistamine:
+        general_points.append(
+            f"{external_drug_name}은 항히스타민 계열로 보이며 현재 복용약 중 {', '.join(overlapping_antihistamine[:3])}과 함께 복용 시 졸림을 더 주의해서 볼 수 있습니다."
+        )
+
+    if profile:
+        allergies = _split_text_items(getattr(profile, "allergies", None))
+        conditions = _split_text_items(getattr(profile, "conditions", None))
+        if allergies:
+            record_points.append("등록된 알레르기 정보는 " + ", ".join(allergies[:2]) + "입니다.")
+        if conditions:
+            record_points.append("현재 건강 상태로는 " + ", ".join(conditions[:2]) + "가 기록되어 있습니다.")
+
+    if not general_points:
+        general_points.append(
+            f"{external_drug_name}을 현재 약과 같이 복용해도 되는지 판단하려면 성분 중복과 진통제/감기약 계열 중복 여부를 먼저 확인하는 것이 좋습니다."
+        )
+
+    mfds_item = lookup.get("mfds") if lookup else None
+    kids_items = lookup.get("kids") or [] if lookup else []
+    efficacy = _summarize_text(getattr(mfds_item, "efficacy", None), max_sentences=1) if mfds_item else ""
+    precautions = _summarize_text(getattr(mfds_item, "precautions", None), max_sentences=1) if mfds_item else ""
+    if efficacy:
+        general_points.append(f"{external_drug_name}은 일반적으로 {efficacy}")
+    if precautions:
+        general_points.append(f"주의사항으로는 {precautions}")
+    if kids_items:
+        kids_summary = _summarize_text(kids_items[0].get("content"), max_sentences=1)
+        if kids_summary:
+            general_points.append(f"추가 안전 근거로는 {kids_summary}")
+
+    if adherence_summary and int(adherence_summary.get("missed", 0) or 0) > 0:
+        missed_names = _dedupe_lines(
+            [str(name).strip() for name in (adherence_summary.get("recent_missed_names") or []) if str(name).strip()],
+            limit=2,
+        )
+        if missed_names:
+            record_points.append("최근 복용을 놓친 약은 " + ", ".join(missed_names) + "입니다.")
+        next_points.append("새 약 비교와 함께 최근 놓친 약이 있다면 복용 간격이 겹치지 않는지도 같이 확인해 주세요.")
+
+    next_points.append("새 약을 추가하기 전에는 제품명뿐 아니라 성분명도 함께 확인해 주세요.")
+    next_points.append("복용 후 발진, 호흡 불편, 심한 어지러움이 있으면 추가 복용 전에 상태를 다시 확인하는 것이 좋습니다.")
+
+    return record_points, general_points, next_points
+
+
+def _answer_drug_interaction_overview(
+    *,
+    meds: list[dict[str, Any]],
+    adherence_summary: dict[str, Any] | None,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    med_names = [str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()]
+    if len(med_names) < 2:
+        base = f"{target_label} 기준으로 비교할 복용약 정보가 아직 충분하지 않습니다."
+        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+    record_points, general_points, next_points = _build_interaction_focus_points(
+        med_names=med_names,
+        adherence_summary=adherence_summary,
+    )
+    base = _compose_medical_sections(
+        current_record_points=record_points,
+        general_info_points=general_points,
+        next_check_points=next_points,
+    )
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+def _build_clarification_reply(
+    *,
+    analysis: QuestionAnalysis,
+    context: PatientChatContext,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str | None:
+    message = analysis.raw_message
+
+    if analysis.primary_intent == "general":
+        if _contains_any(message, ["예약", "병원", "외래", "검사", "진료"]):
+            if context.hospital_schedules:
+                return _answer_hospital_schedule_intent(
+                    hospital_schedules=context.hospital_schedules,
+                    message=message,
+                    session_memory=context.session_memory,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            base = (
+                f"{target_label} 기준으로 병원 일정 질문으로 보입니다. "
+                "외래 예약인지, 검사 일정인지, 가장 가까운 방문 일정인지 한 가지로 적어 주시면 바로 확인해 드리겠습니다."
+            )
+            return (
+                _to_caregiver_style(answer=base, audience=audience)
+                if requester_role == RequesterRole.CAREGIVER
+                else base
+            )
+
+        if _contains_any(message, ["같이 먹", "같이 복용", "조합", "상호작용"]):
+            base = (
+                "현재 복용약끼리 비교할지, 새로 받은 약까지 포함할지 먼저 알려 주세요. "
+                "약 이름이 있으면 주의 조합을 바로 정리해 드릴 수 있습니다."
+            )
+            return (
+                _to_caregiver_style(answer=base, audience=audience)
+                if requester_role == RequesterRole.CAREGIVER
+                else base
+            )
+
+        if _contains_any(message, _FOLLOWUP_MED_REFERENCES):
+            base = "어떤 약을 말하는지 약 이름을 한 번만 다시 적어 주세요. 복용 시간과 주의점까지 이어서 설명드리겠습니다."
+            return (
+                _to_caregiver_style(answer=base, audience=audience)
+                if requester_role == RequesterRole.CAREGIVER
+                else base
+            )
+
+    if analysis.primary_intent == "medication_caution" and not analysis.target_med and not analysis.external_drug_name:
+        if context.meds:
+            return _answer_drug_interaction_overview(
+                meds=context.meds,
+                adherence_summary=context.adherence_summary,
+                target_label=target_label,
+                requester_role=requester_role,
+                audience=audience,
+            )
+        else:
+            base = "상호작용을 보려면 비교할 약 이름이 필요합니다. 현재 복용약끼리 볼지, 특정 약을 새로 추가해 볼지 알려 주세요."
+            return (
+                _to_caregiver_style(answer=base, audience=audience)
+                if requester_role == RequesterRole.CAREGIVER
+                else base
+            )
+
+    return None
+
+
+async def _render_planned_reply(
+    *,
+    plan: ChatPlan | None,
+    message: str,
+    context: PatientChatContext,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str | None:
+    if not plan:
+        return None
+
+    if (
+        plan.topic == "drug_interaction"
+        and plan.needs_clarification
+        and not plan.referenced_drug_name
+        and len(
+            [
+                str(med.get("display_name") or "").strip()
+                for med in context.meds
+                if str(med.get("display_name") or "").strip()
+            ]
+        )
+        >= 2
+    ):
+        plan = ChatPlan(
+            topic=plan.topic,
+            requested_fields=plan.requested_fields,
+            referenced_drug_name=plan.referenced_drug_name,
+            needs_clarification=False,
+            clarification_question=None,
+            use_record_data=plan.use_record_data,
+            answer_style=plan.answer_style,
+        )
+
+    if plan.needs_clarification and plan.clarification_question:
+        return (
+            _to_caregiver_style(answer=plan.clarification_question, audience=audience)
+            if requester_role == RequesterRole.CAREGIVER
+            else plan.clarification_question
+        )
+
+    topic = plan.topic
+
+    if topic == "profile":
+        requested = set(plan.requested_fields)
+        answers: list[str] = []
+        if "summary" in requested and "guidance" not in requested:
+            summary = _answer_profile_intent(
+                intent="profile_summary",
+                profile=context.profile,
+                target_label=target_label,
+                requester_role=requester_role,
+                audience=audience,
+            )
+            if summary:
+                answers.append(summary)
+        else:
+            if requested & {"bmi", "height", "weight", "body_metrics"}:
+                body = _answer_profile_intent(
+                    intent="profile_body",
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+                if body:
+                    answers.append(body)
+            if "sleep" in requested:
+                sleep = _answer_profile_intent(
+                    intent="profile_sleep",
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+                if sleep:
+                    answers.append(sleep)
+            if "exercise" in requested:
+                exercise = _answer_profile_intent(
+                    intent="profile_exercise",
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+                if exercise:
+                    answers.append(exercise)
+            if "smoking" in requested:
+                smoking = _answer_profile_intent(
+                    intent="profile_smoking",
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+                if smoking:
+                    answers.append(smoking)
+            if "alcohol" in requested:
+                alcohol = _answer_profile_intent(
+                    intent="profile_alcohol",
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+                if alcohol:
+                    answers.append(alcohol)
+            if "conditions" in requested:
+                conditions = _answer_profile_intent(
+                    intent="profile_conditions",
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+                if conditions:
+                    answers.append(conditions)
+            if "allergies" in requested:
+                allergies = _answer_profile_intent(
+                    intent="profile_allergies",
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+                if allergies:
+                    answers.append(allergies)
+            if "hospitalization" in requested:
+                hospitalization = _answer_profile_intent(
+                    intent="profile_hospitalization",
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+                if hospitalization:
+                    answers.append(hospitalization)
+            if requested & {"guidance", "lifestyle", "risk"} or plan.answer_style in {"guidance", "advice"}:
+                guidance = _answer_profile_guidance_intent(
+                    message=message,
+                    profile=context.profile,
+                    guide=context.latest_guide,
+                    adherence_summary=context.adherence_summary,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+                if guidance:
+                    answers.append(guidance)
+        return _compose_answers(answers=answers, requester_role=requester_role, audience=audience)
+
+    if topic == "condition_general":
+        return _answer_condition_general_intent(
+            condition_name=plan.referenced_drug_name or None,
+            meds=context.meds,
+            schedules=context.schedules,
+            profile=context.profile,
+            message=message,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+    if topic == "hospital_schedule":
+        return _answer_hospital_schedule_intent(
+            hospital_schedules=context.hospital_schedules,
+            message=message,
+            session_memory=context.session_memory,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+    if topic == "current_meds":
+        matched_med = None
+        if plan.referenced_drug_name:
+            matched_med = _extract_target_med(
+                message=plan.referenced_drug_name,
+                meds=context.meds,
+                recent_messages=context.recent_messages,
+                session_memory=context.session_memory,
+            )
+        if matched_med:
+            return await _answer_med_detail_intent(
+                message=plan.referenced_drug_name,
+                meds=context.meds,
+                schedules=context.schedules,
+                recent_messages=context.recent_messages,
+                session_memory=context.session_memory,
+                matched_med=matched_med,
+                dur_alerts=context.dur_alerts,
+                adherence_summary=context.adherence_summary,
+                guide=context.latest_guide,
+                target_label=target_label,
+                requester_role=requester_role,
+                audience=audience,
+            )
+        return _answer_med_list_intent(
+            meds=context.meds,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+    if topic == "med_schedule":
+        if plan.referenced_drug_name:
+            matched_med = _extract_target_med(
+                message=plan.referenced_drug_name,
+                meds=context.meds,
+                recent_messages=context.recent_messages,
+                session_memory=context.session_memory,
+            )
+            if matched_med:
+                return await _answer_med_detail_intent(
+                    message=plan.referenced_drug_name,
+                    meds=context.meds,
+                    schedules=context.schedules,
+                    recent_messages=context.recent_messages,
+                    session_memory=context.session_memory,
+                    matched_med=matched_med,
+                    dur_alerts=context.dur_alerts,
+                    adherence_summary=context.adherence_summary,
+                    guide=context.latest_guide,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+        return _answer_schedule_intent(
+            meds=context.meds,
+            schedules=context.schedules,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+    if topic == "external_drug":
+        return await _answer_external_med_intent(
+            message=message,
+            meds=context.meds,
+            schedules=context.schedules,
+            recent_messages=context.recent_messages,
+            profile=context.profile,
+            external_drug_name=plan.referenced_drug_name,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+    if topic == "drug_interaction":
+        if plan.referenced_drug_name:
+            return await _answer_external_interaction_intent(
+                external_drug_name=plan.referenced_drug_name,
+                meds=context.meds,
+                profile=context.profile,
+                adherence_summary=context.adherence_summary,
+                target_label=target_label,
+                requester_role=requester_role,
+                audience=audience,
+            )
+        return _answer_drug_interaction_overview(
+            meds=context.meds,
+            adherence_summary=context.adherence_summary,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+    return None
+
+
 # guide 기반 직접 응답
 def _answer_guide_intent(
     *,
@@ -2335,6 +4391,8 @@ async def _answer_medication_caution_intent(
     guide: Guide | None,
     meds: list[dict[str, Any]],
     profile: PatientProfile | None,
+    dur_alerts: list[dict[str, Any]],
+    adherence_summary: dict[str, Any] | None,
     recent_messages: list[ChatMessage] | None,
     matched_med: dict[str, Any] | None = None,
     external_drug_name: str | None = None,
@@ -2342,36 +4400,64 @@ async def _answer_medication_caution_intent(
     requester_role: RequesterRole,
     audience: str,
 ) -> str | None:
-    if external_drug_name or _extract_external_drug_name(message, recent_messages):
-        return None
+    interaction_drug_name = external_drug_name or _extract_external_drug_name(message, recent_messages)
+    if interaction_drug_name:
+        return await _answer_external_interaction_intent(
+            external_drug_name=interaction_drug_name,
+            meds=meds,
+            profile=profile,
+            adherence_summary=adherence_summary,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+    if _contains_any(message, ["새 감기약", "새 약", "감기약 추가", "감기약"]) and meds:
+        record_points, general_points, next_points = _build_interaction_focus_points(
+            med_names=[str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()],
+            adherence_summary=adherence_summary,
+        )
+        general_points.insert(0, "새 감기약을 추가할 때는 해열진통제, 항히스타민, 진해거담 성분이 현재 복용약과 겹치지 않는지 먼저 확인하는 것이 좋습니다.")
+        base = _compose_medical_sections(
+            current_record_points=record_points,
+            general_info_points=general_points,
+            next_check_points=next_points or ["새로 추가할 감기약의 제품명이나 성분명을 알려 주시면 현재 약과 비교해 드릴 수 있습니다."],
+        )
+        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
     matched_med = matched_med or _extract_target_med(message=message, meds=meds, recent_messages=recent_messages)
-    points: list[str] = []
+    record_points: list[str] = []
+    general_points: list[str] = []
+    next_points: list[str] = []
 
     if matched_med:
         med_name = str(matched_med.get("display_name") or "해당 약").strip()
         med_notes = str(matched_med.get("notes") or "").strip()
+        med_info = matched_med.get("drug_info") or {}
         if med_notes:
-            points.append(f"{med_name}: {med_notes}")
+            record_points.append(f"{med_name} 메모에는 `{med_notes}`로 기록되어 있습니다.")
         lookup = await _lookup_external_med_info(med_name)
         mfds_item = lookup.get("mfds")
         kids_items = lookup.get("kids") or []
         precautions = _first_clean_line(getattr(mfds_item, "precautions", None)) if mfds_item else ""
+        if not precautions:
+            precautions = _first_clean_line(str(med_info.get("precautions") or ""))
         if precautions:
-            points.append(f"{med_name} 주의사항: {precautions}")
+            general_points.append(f"{med_name} 주의사항으로는 {precautions}")
         if "같이" in message or "상호작용" in message or "조심" in message:
-            points.append(
+            next_points.append(
                 f"{med_name} 복용 후 두통, 발진, 호흡 불편 같은 이상 반응이 있으면 추가 복용 전에 상태를 확인해 주세요."
             )
         if kids_items:
             kids_summary = _first_clean_line(kids_items[0].get("content"))
             if kids_summary:
-                points.append(f"추가 안전 근거: {kids_summary}")
+                general_points.append(f"추가 안전 근거로는 {kids_summary}")
+        next_points.extend(_extract_dur_alert_points(dur_alerts=dur_alerts, med_name=med_name, limit=2))
 
     if profile and getattr(profile, "allergies", None):
         raw_allergies = str(profile.allergies).strip()
         if raw_allergies and ("음식" in message or "알레르기" in message):
-            points.append(f"등록된 알레르기 정보: {raw_allergies}")
+            record_points.append(f"등록된 알레르기 정보는 {raw_allergies}입니다.")
 
     caution_body = ""
     if guide and isinstance(guide.content_json, dict):
@@ -2386,14 +4472,19 @@ async def _answer_medication_caution_intent(
     if caution_body:
         for line in caution_body.split("\n"):
             clean = line.strip().lstrip("-").strip()
-            if clean and clean not in points and not any(keyword in clean for keyword in ["운동", "수면", "생활"]):
-                points.append(clean)
+            if clean and clean not in next_points and not any(keyword in clean for keyword in ["운동", "수면", "생활"]):
+                next_points.append(clean)
 
-    if not points:
+    if not record_points and not general_points and not next_points:
         return None
 
-    base = f"{target_label} 기준으로 특히 주의해서 볼 점은 다음과 같습니다.\n" + "\n".join(
-        f"- {point}" for point in _dedupe_lines(points, limit=4)
+    if not next_points:
+        next_points.append("새 약을 추가하거나 함께 복용하기 전에는 현재 복용약과 성분 중복 여부를 먼저 확인해 주세요.")
+
+    base = _compose_medical_sections(
+        current_record_points=record_points,
+        general_info_points=general_points,
+        next_check_points=next_points,
     )
 
     if audience == "senior":
@@ -2408,6 +4499,7 @@ def _answer_general_caution_intent(
     guide: Guide | None,
     meds: list[dict[str, Any]],
     schedules: list[dict[str, Any]],
+    adherence_summary: dict[str, Any] | None,
     target_label: str,
     requester_role: RequesterRole,
     audience: str,
@@ -2456,6 +4548,8 @@ def _answer_general_caution_intent(
         if first_line and first_line != "등록된 복약 일정 없음":
             points.append(f"복약 일정: {first_line}")
 
+    points.extend(_build_adherence_guidance_points(adherence_summary=adherence_summary))
+
     if not points:
         return None
 
@@ -2469,6 +4563,7 @@ async def _answer_external_med_intent(
     *,
     message: str,
     meds: list[dict[str, Any]],
+    schedules: list[dict[str, Any]],
     recent_messages: list[ChatMessage] | None,
     profile: PatientProfile | None,
     external_drug_name: str | None = None,
@@ -2477,6 +4572,23 @@ async def _answer_external_med_intent(
     audience: str,
 ) -> str:
     drug_name = external_drug_name or _extract_external_drug_name(message, recent_messages)
+    current_med_match = _find_best_med_match(query=drug_name or message, meds=meds)
+    if current_med_match:
+        current_med_answer = await _answer_med_detail_intent(
+            message=str(drug_name or message),
+            meds=meds,
+            schedules=schedules,
+            recent_messages=recent_messages,
+            session_memory=None,
+            matched_med=current_med_match,
+            adherence_summary=None,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+        if current_med_answer:
+            return current_med_answer
+
     if not drug_name:
         base = (
             f"{target_label} 기준 현재 기록에 없는 약에 대해선 복용 여부를 바로 단정하기 어렵습니다. "
@@ -2488,19 +4600,6 @@ async def _answer_external_med_intent(
 
     subject_particle = _choose_korean_particle(drug_name, ("이", "가"))
     topic_particle = _choose_korean_particle(drug_name, ("은", "는"))
-
-    normalized_drug_name = _compact_text(drug_name).lower()
-    in_current_meds = any(
-        _compact_text(str(med.get("display_name") or "")).lower() == normalized_drug_name for med in meds
-    )
-    if in_current_meds:
-        base = (
-            f"{target_label} 기준 현재 기록상 {drug_name}{subject_particle} 복용 약으로 보입니다. "
-            f"약 이름을 다시 포함해 질문해 주시면 복용 시간과 주의사항까지 이어서 안내드릴 수 있습니다."
-        )
-        return (
-            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
-        )
 
     lookup = await _lookup_external_med_info(drug_name)
     mfds_item = lookup.get("mfds")
@@ -2522,41 +4621,70 @@ async def _answer_external_med_intent(
             profile_points.append(f"운동: 하루 평균 {exercise_minutes}분")
 
     if mfds_item:
-        parts = [f"{drug_name}{topic_particle} 현재 복용 중인 약으로 기록되어 있지는 않습니다."]
+        record_points = [f"{drug_name}{topic_particle} 현재 복용 중인 약으로 기록되어 있지는 않습니다."]
+        general_points: list[str] = []
+        next_points: list[str] = []
         item_name = str(getattr(mfds_item, "item_name", "") or drug_name).strip()
         efficacy = _summarize_text(getattr(mfds_item, "efficacy", None), max_sentences=1)
         precautions = _summarize_text(getattr(mfds_item, "precautions", None), max_sentences=2)
         dosage_info = _summarize_text(getattr(mfds_item, "dosage_info", None), max_sentences=1)
         if item_name:
-            parts.append(f"- 약 정보: {item_name}")
+            general_points.append(f"약 정보명은 {item_name}입니다.")
         if efficacy:
-            parts.append(f"- 용도: {efficacy}")
+            general_points.append(f"일반적으로는 {efficacy}")
         if precautions:
-            parts.append(f"- 특히 조심할 점: {precautions}")
+            general_points.append(f"주의할 점으로는 {precautions}")
         if dosage_info:
-            parts.append(f"- 복용 참고: {dosage_info}")
+            next_points.append(f"복용 참고로는 {dosage_info}")
         if kids_items:
             first_kids = _summarize_text(kids_items[0].get("content"), max_sentences=1)
             if first_kids:
-                parts.append(f"- 추가 안전 근거: {first_kids}")
+                general_points.append(f"추가 안전 근거로는 {first_kids}")
         if profile_points:
-            parts.append("- 현재 건강기록 기준 주의점: " + " / ".join(profile_points[:2]))
-        parts.append(
-            "실제 복용 전에는 처방 여부와 성분을 다시 확인하고, 복용 판단은 의료진이나 약사와 상의하는 것이 좋습니다."
+            record_points.append("현재 건강기록 기준으로는 " + " / ".join(profile_points[:2]) + "를 함께 보는 것이 좋습니다.")
+        next_points.append("실제 복용 전에는 처방 여부와 성분을 다시 확인하고, 복용 판단은 의료진이나 약사와 상의하는 것이 좋습니다.")
+        base = _compose_medical_sections(
+            current_record_points=record_points,
+            general_info_points=general_points,
+            next_check_points=next_points,
         )
-        base = "\n".join(parts)
         return (
             _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
         )
 
-    base = (
-        f"{drug_name}{topic_particle} 현재 복용 중인 약으로 기록되어 있지는 않습니다. "
-        + (
-            f"현재 건강기록 기준으로는 {' / '.join(profile_points[:2])} 정도를 함께 보는 것이 좋습니다. "
-            if profile_points
-            else ""
-        )
-        + "제품명이나 성분명이 더 정확하면 안내 범위를 좁힐 수 있습니다."
+    base = _compose_medical_sections(
+        current_record_points=[
+            f"{drug_name}{topic_particle} 현재 복용 중인 약으로 기록되어 있지는 않습니다.",
+            *([f"현재 건강기록 기준으로는 {' / '.join(profile_points[:2])}를 함께 볼 수 있습니다."] if profile_points else []),
+        ],
+        general_info_points=[],
+        next_check_points=["제품명이나 성분명이 더 정확하면 안내 범위를 더 좁힐 수 있습니다."],
+    )
+    return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+
+
+async def _answer_external_interaction_intent(
+    *,
+    external_drug_name: str,
+    meds: list[dict[str, Any]],
+    profile: PatientProfile | None,
+    adherence_summary: dict[str, Any] | None,
+    target_label: str,
+    requester_role: RequesterRole,
+    audience: str,
+) -> str:
+    lookup = await _lookup_external_med_info(external_drug_name)
+    record_points, general_points, next_points = _build_external_interaction_points(
+        external_drug_name=external_drug_name,
+        meds=meds,
+        profile=profile,
+        adherence_summary=adherence_summary,
+        lookup=lookup,
+    )
+    base = _compose_medical_sections(
+        current_record_points=record_points,
+        general_info_points=general_points,
+        next_check_points=next_points,
     )
     return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
@@ -2567,6 +4695,7 @@ def _answer_daily_chat(
     message: str,
     requester_role: RequesterRole,
     target_label: str,
+    data_readiness: str = "partial",
 ) -> str:
     normalized = (message or "").strip()
 
@@ -2574,12 +4703,19 @@ def _answer_daily_chat(
         return "저는 복약과 건강 정보를 도와드리는 의료 챗봇입니다."
 
     if _contains_any(normalized, _BOT_CAPABILITY_KEYWORDS):
+        if data_readiness == "empty":
+            return (
+                "저는 약 정보, 복용 시 주의사항, 병원 일정, 건강프로필 입력 방법, 생활관리 질문을 도와드릴 수 있습니다. "
+                "아직 기록이 적다면 일반적인 기준으로 먼저 설명드리고, 맞춤 답변이 필요한 경우에만 건강프로필이나 복약 정보를 더 요청드릴게요."
+            )
         return (
-            "저는 복용 중인 약, 복약 시간, 주의사항, 놓친 복약, 알레르기, 생활관리, 보호자 체크포인트를 "
-            "기록 기준으로 안내해 드릴 수 있습니다."
+            "저는 복용 중인 약, 복약 시간, 주의사항, 놓친 복약, 병원 일정, 건강프로필, 생활관리, 보호자 체크포인트를 "
+            "안내해 드릴 수 있습니다. 기록이 부족한 부분은 일반적인 기준으로 먼저 설명드리고, 맞춤 답변이 필요할 때만 추가 정보를 부탁드립니다."
         )
 
     if _contains_any(normalized, ["너 뭐해", "뭘 하는", "뭐 하는 애", "뭐하는 애", "뭐하는 애니"]):
+        if data_readiness == "empty":
+            return "저는 약 정보와 건강 질문을 기본적으로 안내하고, 기록이 쌓이면 복약 일정과 건강 기록까지 연결해 설명하는 의료 챗봇입니다."
         return "저는 복약 일정, 복용 중인 약, 주의사항, 건강 기록을 기준으로 안내를 도와드리는 의료 챗봇입니다."
 
     if _contains_any(normalized, ["오늘 어때", "오늘 하루", "기분 어때"]):
@@ -2589,15 +4725,28 @@ def _answer_daily_chat(
         return "도움이 되었다면 다행입니다. 필요한 내용이 있으면 이어서 말씀해 주세요."
 
     if _contains_any(normalized, ["안녕", "반가워"]):
-        return f"안녕하세요. {target_label} 기준으로 복약과 건강 정보를 도와드릴게요."
+        if data_readiness == "empty":
+            return (
+                "안녕하세요. 복약과 건강 정보를 도와드릴게요. "
+                "지금은 일반적인 약 정보나 건강 질문부터 안내드릴 수 있고, 건강프로필이나 복약 정보가 쌓이면 맞춤 답변까지 더 정확하게 이어드릴게요."
+            )
+        if data_readiness == "rich":
+            return (
+                f"안녕하세요. {target_label} 기준 기록을 참고해서 복약과 건강 정보를 도와드릴게요. "
+                "약 정보, 복용 시간, 병원 일정, 건강프로필 중 궁금한 것을 편하게 물어보세요."
+            )
+        return (
+            f"안녕하세요. {target_label} 기준으로 확인 가능한 기록을 참고해 복약과 건강 정보를 도와드릴게요. "
+            "부족한 정보가 있으면 일반적인 기준으로 먼저 설명드리겠습니다."
+        )
 
     if _contains_any(normalized, ["잘 자"]):
         return "편안한 밤 보내세요. 복약 일정이 있다면 잊지 않도록 한 번 더 확인해 주세요."
 
     return (
-        "일상적인 대화도 자연스럽게 도와드릴 수 있습니다. 의료 관련 내용은 기록된 정보 범위 안에서 안내드릴게요."
+        "일상적인 대화도 자연스럽게 이어갈 수 있습니다. 의료 관련 내용은 현재 기록이 있으면 맞춤형으로, 부족하면 일반적인 기준으로 먼저 안내드릴게요."
         if requester_role != RequesterRole.CAREGIVER
-        else "일상적인 대화도 가능하지만, 보호자 관점에서는 복약과 상태 확인 중심으로 안내드릴 수 있습니다."
+        else "일상적인 대화도 가능하지만, 보호자 관점에서는 복약과 상태 확인 중심으로 우선 안내드릴 수 있습니다."
     )
 
 
@@ -2631,6 +4780,62 @@ def _compose_answers(
     return combined
 
 
+def _compose_medical_sections(
+    *,
+    current_record_points: list[str],
+    general_info_points: list[str],
+    next_check_points: list[str],
+) -> str:
+    sections: list[str] = []
+
+    current_points = _dedupe_lines(current_record_points, limit=4)
+    general_points = _dedupe_lines(general_info_points, limit=3)
+    next_points = _dedupe_lines(next_check_points, limit=3)
+
+    if current_points:
+        sections.append("현재 기록 기준\n" + "\n".join(f"- {item}" for item in current_points))
+    if general_points:
+        sections.append("일반적으로 보면\n" + "\n".join(f"- {item}" for item in general_points))
+    if next_points:
+        sections.append("지금 확인할 포인트\n" + "\n".join(f"- {item}" for item in next_points))
+
+    return "\n\n".join(sections).strip()
+
+
+def _should_finalize_with_rules(
+    *,
+    analysis: QuestionAnalysis,
+    composed_answer: str | None,
+    clarification_reply: str | None,
+) -> bool:
+    if clarification_reply:
+        return True
+    if not composed_answer:
+        return False
+    if analysis.answer_mode in {"daily_chat", "direct_fact", "safety_guidance", "external_drug_counseling"}:
+        return True
+    if analysis.primary_intent in {
+        "daily",
+        "external_med",
+        "condition_general",
+        "medication_caution",
+        "med_detail",
+        "med_list",
+        "schedule",
+        "hospital_schedule",
+        "profile_body",
+        "profile_summary",
+        "profile_guidance",
+        "general_caution",
+        "tonight_check",
+        "adherence_priority",
+        "session_summary",
+        "lifestyle_top",
+    }:
+        return True
+    return False
+
+
 def _build_fact_summary(
     *,
     analysis: QuestionAnalysis,
@@ -2643,6 +4848,7 @@ def _build_fact_summary(
         med_name = str(analysis.target_med.get("display_name") or "").strip()
         dosage = str(analysis.target_med.get("dosage") or "").strip()
         notes = str(analysis.target_med.get("notes") or "").strip()
+        source_document_id = analysis.target_med.get("source_document_id")
         if med_name:
             line = med_name
             if dosage:
@@ -2650,6 +4856,8 @@ def _build_fact_summary(
             if notes:
                 line += f" / {notes}"
             points.append("현재 기록 약 정보: " + line)
+        if source_document_id:
+            points.append(f"확정 약 출처 문서: #{source_document_id}")
         patient_med_id = analysis.target_med.get("patient_med_id")
         schedule_lines: list[str] = []
         for schedule in context.schedules:
@@ -2661,6 +4869,8 @@ def _build_fact_summary(
                 )
         if schedule_lines:
             points.append("복용 시간: " + ", ".join(schedule_lines[:3]))
+        points.extend(_extract_dur_alert_points(dur_alerts=context.dur_alerts, med_name=med_name, limit=2))
+        points.extend(_build_med_adherence_points(med_name=med_name, adherence_summary=context.adherence_summary))
 
     if analysis.external_drug_name:
         points.append(f"질문 약 이름: {analysis.external_drug_name}")
@@ -2671,6 +4881,24 @@ def _build_fact_summary(
 
     if analysis.target_condition:
         points.append(f"질문 질환: {analysis.target_condition}")
+
+    if analysis.primary_intent in {"profile_body", "profile_summary"} and context.profile:
+        if getattr(context.profile, "height_cm", None) is not None:
+            points.append(f"키: {context.profile.height_cm}cm")
+        if getattr(context.profile, "weight_kg", None) is not None:
+            points.append(f"몸무게: {context.profile.weight_kg}kg")
+        if getattr(context.profile, "bmi", None) is not None:
+            points.append(f"BMI: {context.profile.bmi}")
+
+    if analysis.primary_intent == "hospital_schedule" and context.hospital_schedules:
+        next_schedule = context.hospital_schedules[0]
+        title = str(getattr(next_schedule, "title", "") or "병원 일정").strip()
+        scheduled_at = _format_datetime_korean(getattr(next_schedule, "scheduled_at", None))
+        hospital_name = str(getattr(next_schedule, "hospital_name", "") or "").strip()
+        line = f"다음 병원 일정: {scheduled_at} / {title}"
+        if hospital_name:
+            line += f" / {hospital_name}"
+        points.append(line)
 
     conditions = _split_text_items(getattr(context.profile, "conditions", None) if context.profile else None)
     allergies = _split_text_items(getattr(context.profile, "allergies", None) if context.profile else None)
@@ -2701,6 +4929,9 @@ def _build_fact_summary(
             if len(points) >= 5:
                 break
 
+    if analysis.primary_intent in {"general_caution", "profile_guidance", "adherence_priority", "tonight_check"}:
+        points.extend(_build_adherence_guidance_points(adherence_summary=context.adherence_summary))
+
     deduped = _dedupe_lines(points, limit=6)
     return "\n".join(f"- {item}" for item in deduped) if deduped else "질문 관련 결정적 사실이 아직 충분하지 않습니다."
 
@@ -2710,9 +4941,11 @@ def _normalize_intent_order(intents: list[str], requester_role: RequesterRole) -
     skip = set()
 
     if "external_med" in intents:
-        skip.update({"med_detail", "medication_caution", "general_caution", "allergy_food", "guide"})
+        skip.update({"med_detail", "general_caution", "allergy_food", "guide"})
     if "lifestyle_top" in intents:
         skip.update({"profile_sleep", "profile_exercise", "allergy_food"})
+    if "profile_summary" in intents:
+        skip.update({"guide", "session_summary"})
     if "med_time_split" in intents:
         skip.add("med_list")
     if "med_detail" in intents:
@@ -2739,17 +4972,21 @@ def _normalize_intent_order(intents: list[str], requester_role: RequesterRole) -
         "med_detail",
         "medication_caution",
         "general_caution",
+        "profile_summary",
+        "profile_body",
+        "profile_guidance",
         "med_time_split",
         "med_regularity",
         "med_list",
+        "hospital_schedule",
         "schedule",
         "allergy_food",
         "lifestyle_top",
         "session_summary",
-        "profile_sleep",
-        "profile_exercise",
         "profile_smoking",
         "profile_alcohol",
+        "profile_sleep",
+        "profile_exercise",
         "guide",
         "daily",
         "general",
@@ -2816,6 +5053,67 @@ async def _call_chat_model(*, system_prompt: str, user_prompt: str) -> dict[str,
     }
 
 
+async def _plan_chat_question(
+    *,
+    message: str,
+    context: PatientChatContext,
+    requester_role: RequesterRole,
+    audience: str,
+    target_label: str,
+) -> ChatPlan | None:
+    if not _has_openai_api_key():
+        return None
+
+    try:
+        system_prompt = _read_prompt_template("chat_planner_system_prompt.txt").format(
+            requester_role=requester_role.value,
+            target_label=target_label,
+            audience_label=_audience_label(audience),
+        )
+        user_prompt = _read_prompt_template("chat_planner_user_prompt.txt").format(
+            user_message=message,
+            meds_text=_build_meds_text(context.meds),
+            schedule_text=_build_schedule_text(context.schedules, context.meds),
+            hospital_schedule_text=_build_hospital_schedule_brief(context.hospital_schedules),
+            profile_text=_build_profile_text(context.profile),
+            history_text=_build_recent_history_for_planner(context.recent_messages),
+            session_memory_text=_build_session_memory_text(context.session_memory),
+        )
+    except RuntimeError:
+        logger.warning("chat planner prompts missing; planner disabled")
+        return None
+
+    try:
+        result = await _call_chat_model(system_prompt=system_prompt, user_prompt=user_prompt)
+    except Exception:
+        logger.exception("chat planner failed")
+        return None
+
+    topic = str(result.get("topic") or "").strip()
+    if not topic:
+        return None
+
+    requested_fields = result.get("requested_fields") or []
+    if not isinstance(requested_fields, list):
+        requested_fields = []
+    use_record_data = result.get("use_record_data") or []
+    if not isinstance(use_record_data, list):
+        use_record_data = []
+
+    referenced_drug_name = str(result.get("referenced_drug_name") or "").strip() or None
+    clarification_question = str(result.get("clarification_question") or "").strip() or None
+
+    return ChatPlan(
+        topic=topic,
+        requested_fields=[str(item).strip() for item in requested_fields if str(item).strip()],
+        referenced_drug_name=referenced_drug_name,
+        needs_clarification=bool(result.get("needs_clarification", False)),
+        clarification_question=clarification_question,
+        use_record_data=[str(item).strip() for item in use_record_data if str(item).strip()],
+        answer_style=str(result.get("answer_style") or "direct").strip() or "direct",
+    )
+
+
 # 일반 fallback 답변
 def _fallback_reply(
     *,
@@ -2829,6 +5127,7 @@ def _fallback_reply(
     requester_role: RequesterRole,
     audience: str,
 ) -> str:
+    data_readiness = "rich" if (meds or schedule_text != "등록된 복약 일정 없음" or latest_guide or profile) else "empty"
     short_profile: list[str] = []
     allergies = _split_text_items(getattr(profile, "allergies", None) if profile else None)
     conditions = _split_text_items(getattr(profile, "conditions", None) if profile else None)
@@ -2842,6 +5141,8 @@ def _fallback_reply(
             "현재 복용약과는 별도로 일반적인 약 정보를 설명해 드릴 수 있습니다. "
             "약 이름이나 성분명을 한 번 더 정확히 적어 주시면 용도, 주의사항, 현재 기록 기준 주의점을 나눠 안내드리겠습니다."
         )
+    elif intent == "hospital_schedule":
+        base = "병원 일정은 외래 예약인지 검사 일정인지에 따라 다르게 확인해야 합니다. 가장 가까운 예약인지, 특정 일정인지 함께 적어 주세요."
     elif intent == "condition_general":
         tail = f" 현재 기록에서 {' / '.join(short_profile)}도 함께 보입니다." if short_profile else ""
         base = (
@@ -2849,9 +5150,32 @@ def _fallback_reply(
             + tail
         )
     elif intent == "general":
-        base = "지금 질문만으로는 답변 범위를 좁히기 어렵습니다. 약 이름, 증상, 복용 시간, 주의사항 중 하나를 함께 적어 주세요."
+        if data_readiness == "empty":
+            base = (
+                "현재 기록이 많지 않아 맞춤 답변은 제한되지만, 일반적인 약 정보와 서비스 안내는 바로 도와드릴 수 있습니다. "
+                "예를 들어 `게보린이 뭐야?`, `너는 뭘 도와줘?`, `건강프로필에 뭐를 입력하면 돼?`처럼 물어보시면 자연스럽게 이어서 설명드릴게요."
+            )
+        elif not meds and schedule_text == "등록된 복약 일정 없음":
+            if latest_guide or profile:
+                base = (
+                    "현재 복용약이나 복약 일정 정보는 부족하지만, 건강 프로필과 가이드 범위 안에서는 안내할 수 있습니다. "
+                    "예를 들어 건강프로필 요약, 수면/운동/흡연/음주 기록, 생활관리 포인트를 물어보시면 바로 이어서 설명드릴 수 있습니다."
+                )
+            else:
+                base = (
+                    "현재 기록에는 복용약이나 복약 일정이 아직 없어 맞춤 답변은 제한됩니다. "
+                    "그래도 일반적인 약 정보, 서비스 사용 방법, 병원 일정 확인, 건강프로필 등록 전 안내는 도와드릴 수 있습니다."
+                )
+        else:
+            base = (
+                "지금 질문은 범위가 조금 넓어 보여서, 확인하려는 기준을 한 가지만 먼저 잡으면 더 정확히 이어갈 수 있습니다. "
+                "예를 들어 약 이름, 복용 시간, 병원 예약, 건강프로필 중 어느 쪽인지 먼저 적어 주세요."
+            )
     else:
-        base = "현재 질문에 바로 연결할 근거가 충분하지 않습니다. 약 이름이나 증상, 궁금한 상황을 한 줄 더 알려주시면 이어서 설명드리겠습니다."
+        base = (
+            "현재 질문에 바로 연결할 근거가 충분하지 않습니다. "
+            "약 이름, 복용 상황, 병원 일정, 건강 기록 중 어느 쪽인지 한 줄만 더 알려주시면 맞는 방향으로 이어서 설명드리겠습니다."
+        )
 
     if audience == "senior":
         base += "\n어지러움이나 낙상 위험이 있는 경우 복용 후 상태를 함께 확인해 주세요."
@@ -2888,14 +5212,36 @@ async def _build_deterministic_answer_parts(
     for current_intent in analysis.intents:
         deterministic_answer: str | None = None
 
-        if current_intent in {"profile_smoking", "profile_alcohol", "profile_sleep", "profile_exercise"}:
-            deterministic_answer = _answer_profile_intent(
-                intent=current_intent,
-                profile=context.profile,
-                target_label=target_label,
-                requester_role=requester_role,
-                audience=audience,
-            )
+        if current_intent in {
+            "profile_body",
+            "profile_summary",
+            "profile_guidance",
+            "profile_smoking",
+            "profile_alcohol",
+            "profile_sleep",
+            "profile_exercise",
+            "profile_conditions",
+            "profile_allergies",
+            "profile_hospitalization",
+        }:
+            if current_intent == "profile_guidance":
+                deterministic_answer = _answer_profile_guidance_intent(
+                    message=analysis.raw_message,
+                    profile=context.profile,
+                    guide=context.latest_guide,
+                    adherence_summary=context.adherence_summary,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+            else:
+                deterministic_answer = _answer_profile_intent(
+                    intent=current_intent,
+                    profile=context.profile,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
         elif current_intent == "med_time_split":
             deterministic_answer = _answer_med_time_split_intent(
                 meds=context.meds,
@@ -2928,7 +5274,11 @@ async def _build_deterministic_answer_parts(
                 meds=context.meds,
                 schedules=context.schedules,
                 recent_messages=context.recent_messages,
+                session_memory=context.session_memory,
                 matched_med=analysis.target_med,
+                dur_alerts=context.dur_alerts,
+                adherence_summary=context.adherence_summary,
+                guide=context.latest_guide,
                 target_label=target_label,
                 requester_role=requester_role,
                 audience=audience,
@@ -2981,6 +5331,7 @@ async def _build_deterministic_answer_parts(
             deterministic_answer = _answer_lifestyle_top_intent(
                 guide=context.latest_guide,
                 profile=context.profile,
+                adherence_summary=context.adherence_summary,
                 target_label=target_label,
                 requester_role=requester_role,
                 audience=audience,
@@ -2989,6 +5340,7 @@ async def _build_deterministic_answer_parts(
             deterministic_answer = _answer_session_summary_intent(
                 meds=context.meds,
                 profile=context.profile,
+                adherence_summary=context.adherence_summary,
                 target_label=target_label,
                 requester_role=requester_role,
                 audience=audience,
@@ -2997,6 +5349,7 @@ async def _build_deterministic_answer_parts(
             deterministic_answer = _answer_tonight_check_intent(
                 meds=context.meds,
                 schedules=context.schedules,
+                adherence_summary=context.adherence_summary,
                 target_label=target_label,
                 requester_role=requester_role,
                 audience=audience,
@@ -3014,6 +5367,7 @@ async def _build_deterministic_answer_parts(
             deterministic_answer = _answer_adherence_priority_intent(
                 meds=context.meds,
                 schedules=context.schedules,
+                adherence_summary=context.adherence_summary,
                 target_label=target_label,
                 requester_role=requester_role,
                 audience=audience,
@@ -3063,12 +5417,23 @@ async def _build_deterministic_answer_parts(
                 requester_role=requester_role,
                 audience=audience,
             )
+        elif current_intent == "hospital_schedule":
+            deterministic_answer = _answer_hospital_schedule_intent(
+                hospital_schedules=context.hospital_schedules,
+                message=analysis.raw_message,
+                session_memory=context.session_memory,
+                target_label=target_label,
+                requester_role=requester_role,
+                audience=audience,
+            )
         elif current_intent == "medication_caution":
             deterministic_answer = await _answer_medication_caution_intent(
                 message=analysis.raw_message,
                 guide=context.latest_guide,
                 meds=context.meds,
                 profile=context.profile,
+                dur_alerts=context.dur_alerts,
+                adherence_summary=context.adherence_summary,
                 recent_messages=context.recent_messages,
                 matched_med=analysis.target_med,
                 external_drug_name=analysis.external_drug_name,
@@ -3082,6 +5447,7 @@ async def _build_deterministic_answer_parts(
                 guide=context.latest_guide,
                 meds=context.meds,
                 schedules=context.schedules,
+                adherence_summary=context.adherence_summary,
                 target_label=target_label,
                 requester_role=requester_role,
                 audience=audience,
@@ -3090,6 +5456,7 @@ async def _build_deterministic_answer_parts(
             deterministic_answer = await _answer_external_med_intent(
                 message=analysis.raw_message,
                 meds=context.meds,
+                schedules=context.schedules,
                 recent_messages=context.recent_messages,
                 profile=context.profile,
                 external_drug_name=analysis.external_drug_name,
@@ -3120,6 +5487,7 @@ async def _build_deterministic_answer_parts(
                 message=analysis.raw_message,
                 requester_role=requester_role,
                 target_label=target_label,
+                data_readiness=_resolve_data_readiness(context),
             )
 
         if deterministic_answer:
@@ -3141,6 +5509,7 @@ class ChatService:
             patient_id=patient_id,
             mode=mode,
         )
+        await ChatSessionMemory.get_or_create(session_id=int(session.id))
 
         return ChatSessionCreateResponse(
             success=True,
@@ -3149,6 +5518,58 @@ class ChatService:
                 patient_id=patient_id,
                 mode=mode,
                 created_at=session.created_at,
+            ),
+        )
+
+    @staticmethod
+    async def create_feedback(
+        *,
+        requester: User,
+        session_id: int,
+        assistant_message_id: int,
+        helpful: bool,
+        feedback_type: str | None,
+        comment: str | None,
+    ) -> ChatFeedbackCreateResponse:
+        session = await ChatSession.get_or_none(id=session_id)
+        if not session:
+            raise ChatServiceError(
+                status_code=404,
+                code="CHAT_SESSION_NOT_FOUND",
+                message="채팅 세션을 찾을 수 없습니다.",
+            )
+
+        assistant_message = await ChatMessage.get_or_none(
+            id=assistant_message_id,
+            session_id=session_id,
+            role="assistant",
+        )
+        if not assistant_message:
+            raise ChatServiceError(
+                status_code=404,
+                code="CHAT_MESSAGE_NOT_FOUND",
+                message="피드백 대상 assistant 메시지를 찾을 수 없습니다.",
+            )
+
+        feedback = await ChatFeedback.create(
+            session_id=session_id,
+            assistant_message_id=assistant_message_id,
+            user_id=int(requester.id),
+            helpful=helpful,
+            feedback_type=str(feedback_type or "").strip()[:50] or None,
+            comment=str(comment or "").strip()[:1000] or None,
+        )
+
+        return ChatFeedbackCreateResponse(
+            success=True,
+            data=ChatFeedbackCreateData(
+                feedback_id=int(feedback.id),
+                session_id=session_id,
+                assistant_message_id=assistant_message_id,
+                helpful=feedback.helpful,
+                feedback_type=feedback.feedback_type,
+                comment=feedback.comment,
+                created_at=feedback.created_at,
             ),
         )
 
@@ -3238,17 +5659,32 @@ class ChatService:
         )
 
         audience = _resolve_audience(context.profile)
+        chat_plan = await _plan_chat_question(
+            message=stripped,
+            context=context,
+            requester_role=requester_role,
+            audience=audience,
+            target_label=target_label,
+        )
         analysis = _analyze_question(
             message=stripped,
             meds=context.meds,
             recent_messages=context.recent_messages,
             requester_role=requester_role,
             profile=context.profile,
+            session_memory=context.session_memory,
         )
+        chat_plan = _harmonize_chat_plan(analysis=analysis, plan=chat_plan)
         is_emergency = analysis.is_emergency
         emergency_message = analysis.emergency_message
         intent = analysis.primary_intent
         llm_preferred = _should_prefer_llm(analysis=analysis)
+        record_context_available = _has_required_context_for_request(
+            analysis=analysis,
+            plan=chat_plan,
+            context=context,
+        )
+        personalized_request = _is_personalized_request(analysis=analysis, plan=chat_plan)
 
         context.rag_context = await _build_rag_context(
             intent=intent,
@@ -3261,82 +5697,81 @@ class ChatService:
 
         if is_emergency:
             assistant_content = f"{emergency_message} 현재 질문은 즉시 전문 의료진 확인이 우선입니다."
+        elif personalized_request and not record_context_available:
+            assistant_content = _build_record_required_reply(
+                analysis=analysis,
+                target_label=target_label,
+                requester_role=requester_role,
+                audience=audience,
+            )
         else:
-            deterministic_parts = await _build_deterministic_answer_parts(
-                analysis=analysis,
+            planned_reply = await _render_planned_reply(
+                plan=chat_plan,
+                message=stripped,
                 context=context,
                 target_label=target_label,
                 requester_role=requester_role,
                 audience=audience,
             )
-
-            composed_answer = _compose_answers(
-                answers=deterministic_parts,
-                requester_role=requester_role,
-                audience=audience,
-            )
-
-            meds_text = _build_meds_text(context.meds)
-            schedule_text = _build_schedule_text(context.schedules, context.meds)
-            profile_text = _build_profile_text(context.profile)
-            guide_text = _build_guide_text(context.latest_guide)
-            history_text = _build_history_text(context.recent_messages)
-            kids_text = _build_kids_text(context.kids_evidence)
-            rag_text = _build_rag_text(context.rag_context)
-            deterministic_text = _build_fact_summary(
-                analysis=analysis,
-                context=context,
-                target_label=target_label,
-            )
-            if composed_answer:
-                deterministic_text = (
-                    deterministic_text
-                    + "\n- 현재 직접 답변 초안: "
-                    + _extract_core_answer(composed_answer, requester_role)
+            if planned_reply:
+                assistant_content = planned_reply
+            else:
+                deterministic_parts = await _build_deterministic_answer_parts(
+                    analysis=analysis,
+                    context=context,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
                 )
-            external_lookup = (
-                await _lookup_external_med_info(analysis.external_drug_name) if analysis.external_drug_name else None
-            )
-            external_drug_text = _build_external_drug_text(
-                drug_name=analysis.external_drug_name,
-                lookup=external_lookup,
-            )
 
-            if llm_preferred:
-                try:
-                    system_prompt = _read_prompt_template("chat_system_prompt.txt").format(
-                        requester_role=requester_role.value,
-                        target_label=target_label,
-                        answer_mode=analysis.answer_mode,
-                        audience_label=_audience_label(audience),
-                        extra_safety=_extra_safety_text(audience),
-                        kids_text=kids_text,
-                        rag_text=rag_text,
-                        external_drug_text=external_drug_text,
-                        deterministic_text=deterministic_text,
-                        disclaimer=CHAT_DISCLAIMER,
+                composed_answer = _compose_answers(
+                    answers=deterministic_parts,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+
+                meds_text = _build_meds_text(context.meds)
+                schedule_text = _build_schedule_text(context.schedules, context.meds)
+                hospital_schedule_text = _build_hospital_schedule_text(context.hospital_schedules)
+                profile_text = _build_profile_text(context.profile)
+                guide_text = _build_guide_text(context.latest_guide)
+                history_text = _build_history_text(context.recent_messages)
+                session_memory_text = _build_session_memory_text(context.session_memory)
+                kids_text = _build_kids_text(context.kids_evidence)
+                rag_text = _build_rag_text(context.rag_context)
+                deterministic_text = _build_fact_summary(
+                    analysis=analysis,
+                    context=context,
+                    target_label=target_label,
+                )
+                if composed_answer:
+                    deterministic_text = (
+                        deterministic_text
+                        + "\n- 현재 직접 답변 초안: "
+                        + _extract_core_answer(composed_answer, requester_role)
                     )
-                    user_prompt = _read_prompt_template("chat_user_prompt.txt").format(
-                        guide_text=guide_text,
-                        meds_text=meds_text,
-                        schedule_text=schedule_text,
-                        profile_text=profile_text,
-                        external_drug_text=external_drug_text,
-                        deterministic_text=deterministic_text,
-                        history_text=history_text,
-                        user_message=stripped,
-                    )
-                    llm_result = await _call_chat_model(
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt,
-                    )
-                    assistant_content = (llm_result.get("content") or "").strip()
-                    if not assistant_content:
-                        raise ValueError("empty assistant content")
-                    is_emergency = bool(llm_result.get("is_emergency", False))
-                    emergency_message = llm_result.get("emergency_message")
-                except Exception:
-                    logger.exception("chat fallback used session_id=%s", session_id)
+                external_lookup = (
+                    await _lookup_external_med_info(analysis.external_drug_name) if analysis.external_drug_name else None
+                )
+                external_drug_text = _build_external_drug_text(
+                    drug_name=analysis.external_drug_name,
+                    lookup=external_lookup,
+                )
+                clarification_reply = _build_clarification_reply(
+                    analysis=analysis,
+                    context=context,
+                    target_label=target_label,
+                    requester_role=requester_role,
+                    audience=audience,
+                )
+
+                if clarification_reply:
+                    assistant_content = clarification_reply
+                elif _should_finalize_with_rules(
+                    analysis=analysis,
+                    composed_answer=composed_answer,
+                    clarification_reply=clarification_reply,
+                ):
                     assistant_content = composed_answer or _fallback_reply(
                         intent=intent,
                         latest_guide=context.latest_guide,
@@ -3348,44 +5783,56 @@ class ChatService:
                         requester_role=requester_role,
                         audience=audience,
                     )
-            elif composed_answer:
-                assistant_content = composed_answer
-            else:
-                try:
-                    system_prompt = _read_prompt_template("chat_system_prompt.txt").format(
-                        requester_role=requester_role.value,
-                        target_label=target_label,
-                        answer_mode=analysis.answer_mode,
-                        audience_label=_audience_label(audience),
-                        extra_safety=_extra_safety_text(audience),
-                        kids_text=kids_text,
-                        rag_text=rag_text,
-                        external_drug_text=external_drug_text,
-                        deterministic_text=deterministic_text,
-                        disclaimer=CHAT_DISCLAIMER,
-                    )
-                    user_prompt = _read_prompt_template("chat_user_prompt.txt").format(
-                        guide_text=guide_text,
-                        meds_text=meds_text,
-                        schedule_text=schedule_text,
-                        profile_text=profile_text,
-                        external_drug_text=external_drug_text,
-                        deterministic_text=deterministic_text,
-                        history_text=history_text,
-                        user_message=stripped,
-                    )
-                    llm_result = await _call_chat_model(
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt,
-                    )
-                    assistant_content = (llm_result.get("content") or "").strip()
-                    if not assistant_content:
-                        raise ValueError("empty assistant content")
-                    is_emergency = bool(llm_result.get("is_emergency", False))
-                    emergency_message = llm_result.get("emergency_message")
-                except Exception:
-                    logger.exception("chat fallback used session_id=%s", session_id)
-                    assistant_content = _fallback_reply(
+                elif llm_preferred:
+                    try:
+                        system_prompt = _read_prompt_template("chat_system_prompt.txt").format(
+                            requester_role=requester_role.value,
+                            target_label=target_label,
+                            answer_mode=analysis.answer_mode,
+                            audience_label=_audience_label(audience),
+                            extra_safety=_extra_safety_text(audience),
+                            kids_text=kids_text,
+                            rag_text=rag_text,
+                            external_drug_text=external_drug_text,
+                            deterministic_text=deterministic_text,
+                            disclaimer=CHAT_DISCLAIMER,
+                        )
+                        user_prompt = _read_prompt_template("chat_user_prompt.txt").format(
+                            guide_text=guide_text,
+                            meds_text=meds_text,
+                            schedule_text=schedule_text,
+                            hospital_schedule_text=hospital_schedule_text,
+                            profile_text=profile_text,
+                            external_drug_text=external_drug_text,
+                            deterministic_text=deterministic_text,
+                            history_text=history_text,
+                            session_memory_text=session_memory_text,
+                            user_message=stripped,
+                        )
+                        llm_result = await _call_chat_model(
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                        )
+                        assistant_content = (llm_result.get("content") or "").strip()
+                        if not assistant_content:
+                            raise ValueError("empty assistant content")
+                        is_emergency = bool(llm_result.get("is_emergency", False))
+                        emergency_message = llm_result.get("emergency_message")
+                    except Exception:
+                        logger.exception("chat fallback used session_id=%s", session_id)
+                        assistant_content = composed_answer or _fallback_reply(
+                            intent=intent,
+                            latest_guide=context.latest_guide,
+                            meds=context.meds,
+                            profile=context.profile,
+                            meds_text=meds_text,
+                            schedule_text=schedule_text,
+                            target_label=target_label,
+                            requester_role=requester_role,
+                            audience=audience,
+                        )
+                else:
+                    assistant_content = composed_answer or _fallback_reply(
                         intent=intent,
                         latest_guide=context.latest_guide,
                         meds=context.meds,
@@ -3401,6 +5848,14 @@ class ChatService:
             session_id=session_id,
             role="assistant",
             content=assistant_content,
+        )
+
+        await _update_session_memory(
+            session_id=session_id,
+            analysis=analysis,
+            plan=chat_plan,
+            assistant_content=assistant_content,
+            context=context,
         )
 
         return ChatMessageCreateResponse(

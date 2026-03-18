@@ -90,3 +90,31 @@ class ChatMessageListResponse(BaseModel):
 
     success: bool = True
     data: ChatMessageListData
+
+
+class ChatFeedbackCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assistant_message_id: int = Field(..., ge=1)
+    helpful: bool
+    feedback_type: str | None = Field(default=None, max_length=50)
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class ChatFeedbackCreateData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    feedback_id: int = Field(ge=1)
+    session_id: int = Field(ge=1)
+    assistant_message_id: int = Field(ge=1)
+    helpful: bool
+    feedback_type: str | None = None
+    comment: str | None = None
+    created_at: datetime
+
+
+class ChatFeedbackCreateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool = True
+    data: ChatFeedbackCreateData
