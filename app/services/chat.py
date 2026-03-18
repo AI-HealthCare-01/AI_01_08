@@ -4,8 +4,8 @@ import json
 import logging
 import os
 import re
-from difflib import SequenceMatcher
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -4598,7 +4598,6 @@ async def _answer_external_med_intent(
             _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
         )
 
-    subject_particle = _choose_korean_particle(drug_name, ("이", "가"))
     topic_particle = _choose_korean_particle(drug_name, ("은", "는"))
 
     lookup = await _lookup_external_med_info(drug_name)
