@@ -172,7 +172,18 @@ class NotificationService:
         return await qs.count()
 
     # -------------------------------------------------------------------------
-    # 5) 설정 조회/수정
+    # 5) 알림 삭제
+    # -------------------------------------------------------------------------
+    async def delete_notification(self, user_id: int, notification_id: int) -> bool:
+        """
+        DELETE /notifications/{notification_id}
+        - 내 알림만 삭제 가능
+        """
+        deleted = await Notification.filter(id=notification_id, user_id=user_id).delete()
+        return deleted > 0
+
+    # -------------------------------------------------------------------------
+    # 6) 설정 조회/수정
     # -------------------------------------------------------------------------
     async def get_settings(self, user_id: int) -> NotificationSettings:
         """
@@ -211,7 +222,7 @@ class NotificationService:
         return settings
 
     # -------------------------------------------------------------------------
-    # 6) 수동 리마인드(보호자 -> 환자)
+    # 7) 수동 리마인드(보호자 -> 환자)
     # -------------------------------------------------------------------------
     async def send_manual_remind(
         self,
