@@ -65,6 +65,7 @@ class NotificationSettingsResponse(BaseModel):
 
     intake_reminder: bool = True
     missed_alert: bool = True
+    hospital_schedule_reminder: bool = True
     ocr_done: bool = True
     guide_ready: bool = True
 
@@ -77,6 +78,7 @@ class NotificationSettingsUpdateRequest(BaseModel):
 
     intake_reminder: bool | None = None
     missed_alert: bool | None = None
+    hospital_schedule_reminder: bool | None = None
     ocr_done: bool | None = None
     guide_ready: bool | None = None
 

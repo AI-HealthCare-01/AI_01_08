@@ -7,6 +7,7 @@ const MAX_NOTIFICATION_CACHE = 100;
 const TYPE_META = {
   intake_reminder: { label: "복약 리마인드", bg: "#dbeafe", color: "#2563eb" },
   missed_alert: { label: "미복용 알림", bg: "#ffedd5", color: "#ea580c" },
+  hospital_schedule_reminder: { label: "병원 일정 알림", bg: "#e0f2fe", color: "#0369a1" },
   ocr_done: { label: "처방전 업데이트", bg: "#f3e8ff", color: "#a855f7" },
   guide_ready: { label: "AI 가이드", bg: "#dcfce7", color: "#16a34a" },
   taken: { label: "복용 완료", bg: "#ccfbf1", color: "#0f766e" },
@@ -68,6 +69,7 @@ const NotificationPage = ({
   const [settings, setSettings] = useState({
     intake_reminder: true,
     missed_alert: true,
+    hospital_schedule_reminder: true,
     ocr_done: true,
     guide_ready: true,
   });
@@ -194,6 +196,7 @@ const NotificationPage = ({
         setSettings({
           intake_reminder: !!data.intake_reminder,
           missed_alert: !!data.missed_alert,
+          hospital_schedule_reminder: !!data.hospital_schedule_reminder,
           ocr_done: !!data.ocr_done,
           guide_ready: !!data.guide_ready,
         });
@@ -423,6 +426,13 @@ const NotificationPage = ({
       const params = new URLSearchParams();
       if (patientId) params.set("patient_id", patientId);
       if (scheduleId) params.set("schedule_id", scheduleId);
+      return `/auth-demo/app/medication-check${params.toString() ? `?${params.toString()}` : ""}`;
+    }
+
+    if (item.type === "hospital_schedule_reminder") {
+      const params = new URLSearchParams();
+      if (patientId) params.set("patient_id", patientId);
+      if (scheduleId) params.set("schedule_id", scheduleId);
       return `/auth-demo/app/schedule${params.toString() ? `?${params.toString()}` : ""}`;
     }
 
@@ -535,6 +545,11 @@ const NotificationPage = ({
                   </div>
 
                   <div className="form-check mb-2">
+                    <input className="form-check-input" type="checkbox" id="hospital_schedule_reminder" checked={settings.hospital_schedule_reminder} onChange={(e) => setSettings((prev) => ({ ...prev, hospital_schedule_reminder: e.target.checked }))} />
+                    <label className="form-check-label" htmlFor="hospital_schedule_reminder">병원 일정 알림</label>
+                  </div>
+
+                  <div className="form-check mb-2">
                     <input className="form-check-input" type="checkbox" id="ocr_done" checked={settings.ocr_done} onChange={(e) => setSettings((prev) => ({ ...prev, ocr_done: e.target.checked }))} />
                     <label className="form-check-label" htmlFor="ocr_done">OCR 완료</label>
                   </div>
@@ -631,6 +646,7 @@ const NotificationPage = ({
                       <option value="all">알림 종류 전체</option>
                       <option value="intake_reminder">복약 리마인드</option>
                       <option value="missed_alert">미복용 알림</option>
+                      <option value="hospital_schedule_reminder">병원 일정 알림</option>
                       <option value="ocr_done">OCR 완료</option>
                       <option value="guide_ready">가이드 준비 완료</option>
                     </select>
@@ -730,7 +746,7 @@ const NotificationPage = ({
                                     </button>
                                   )}
 
-                                  {(item.type === "intake_reminder" || item.type === "missed_alert" || item.type === "taken") && (
+                                  {(item.type === "intake_reminder" || item.type === "missed_alert" || item.type === "taken" || item.type === "hospital_schedule_reminder") && (
                                     <button className="btn btn-outline-secondary btn-sm" onClick={(e) => {
                                       e.stopPropagation();
                                       handleNotificationClick(item);
