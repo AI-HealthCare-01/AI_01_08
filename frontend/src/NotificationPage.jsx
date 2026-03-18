@@ -81,6 +81,7 @@ const NotificationPage = ({
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [patientFilter, setPatientFilter] = useState("all");
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   const [remindForm, setRemindForm] = useState({
     patient_id: "",
@@ -164,6 +165,9 @@ const NotificationPage = ({
       if (!isCaregiver && myPatient?.id) {
         params.set("patient_id", String(myPatient.id));
       }
+      if (unreadOnly) {
+        params.set("unread_only", "true");
+      }
 
       const res = await authFetch(`${API_PREFIX}/notifications?${params.toString()}`);
       if (!res.ok) {
@@ -243,7 +247,7 @@ const NotificationPage = ({
 
   useEffect(() => {
     loadAll();
-  }, [isCaregiver, myPatient?.id, selfPatient?.id]);
+  }, [isCaregiver, myPatient?.id, selfPatient?.id, unreadOnly]);
 
   useEffect(() => {
     if (!isCaregiver || typeof window === "undefined") return;
@@ -324,13 +328,23 @@ const NotificationPage = ({
         if (String(payloadPatientId || "") !== String(patientFilter)) return false;
       }
 
+      if (unreadOnly && item.read_at) return false;
+
       if (!keyword) return true;
 
       return [patientLabel, title, body, type].join(" ").toLowerCase().includes(keyword);
     });
-  }, [notifications, search, typeFilter, patientFilter, isCaregiver, myPatient, normalizedPatients]);
+  }, [notifications, search, typeFilter, patientFilter, unreadOnly, isCaregiver, myPatient, normalizedPatients]);
 
   const getTypeMeta = (type) => TYPE_META[type] || TYPE_META.default;
+
+  const getActionLabel = (type) => {
+    if (type === "hospital_schedule_reminder") return "일정 보기";
+    if (type === "intake_reminder" || type === "missed_alert" || type === "taken") {
+      return "복약 확인하기";
+    }
+    return "열기";
+  };
 
   const markRead = async (notificationId, silent = false) => {
     const currentItem = notifications.find((item) => item.id === notificationId);
@@ -390,6 +404,36 @@ const NotificationPage = ({
       setUnreadCount(0);
     } catch (err) {
       setError(err.message || "전체 읽음 처리에 실패했습니다.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const deleteNotification = async (notificationId) => {
+    if (typeof window !== "undefined" && !window.confirm("이 알림을 삭제할까요?")) {
+      return;
+    }
+
+    setActionLoading(true);
+    setError(null);
+
+    try {
+      const res = await authFetch(`${API_PREFIX}/notifications/${notificationId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const body = await safeJson(res);
+        throw new Error(body?.detail || `status ${res.status}`);
+      }
+
+      const currentItem = notifications.find((item) => item.id === notificationId);
+      setNotifications((prev) => prev.filter((item) => item.id !== notificationId));
+      if (currentItem && !currentItem.read_at) {
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      }
+    } catch (err) {
+      setError(err.message || "알림 삭제에 실패했습니다.");
     } finally {
       setActionLoading(false);
     }
@@ -461,6 +505,8 @@ const NotificationPage = ({
     const payload = item?.payload || item?.payload_json || {};
     const patientId = payload?.patient_id ?? item?.patient_id;
     const scheduleId = payload?.schedule_id;
+    const scheduleTimeId = payload?.schedule_time_id;
+    const scheduledAt = payload?.scheduled_at;
     const documentId = payload?.document_id;
     const guideId = payload?.guide_id;
 
@@ -468,6 +514,8 @@ const NotificationPage = ({
       const params = new URLSearchParams();
       if (patientId) params.set("patient_id", patientId);
       if (scheduleId) params.set("schedule_id", scheduleId);
+      if (scheduleTimeId) params.set("schedule_time_id", scheduleTimeId);
+      if (scheduledAt) params.set("scheduled_at", scheduledAt);
       return `/auth-demo/app/medication-check${params.toString() ? `?${params.toString()}` : ""}`;
     }
 
@@ -475,6 +523,7 @@ const NotificationPage = ({
       const params = new URLSearchParams();
       if (patientId) params.set("patient_id", patientId);
       if (scheduleId) params.set("schedule_id", scheduleId);
+      if (scheduledAt) params.set("scheduled_at", scheduledAt);
       return `/auth-demo/app/schedule${params.toString() ? `?${params.toString()}` : ""}`;
     }
 
@@ -669,6 +718,9 @@ const NotificationPage = ({
                   <div>
                     <h3 className="fw-bold mb-1">알림 센터</h3>
                     <div className="text-muted">미읽음 {unreadCount}건</div>
+                    {unreadOnly && (
+                      <div className="small text-muted">미읽음 알림만 표시 중입니다.</div>
+                    )}
                   </div>
 
                   <div className="d-flex gap-2">
@@ -694,8 +746,18 @@ const NotificationPage = ({
                     </select>
                   </div>
 
+                  <div className="col-md-2">
+                    <button
+                      type="button"
+                      className={`btn w-100 ${unreadOnly ? "btn-primary" : "btn-outline-secondary"}`}
+                      onClick={() => setUnreadOnly((prev) => !prev)}
+                    >
+                      미읽음만
+                    </button>
+                  </div>
+
                   {isCaregiver && (
-                    <div className="col-md-3">
+                    <div className="col-md-2">
                       <select className="form-select" value={patientFilter} onChange={(e) => setPatientFilter(e.target.value)}>
                         <option value="all">복약자 전체</option>
                         {normalizedPatients.map((patient) => (
@@ -712,6 +774,7 @@ const NotificationPage = ({
                       setSearch("");
                       setTypeFilter("all");
                       setPatientFilter("all");
+                      setUnreadOnly(false);
                     }}>
                       초기화
                     </button>
@@ -719,6 +782,11 @@ const NotificationPage = ({
                 </div>
 
                 {error && <div className="alert alert-danger">{error}</div>}
+                {unreadOnly && (
+                  <div className="alert alert-light border small py-2">
+                    `미읽음만` 필터가 켜진 상태에서는 읽음 처리 후 목록에서 바로 사라질 수 있습니다.
+                  </div>
+                )}
 
                 {loading ? (
                   <div className="text-center py-5">
@@ -793,7 +861,7 @@ const NotificationPage = ({
                                       e.stopPropagation();
                                       handleNotificationClick(item);
                                     }}>
-                                      일정 보기
+                                      {getActionLabel(item.type)}
                                     </button>
                                   )}
 
@@ -809,9 +877,20 @@ const NotificationPage = ({
                               </div>
 
                               <div className="d-flex flex-column align-items-end gap-2">
-                                <div className="small text-muted">
-                                  {new Date(item.created_at).toLocaleString("ko-KR")}
-                                </div>
+                                <button
+                                  type="button"
+                                  className="btn btn-link btn-sm p-0 text-muted text-decoration-none"
+                                  aria-label="알림 삭제"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteNotification(item.id);
+                                  }}
+                                  disabled={actionLoading}
+                                  style={{ lineHeight: 1 }}
+                                >
+                                  x
+                                </button>
+                                <div className="small text-muted">{new Date(item.created_at).toLocaleString("ko-KR")}</div>
                                 {item.read_at && <span className="small text-muted">읽음</span>}
                               </div>
                             </div>

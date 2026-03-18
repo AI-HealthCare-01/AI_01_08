@@ -61,13 +61,49 @@ const MedicationCheckPage = ({
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
+  const notificationTarget = useMemo(() => {
+    if (typeof window === "undefined") return null;
+
+    const params = new URLSearchParams(window.location.search);
+    const patientId = params.get("patient_id");
+    const scheduleId = params.get("schedule_id");
+    const scheduleTimeId = params.get("schedule_time_id");
+    const scheduledAt = params.get("scheduled_at");
+
+    if (!patientId && !scheduleId && !scheduleTimeId && !scheduledAt) {
+      return null;
+    }
+
+    return {
+      patientId: patientId ? Number(patientId) : null,
+      scheduleId: scheduleId ? Number(scheduleId) : null,
+      scheduleTimeId: scheduleTimeId ? Number(scheduleTimeId) : null,
+      scheduledAt,
+      scheduledDate: scheduledAt ? String(scheduledAt).slice(0, 10) : null,
+    };
+  }, []);
 
   useEffect(() => {
     if (!isCaregiver && patients[0]?.id) {
       setSelectedPatientId(patients[0].id);
     }
   }, [isCaregiver, patients]);
+
+  useEffect(() => {
+    if (!notificationTarget?.scheduledDate) return;
+    setSelectedDate((prev) =>
+      prev === notificationTarget.scheduledDate ? prev : notificationTarget.scheduledDate
+    );
+  }, [notificationTarget]);
+
+  useEffect(() => {
+    if (!isCaregiver || !notificationTarget?.patientId) return;
+    setSelectedPatientId((prev) =>
+      String(prev) === String(notificationTarget.patientId) ? prev : String(notificationTarget.patientId)
+    );
+  }, [isCaregiver, notificationTarget]);
 
   const readCookie = (name) => {
     if (typeof document === "undefined") return null;
@@ -299,6 +335,56 @@ const MedicationCheckPage = ({
     return { patientCount, takenCount, missedCount };
   }, [filteredItems, groupedByPatient]);
 
+  const highlightedItemId = useMemo(() => {
+    if (!notificationTarget) return null;
+
+    const targetScheduledAt = notificationTarget.scheduledAt
+      ? String(notificationTarget.scheduledAt)
+      : null;
+
+    const matched = filteredItems.find((item) => {
+      if (
+        notificationTarget.patientId &&
+        Number(item.patient_id) !== Number(notificationTarget.patientId)
+      ) {
+        return false;
+      }
+
+      if (
+        notificationTarget.scheduleId &&
+        Number(item.schedule_id) !== Number(notificationTarget.scheduleId)
+      ) {
+        return false;
+      }
+
+      if (
+        notificationTarget.scheduleTimeId &&
+        Number(item.schedule_time_id) !== Number(notificationTarget.scheduleTimeId)
+      ) {
+        return false;
+      }
+
+      if (targetScheduledAt && String(item.scheduled_at) !== targetScheduledAt) {
+        return false;
+      }
+
+      return true;
+    });
+
+    return matched?.id || null;
+  }, [filteredItems, notificationTarget]);
+
+  useEffect(() => {
+    if (!highlightedItemId) return;
+
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(`medication-item-${highlightedItemId}`);
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [highlightedItemId]);
+
   const toggleSelectedPatient = (patientId) => {
     setSelectedIds((prev) =>
       prev.includes(patientId)
@@ -319,6 +405,7 @@ const MedicationCheckPage = ({
   const handleCheck = async (item) => {
     setActionLoadingId(item.id);
     setError(null);
+    setSuccessMessage(null);
 
     try {
       const res = await authFetch(`${API_PREFIX}/schedules/${item.schedule_id}/check`, {
@@ -346,6 +433,7 @@ const MedicationCheckPage = ({
             : current
         )
       );
+      setSuccessMessage(`${item.scheduled_time} 복약 상태를 복용 완료로 반영했습니다.`);
     } catch (err) {
       setError(err.message || "복용 완료 처리에 실패했습니다.");
     } finally {
@@ -356,6 +444,7 @@ const MedicationCheckPage = ({
   const handleSkip = async (item) => {
     setActionLoadingId(item.id);
     setError(null);
+    setSuccessMessage(null);
 
     try {
       const res = await authFetch(`${API_PREFIX}/schedules/${item.schedule_id}/skip`, {
@@ -383,6 +472,7 @@ const MedicationCheckPage = ({
             : current
         )
       );
+      setSuccessMessage(`${item.scheduled_time} 복약 상태를 건너뜀으로 반영했습니다.`);
     } catch (err) {
       setError(err.message || "건너뛰기 처리에 실패했습니다.");
     } finally {
@@ -393,6 +483,7 @@ const MedicationCheckPage = ({
   const handleUndo = async (item) => {
     setActionLoadingId(item.id);
     setError(null);
+    setSuccessMessage(null);
 
     try {
       const res = await authFetch(`${API_PREFIX}/schedules/${item.schedule_id}/check`, {
@@ -416,12 +507,23 @@ const MedicationCheckPage = ({
             : current
         )
       );
+      setSuccessMessage(`${item.scheduled_time} 복약 상태를 다시 확인 전으로 되돌렸습니다.`);
     } catch (err) {
       setError(err.message || "복약 기록 취소에 실패했습니다.");
     } finally {
       setActionLoadingId(null);
     }
   };
+
+  useEffect(() => {
+    if (!successMessage) return undefined;
+
+    const timer = window.setTimeout(() => {
+      setSuccessMessage(null);
+    }, 2500);
+
+    return () => window.clearTimeout(timer);
+  }, [successMessage]);
 
   const goToNotificationPage = (patientId, item) => {
     const patientName =
@@ -552,6 +654,7 @@ const MedicationCheckPage = ({
                 </div>
 
                 {error && <div className="alert alert-danger">{error}</div>}
+                {successMessage && <div className="alert alert-success py-2">{successMessage}</div>}
 
                 {loading ? (
                   <div className="text-center py-5">
@@ -643,12 +746,21 @@ const MedicationCheckPage = ({
                             <div className="row g-2">
                               {group.items.map((item) => {
                                 const meta = STATUS_META[item.status] || STATUS_META.pending;
+                                const isHighlighted = highlightedItemId === item.id;
 
                                 return (
                                   <div className="col-md-4" key={item.id}>
                                     <div
+                                      id={`medication-item-${item.id}`}
                                       className="rounded-4 p-3 h-100"
-                                      style={{ backgroundColor: meta.bg }}
+                                      style={{
+                                        backgroundColor: isHighlighted ? "#fff7d6" : meta.bg,
+                                        border: isHighlighted ? "2px solid #f59e0b" : "1px solid transparent",
+                                        boxShadow: isHighlighted
+                                          ? "0 0 0 4px rgba(245, 158, 11, 0.18)"
+                                          : "none",
+                                        transition: "all 0.2s ease",
+                                      }}
                                     >
                                       <div className="d-flex justify-content-between align-items-center mb-2">
                                         <div>
@@ -666,9 +778,7 @@ const MedicationCheckPage = ({
                                         />
                                       </div>
 
-                                      <div className="small text-muted mb-2">
-                                        약 ID: {item.patient_med_id}
-                                      </div>
+                                      <div className="small text-muted mb-2">복약 항목 #{item.patient_med_id}</div>
 
                                       {item.status === "taken" ? (
                                         <button
@@ -780,7 +890,7 @@ const MedicationCheckPage = ({
                                       className="badge rounded-pill text-dark"
                                       style={{ backgroundColor: "#e5e7eb" }}
                                     >
-                                      약 ID {item.patient_med_id}
+                                      복약 항목 #{item.patient_med_id}
                                     </span>
                                   </div>
                                 </div>

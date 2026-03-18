@@ -14,6 +14,7 @@ from app.services.hospital_schedule_notifications import (
     dispatch_due_hospital_schedule_notifications,
     now_kst_naive,
 )
+from app.services.medication_notifications import dispatch_due_medication_notifications
 
 QUEUE_NAME = os.getenv("APP_WORKER_QUEUE", "notification_queue")
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")  # docker 기준
@@ -86,6 +87,16 @@ async def main() -> None:
                         print(f"[app_worker] created hospital schedule notifications: {created}")
                 except Exception as exc:
                     print(f"[app_worker] failed to create hospital schedule notifications: {exc!r}")
+
+                try:
+                    created = await dispatch_due_medication_notifications(
+                        window_start=last_schedule_check_at,
+                        window_end=window_end,
+                    )
+                    if created:
+                        print(f"[app_worker] created medication notifications: {created}")
+                except Exception as exc:
+                    print(f"[app_worker] failed to create medication notifications: {exc!r}")
                 finally:
                     last_schedule_check_at = window_end
 

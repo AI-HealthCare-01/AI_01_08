@@ -40,6 +40,24 @@ const SchedulePage = ({
   const [showModal, setShowModal] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const notificationTarget = useMemo(() => {
+    if (typeof window === "undefined") return null;
+
+    const params = new URLSearchParams(window.location.search);
+    const patientId = params.get("patient_id");
+    const scheduleId = params.get("schedule_id");
+    const scheduledAt = params.get("scheduled_at");
+
+    if (!patientId && !scheduleId && !scheduledAt) {
+      return null;
+    }
+
+    return {
+      patientId: patientId ? Number(patientId) : null,
+      scheduleId: scheduleId ? Number(scheduleId) : null,
+      scheduledAt,
+    };
+  }, []);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -65,6 +83,13 @@ const SchedulePage = ({
       patient_id: prev.patient_id || defaultPatientId,
     }));
   }, [defaultPatientId, isCaregiver]);
+
+  useEffect(() => {
+    if (!isCaregiver || !notificationTarget?.patientId) return;
+    setSelectedPatientId((prev) =>
+      String(prev) === String(notificationTarget.patientId) ? prev : String(notificationTarget.patientId)
+    );
+  }, [isCaregiver, notificationTarget]);
 
   const readCookie = (name) => {
     if (typeof document === "undefined") return null;
@@ -196,6 +221,53 @@ const SchedulePage = ({
       (a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at)
     );
   }, [filteredSchedules, selectedDate]);
+
+  const highlightedScheduleId = useMemo(() => {
+    if (!notificationTarget) return null;
+
+    const matched = schedules.find((schedule) => {
+      if (
+        notificationTarget.patientId &&
+        Number(schedule.patient_id) !== Number(notificationTarget.patientId)
+      ) {
+        return false;
+      }
+
+      if (
+        notificationTarget.scheduleId &&
+        Number(schedule.id) !== Number(notificationTarget.scheduleId)
+      ) {
+        return false;
+      }
+
+      if (
+        notificationTarget.scheduledAt &&
+        String(schedule.scheduled_at) !== String(notificationTarget.scheduledAt)
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+
+    return matched?.id || null;
+  }, [notificationTarget, schedules]);
+
+  useEffect(() => {
+    if (!highlightedScheduleId) return;
+
+    const targetSchedule = schedules.find((schedule) => schedule.id === highlightedScheduleId);
+    if (!targetSchedule) return;
+
+    moveToScheduleDate(targetSchedule);
+
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(`schedule-item-${highlightedScheduleId}`);
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [highlightedScheduleId, schedules]);
 
   const getPatientName = (patientId) => {
     const patient = normalizedPatients.find((p) => p.id === Number(patientId));
@@ -413,7 +485,16 @@ const SchedulePage = ({
                   >
                     <div
                       className="border-start border-3 ps-3 py-2 mt-2 rounded-end"
-                      style={{ borderColor: getPatientColor(schedule.patient_id) }}
+                      style={{
+                        borderColor: getPatientColor(schedule.patient_id),
+                        backgroundColor:
+                          highlightedScheduleId === schedule.id ? "rgba(245, 158, 11, 0.14)" : "transparent",
+                        boxShadow:
+                          highlightedScheduleId === schedule.id
+                            ? "0 0 0 3px rgba(245, 158, 11, 0.18)"
+                            : "none",
+                        transition: "all 0.2s ease",
+                      }}
                     >
                       <div className="fw-semibold">{schedule.title}</div>
                       {isCaregiver && (
@@ -458,7 +539,21 @@ const SchedulePage = ({
                       className="border-0 bg-transparent w-100 text-start p-0"
                       onClick={() => handleEditSchedule(schedule)}
                     >
-                      <div className="rounded-3 border px-3 py-2 mb-2">
+                      <div
+                        id={`schedule-item-${schedule.id}`}
+                        className="rounded-3 border px-3 py-2 mb-2"
+                        style={{
+                          backgroundColor:
+                            highlightedScheduleId === schedule.id ? "#fff7d6" : "#fff",
+                          borderColor:
+                            highlightedScheduleId === schedule.id ? "#f59e0b" : undefined,
+                          boxShadow:
+                            highlightedScheduleId === schedule.id
+                              ? "0 0 0 4px rgba(245, 158, 11, 0.18)"
+                              : "none",
+                          transition: "all 0.2s ease",
+                        }}
+                      >
                         <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
                           <span
                             className="rounded-pill"
@@ -572,6 +667,10 @@ const SchedulePage = ({
                                   style={{
                                     backgroundColor: getPatientColor(schedule.patient_id),
                                     cursor: "pointer",
+                                    boxShadow:
+                                      highlightedScheduleId === schedule.id
+                                        ? "0 0 0 3px rgba(245, 158, 11, 0.28)"
+                                        : "none",
                                   }}
                                   onClick={(e) => {
                                     e.stopPropagation();

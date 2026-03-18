@@ -129,6 +129,23 @@ async def mark_notification_read(
 
 
 # =============================================================================
+# DELETE /notifications/{notification_id}
+# - 알림 단건 삭제
+# =============================================================================
+@notification_router.delete("/{notification_id}", response_model=ApiResponse[dict])
+async def delete_notification(
+    notification_id: int,
+    user: Annotated[User, Depends(get_request_user)],
+    service: Annotated[NotificationService, Depends(NotificationService)],
+) -> Response:
+    ok = await service.delete_notification(user_id=user.id, notification_id=notification_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+
+    return Response(ApiResponse(data={"notification_id": notification_id, "deleted": True}).model_dump())
+
+
+# =============================================================================
 # PATCH /notifications/read-all
 # - 알림 전체 읽음 처리
 # =============================================================================
