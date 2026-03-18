@@ -1419,21 +1419,9 @@ function App() {
                           value={signupForm.role}
                           onChange={handleSignupChange}
                         >
-                          {roles.length > 0 ? (
-                            roles.map((role) => (
-                              <option key={`${role.code}-${role.name}`} value={role.code || role.name}>
-                                {resolveRoleLabel(role)}
-                              </option>
-                            ))
-                          ) : (
-                            <>
-                              <option value="PATIENT">복약자</option>
-                              <option value="CAREGIVER">보호자</option>
-                              <option value="ADMIN">관리자</option>
-                            </>
-                          )}
+                          <option value="PATIENT">복약자</option>
+                          <option value="CAREGIVER">보호자</option>
                         </select>
-                        {rolesError && <div className="text-danger small mt-1">역할 로딩 실패</div>}
                       </div>
                       <div className="col-12">
                         <label className="form-label">이메일</label>
@@ -1643,13 +1631,9 @@ function App() {
                       >
                         아이디/비밀번호 찾기
                       </button>
-                      <a className="btn btn-outline-secondary" href="/auth-demo/app">
-                        대시보드로 이동
-                      </a>
                     </div>
                   </div>
                   {loginState.error && <div className="alert alert-danger mt-3">{loginState.error}</div>}
-                  <div className="mt-4 small text-muted">테스트 계정이 필요하면 관리자에게 문의하세요.</div>
                 </div>
               </div>
             </div>
@@ -2457,7 +2441,7 @@ function App() {
             </div>
           </div>
         </div>
-        <img className="home-hero-mascot-floating" src="/mascot.png" alt="" aria-hidden="true" />
+        <img className="home-hero-mascot-floating" src={`${import.meta.env.BASE_URL}mascot.png`} alt="" aria-hidden="true" />
       </section>
 
       <div className="home-core-grid">
