@@ -58,11 +58,14 @@ const MedicationCheckPage = ({
 
   const [statusData, setStatusData] = useState([]);
   const [summaryMap, setSummaryMap] = useState({});
+  const [medicationNameMap, setMedicationNameMap] = useState({});
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [selectedMealLabel, setSelectedMealLabel] = useState("아침");
+  const [expandedCaregiverMeals, setExpandedCaregiverMeals] = useState({});
   const notificationTarget = useMemo(() => {
     if (typeof window === "undefined") return null;
 
@@ -71,8 +74,10 @@ const MedicationCheckPage = ({
     const scheduleId = params.get("schedule_id");
     const scheduleTimeId = params.get("schedule_time_id");
     const scheduledAt = params.get("scheduled_at");
+    const scheduledDate = params.get("scheduled_date");
+    const mealLabel = params.get("meal_label");
 
-    if (!patientId && !scheduleId && !scheduleTimeId && !scheduledAt) {
+    if (!patientId && !scheduleId && !scheduleTimeId && !scheduledAt && !scheduledDate && !mealLabel) {
       return null;
     }
 
@@ -81,7 +86,8 @@ const MedicationCheckPage = ({
       scheduleId: scheduleId ? Number(scheduleId) : null,
       scheduleTimeId: scheduleTimeId ? Number(scheduleTimeId) : null,
       scheduledAt,
-      scheduledDate: scheduledAt ? String(scheduledAt).slice(0, 10) : null,
+      scheduledDate: scheduledDate || (scheduledAt ? String(scheduledAt).slice(0, 10) : null),
+      mealLabel,
     };
   }, []);
 
@@ -251,6 +257,31 @@ const MedicationCheckPage = ({
     };
   };
 
+  const fetchPatientMedicationGuide = async (patientId) => {
+    const params = new URLSearchParams();
+    params.set("patient_id", String(patientId));
+    params.set("include_other_active", "true");
+
+    const res = await authFetch(`${API_PREFIX}/documents/medication-guide?${params.toString()}`);
+    const body = await safeJson(res);
+
+    if (!res.ok) {
+      throw new Error(getErrorMessage(body, res.status));
+    }
+
+    const data = body?.data || body || {};
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const guideMap = {};
+
+    items.forEach((item) => {
+      const patientMedId = Number(item?.patient_med_id);
+      if (!patientMedId) return;
+      guideMap[patientMedId] = item?.display_name || `복약 항목 #${patientMedId}`;
+    });
+
+    return guideMap;
+  };
+
   const loadStatus = async () => {
     setLoading(true);
     setError(null);
@@ -274,20 +305,32 @@ const MedicationCheckPage = ({
         return;
       }
 
-      const results = await Promise.all(targets.map((patientId) => fetchPatientStatus(patientId)));
+      const results = await Promise.all(
+        targets.map(async (patientId) => {
+          const [statusResult, guideMap] = await Promise.all([
+            fetchPatientStatus(patientId),
+            fetchPatientMedicationGuide(patientId),
+          ]);
+          return { ...statusResult, guideMap };
+        })
+      );
 
       const mergedItems = results.flatMap((result) => result.items);
       const nextSummaryMap = {};
+      const nextMedicationNameMap = {};
       results.forEach((result) => {
         nextSummaryMap[result.patientId] = result.summary;
+        Object.assign(nextMedicationNameMap, result.guideMap);
       });
 
       setStatusData(mergedItems);
       setSummaryMap(nextSummaryMap);
+      setMedicationNameMap(nextMedicationNameMap);
     } catch (err) {
       setError(err.message || "복약 현황을 불러오지 못했습니다.");
       setStatusData([]);
       setSummaryMap({});
+      setMedicationNameMap({});
     } finally {
       setLoading(false);
     }
@@ -335,12 +378,75 @@ const MedicationCheckPage = ({
     return { patientCount, takenCount, missedCount };
   }, [filteredItems, groupedByPatient]);
 
+  const getMedicationLabel = (item) =>
+    medicationNameMap[item.patient_med_id] || `복약 항목 #${item.patient_med_id}`;
+
+  const getMealStatusSummary = (items) => {
+    const takenCount = items.filter((item) => item.status === "taken").length;
+    const skippedCount = items.filter((item) => item.status === "skipped").length;
+    const missedCount = items.filter((item) => item.status === "missed").length;
+    const pendingCount = items.filter((item) => item.status === "pending").length;
+
+    return { takenCount, skippedCount, missedCount, pendingCount };
+  };
+
+  const groupedByMealForSelf = useMemo(() => {
+    const groups = new Map();
+
+    filteredItems.forEach((item) => {
+      const key = item.meal_label || "기타";
+      const current = groups.get(key) || { meal_label: key, items: [] };
+      current.items.push(item);
+      groups.set(key, current);
+    });
+
+    return Array.from(groups.values()).sort((a, b) => {
+      const aIndex = MEAL_ORDER.includes(a.meal_label) ? MEAL_ORDER.indexOf(a.meal_label) : 999;
+      const bIndex = MEAL_ORDER.includes(b.meal_label) ? MEAL_ORDER.indexOf(b.meal_label) : 999;
+      return aIndex - bIndex;
+    });
+  }, [filteredItems]);
+
+  const groupedByPatientWithMeals = useMemo(() => {
+    return groupedByPatient.map((group) => {
+      const mealMap = new Map();
+
+      group.items.forEach((item) => {
+        const mealKey = item.meal_label || "기타";
+        const current = mealMap.get(mealKey) || { meal_label: mealKey, items: [] };
+        current.items.push(item);
+        mealMap.set(mealKey, current);
+      });
+
+      const meals = Array.from(mealMap.values())
+        .map((mealGroup) => ({
+          ...mealGroup,
+          items: mealGroup.items.sort((a, b) => String(a.scheduled_at).localeCompare(String(b.scheduled_at))),
+          summary: getMealStatusSummary(mealGroup.items),
+        }))
+        .sort((a, b) => {
+          const aIndex = MEAL_ORDER.includes(a.meal_label) ? MEAL_ORDER.indexOf(a.meal_label) : 999;
+          const bIndex = MEAL_ORDER.includes(b.meal_label) ? MEAL_ORDER.indexOf(b.meal_label) : 999;
+          return aIndex - bIndex;
+        });
+
+      return {
+        ...group,
+        meals,
+      };
+    });
+  }, [groupedByPatient]);
+
   const highlightedItemId = useMemo(() => {
     if (!notificationTarget) return null;
 
     const targetScheduledAt = notificationTarget.scheduledAt
       ? String(notificationTarget.scheduledAt)
       : null;
+    const targetScheduledDate = notificationTarget.scheduledDate
+      ? String(notificationTarget.scheduledDate)
+      : null;
+    const targetMealLabel = notificationTarget.mealLabel ? String(notificationTarget.mealLabel) : null;
 
     const matched = filteredItems.find((item) => {
       if (
@@ -361,6 +467,14 @@ const MedicationCheckPage = ({
         notificationTarget.scheduleTimeId &&
         Number(item.schedule_time_id) !== Number(notificationTarget.scheduleTimeId)
       ) {
+        return false;
+      }
+
+      if (targetScheduledDate && String(item.scheduled_date) !== targetScheduledDate) {
+        return false;
+      }
+
+      if (targetMealLabel && String(item.meal_label) !== targetMealLabel) {
         return false;
       }
 
@@ -385,6 +499,50 @@ const MedicationCheckPage = ({
     return () => window.clearTimeout(timer);
   }, [highlightedItemId]);
 
+  useEffect(() => {
+    if (groupedByMealForSelf.length === 0) return;
+
+    if (
+      notificationTarget?.mealLabel &&
+      groupedByMealForSelf.some((group) => group.meal_label === notificationTarget.mealLabel) &&
+      selectedMealLabel !== notificationTarget.mealLabel
+    ) {
+      setSelectedMealLabel(notificationTarget.mealLabel);
+      return;
+    }
+
+    const highlightedItem = filteredItems.find((item) => item.id === highlightedItemId);
+    const highlightedMeal = highlightedItem?.meal_label;
+    if (
+      highlightedMeal &&
+      groupedByMealForSelf.some((group) => group.meal_label === highlightedMeal) &&
+      selectedMealLabel !== highlightedMeal
+    ) {
+      setSelectedMealLabel(highlightedMeal);
+      return;
+    }
+
+    if (!groupedByMealForSelf.some((group) => group.meal_label === selectedMealLabel)) {
+      setSelectedMealLabel(groupedByMealForSelf[0].meal_label);
+    }
+  }, [groupedByMealForSelf, highlightedItemId, filteredItems, selectedMealLabel, notificationTarget]);
+
+  const selectedMealGroup = useMemo(() => {
+    return (
+      groupedByMealForSelf.find((group) => group.meal_label === selectedMealLabel) ||
+      groupedByMealForSelf[0] ||
+      null
+    );
+  }, [groupedByMealForSelf, selectedMealLabel]);
+
+  const selectedMealSummary = useMemo(() => {
+    if (!selectedMealGroup) {
+      return null;
+    }
+
+    return getMealStatusSummary(selectedMealGroup.items);
+  }, [selectedMealGroup]);
+
   const toggleSelectedPatient = (patientId) => {
     setSelectedIds((prev) =>
       prev.includes(patientId)
@@ -400,6 +558,14 @@ const MedicationCheckPage = ({
       return;
     }
     setSelectedIds(allIds);
+  };
+
+  const toggleCaregiverMeal = (patientId, mealLabel) => {
+    const key = `${patientId}-${mealLabel}`;
+    setExpandedCaregiverMeals((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
   };
 
   const handleCheck = async (item) => {
@@ -510,6 +676,54 @@ const MedicationCheckPage = ({
       setSuccessMessage(`${item.scheduled_time} 복약 상태를 다시 확인 전으로 되돌렸습니다.`);
     } catch (err) {
       setError(err.message || "복약 기록 취소에 실패했습니다.");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleBulkCheck = async (items, mealLabel) => {
+    const targets = items.filter((item) => item.status !== "taken" && item.status !== "skipped");
+    const actionLabel = mealLabel === "caregiver-visible" ? "보이는 항목" : mealLabel;
+    if (targets.length === 0) {
+      setSuccessMessage(`${actionLabel}은 이미 모두 처리되었습니다.`);
+      return;
+    }
+
+    setActionLoadingId(`bulk-${mealLabel}`);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      for (const item of targets) {
+        const res = await authFetch(`${API_PREFIX}/schedules/${item.schedule_id}/check`, {
+          method: "POST",
+          body: JSON.stringify({
+            schedule_time_id: item.schedule_time_id,
+            scheduled_date: item.scheduled_date,
+          }),
+        });
+
+        const body = await safeJson(res);
+        if (!res.ok) {
+          throw new Error(getErrorMessage(body, res.status));
+        }
+
+        setStatusData((prev) =>
+          prev.map((current) =>
+            current.id === item.id
+              ? {
+                  ...current,
+                  status: "taken",
+                  taken_at: body?.data?.taken_at || body?.taken_at || new Date().toISOString(),
+                }
+              : current
+          )
+        );
+      }
+
+      setSuccessMessage(`${actionLabel} 복약 항목 ${targets.length}건을 한 번에 복용완료 처리했습니다.`);
+    } catch (err) {
+      setError(err.message || "일괄 복용완료 처리에 실패했습니다.");
     } finally {
       setActionLoadingId(null);
     }
@@ -629,6 +843,18 @@ const MedicationCheckPage = ({
                   >
                     {selectedIds.length === groupedByPatient.length ? "전체 선택 해제" : "전체 알림 보내기"}
                   </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-primary btn-sm w-100 mt-2"
+                    onClick={() => handleBulkCheck(filteredItems, "caregiver-visible")}
+                    disabled={
+                      filteredItems.length === 0 ||
+                      filteredItems.every((item) => item.status === "taken" || item.status === "skipped") ||
+                      actionLoadingId === "bulk-caregiver-visible"
+                    }
+                  >
+                    {actionLoadingId === "bulk-caregiver-visible" ? "처리 중..." : "보이는 항목 전체 복용완료"}
+                  </button>
                 </div>
               </div>
             )}
@@ -733,7 +959,20 @@ const MedicationCheckPage = ({
                                 </div>
                               </div>
 
-                              <div className="d-flex gap-2">
+                              <div className="d-flex gap-2 flex-wrap">
+                                <button
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => handleBulkCheck(group.items, `patient-${group.patient_id}`)}
+                                  disabled={
+                                    group.items.length === 0 ||
+                                    group.items.every((item) => item.status === "taken" || item.status === "skipped") ||
+                                    actionLoadingId === `bulk-patient-${group.patient_id}`
+                                  }
+                                >
+                                  {actionLoadingId === `bulk-patient-${group.patient_id}`
+                                    ? "처리 중..."
+                                    : "보이는 항목 복용완료"}
+                                </button>
                                 <button
                                   className="btn btn-outline-secondary btn-sm"
                                   onClick={() => goToNotificationPage(group.patient_id)}
@@ -743,10 +982,33 @@ const MedicationCheckPage = ({
                               </div>
                             </div>
 
+                            <div className="d-flex gap-2 flex-wrap mb-3">
+                              {groupedByPatientWithMeals
+                                .find((patientGroup) => patientGroup.patient_id === group.patient_id)
+                                ?.meals.map((mealGroup) => (
+                                  <button
+                                    key={`${group.patient_id}-${mealGroup.meal_label}`}
+                                    type="button"
+                                    className={`btn btn-sm ${(expandedCaregiverMeals[`${group.patient_id}-${mealGroup.meal_label}`] ?? mealGroup.summary.missedCount > 0) ? "btn-primary" : "btn-outline-secondary"}`}
+                                    onClick={() => toggleCaregiverMeal(group.patient_id, mealGroup.meal_label)}
+                                  >
+                                    {mealGroup.meal_label} {mealGroup.items.length}개
+                                    {mealGroup.summary.missedCount > 0 ? ` · 미복용 ${mealGroup.summary.missedCount}` : ""}
+                                  </button>
+                                ))}
+                            </div>
+
                             <div className="row g-2">
                               {group.items.map((item) => {
                                 const meta = STATUS_META[item.status] || STATUS_META.pending;
                                 const isHighlighted = highlightedItemId === item.id;
+                                const mealKey = `${group.patient_id}-${item.meal_label}`;
+                                const isMealExpanded =
+                                  expandedCaregiverMeals[mealKey] ?? (item.status === "missed");
+
+                                if (!isMealExpanded && !isHighlighted) {
+                                  return null;
+                                }
 
                                 return (
                                   <div className="col-md-4" key={item.id}>
@@ -778,7 +1040,7 @@ const MedicationCheckPage = ({
                                         />
                                       </div>
 
-                                      <div className="small text-muted mb-2">복약 항목 #{item.patient_med_id}</div>
+                                      <div className="small text-muted mb-2">{getMedicationLabel(item)}</div>
 
                                       {item.status === "taken" ? (
                                         <button
@@ -853,116 +1115,200 @@ const MedicationCheckPage = ({
                 ) : (
                   <div className="card border-0" style={{ backgroundColor: "#f9fbff" }}>
                     <div className="card-body">
-                      <div
-                        className="rounded-4 p-4 mb-4"
-                        style={{ backgroundColor: "#fff" }}
-                      >
+                      <div className="rounded-4 p-4 mb-4" style={{ backgroundColor: "#fff" }}>
                         <div className="fs-2 fw-bold mb-2">
                           안녕하세요, {me?.name || patients[0]?.name || "회원"}님
                         </div>
-                        <div className="text-muted">
-                          오늘도 건강한 하루 되세요. 오늘 복약 일정을 확인해보세요.
-                        </div>
+                        <div className="text-muted">오늘 복약해야 하는 시간대만 골라서 확인해보세요.</div>
                       </div>
 
                       <div className="fw-bold fs-2 mb-1">오늘의 복약 스케줄</div>
                       <div className="text-muted mb-4">{formatSelectedDate()}</div>
 
-                      <div className="d-flex flex-column gap-3">
-                        {filteredItems.map((item) => {
-                          const meta = STATUS_META[item.status] || STATUS_META.pending;
+                      <div className="d-flex gap-2 flex-wrap mb-4">
+                        {MEAL_ORDER.map((mealLabel) => {
+                          const mealGroup = groupedByMealForSelf.find((group) => group.meal_label === mealLabel);
+                          const isSelected = selectedMealGroup?.meal_label === mealLabel;
 
                           return (
-                            <div
-                              key={item.id}
-                              className="rounded-4 p-4"
-                              style={{ backgroundColor: "#fff" }}
+                            <button
+                              key={mealLabel}
+                              type="button"
+                              className={`btn ${isSelected ? "btn-primary" : "btn-outline-secondary"}`}
+                              disabled={!mealGroup}
+                              onClick={() => setSelectedMealLabel(mealLabel)}
                             >
-                              <div className="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-                                <div>
-                                  <div className="d-flex align-items-center gap-2 mb-1">
-                                    <div className="fs-2 fw-bold">{item.scheduled_time}</div>
-                                    <div className="small text-muted">{item.meal_label}</div>
-                                  </div>
-                                  <div className="fw-semibold mb-2">복용 정보</div>
-                                  <div className="d-flex gap-2 flex-wrap">
-                                    <span
-                                      className="badge rounded-pill text-dark"
-                                      style={{ backgroundColor: "#e5e7eb" }}
-                                    >
-                                      복약 항목 #{item.patient_med_id}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="d-flex align-items-center gap-3">
-                                  <span
-                                    style={{
-                                      width: 14,
-                                      height: 14,
-                                      borderRadius: "999px",
-                                      display: "inline-block",
-                                      backgroundColor: meta.dot,
-                                    }}
-                                  />
-
-                                  {item.status === "taken" ? (
-                                    <button
-                                      className="btn btn-sm"
-                                      style={{
-                                        backgroundColor: meta.color,
-                                        color: "#fff",
-                                        border: "none",
-                                        minWidth: 110,
-                                      }}
-                                      onClick={() => handleUndo(item)}
-                                      disabled={actionLoadingId === item.id}
-                                    >
-                                      {actionLoadingId === item.id ? "처리 중..." : "복용완료"}
-                                    </button>
-                                  ) : item.status === "skipped" ? (
-                                    <button
-                                      className="btn btn-secondary btn-sm"
-                                      onClick={() => handleUndo(item)}
-                                      disabled={actionLoadingId === item.id}
-                                    >
-                                      {actionLoadingId === item.id ? "처리 중..." : "건너뜀 (취소)"}
-                                    </button>
-                                  ) : (
-                                    <div className="d-flex flex-column gap-2">
-                                      <button
-                                        className="btn btn-sm"
-                                        style={{
-                                          backgroundColor: item.status === "missed" ? "#ef4444" : "#2563eb",
-                                          color: "#fff",
-                                          border: "none",
-                                          minWidth: 110,
-                                        }}
-                                        onClick={() => handleCheck(item)}
-                                        disabled={actionLoadingId === item.id}
-                                      >
-                                        {actionLoadingId === item.id
-                                          ? "처리 중..."
-                                          : item.status === "missed"
-                                          ? "지금 복용 체크"
-                                          : "복용하기"}
-                                      </button>
-
-                                      <button
-                                        className="btn btn-outline-secondary btn-sm"
-                                        onClick={() => handleSkip(item)}
-                                        disabled={actionLoadingId === item.id}
-                                      >
-                                        건너뛰기
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
+                              {mealLabel}
+                              {mealGroup ? ` ${mealGroup.items.length}` : ""}
+                            </button>
                           );
                         })}
                       </div>
+
+                      {selectedMealGroup && (
+                        <div
+                          className="d-flex justify-content-between align-items-center gap-3 flex-wrap rounded-4 p-3 mb-4"
+                          style={{ backgroundColor: "#fff" }}
+                        >
+                          <div>
+                            <div className="fw-semibold">{selectedMealGroup.meal_label} 복약 요약</div>
+                            <div className="small text-muted">
+                              {selectedMealGroup.items.length}개 항목
+                              {selectedMealSummary?.missedCount ? ` · 미복용 ${selectedMealSummary.missedCount}건` : ""}
+                              {selectedMealSummary?.pendingCount ? ` · 대기 ${selectedMealSummary.pendingCount}건` : ""}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={
+                              selectedMealGroup.items.every(
+                                (item) => item.status === "taken" || item.status === "skipped"
+                              ) || actionLoadingId === `bulk-${selectedMealGroup.meal_label}`
+                            }
+                            onClick={() => handleBulkCheck(selectedMealGroup.items, selectedMealGroup.meal_label)}
+                          >
+                            {actionLoadingId === `bulk-${selectedMealGroup.meal_label}`
+                              ? "처리 중..."
+                              : "이 시간대 전체 복용완료"}
+                          </button>
+                        </div>
+                      )}
+
+                      {!selectedMealGroup ? (
+                        <div className="rounded-4 p-4 text-center text-muted" style={{ backgroundColor: "#fff" }}>
+                          선택한 날짜에 복약 일정이 없습니다.
+                        </div>
+                      ) : (
+                        <div className="rounded-4 p-4" style={{ backgroundColor: "#fff" }}>
+                          {(() => {
+                            const mealSummary = getMealStatusSummary(selectedMealGroup.items);
+                            const bulkTargets = selectedMealGroup.items.filter(
+                              (item) => item.status !== "taken" && item.status !== "skipped"
+                            );
+
+                            return (
+                          <div className="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-4">
+                            <div>
+                              <div className="fs-3 fw-bold mb-1">{selectedMealGroup.meal_label}</div>
+                              <div className="text-muted small">
+                                {selectedMealGroup.items.map((item) => getMedicationLabel(item)).join(", ")}
+                              </div>
+                            </div>
+                            <div className="d-flex flex-column align-items-start align-items-md-end gap-2">
+                              <div className="small text-muted">
+                                {selectedMealGroup.items.length}개의 복약 항목
+                                {mealSummary.missedCount > 0 ? ` · 미복용 ${mealSummary.missedCount}건` : ""}
+                              </div>
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={bulkTargets.length === 0 || actionLoadingId === `bulk-${selectedMealGroup.meal_label}`}
+                                onClick={() => handleBulkCheck(selectedMealGroup.items, selectedMealGroup.meal_label)}
+                              >
+                                {actionLoadingId === `bulk-${selectedMealGroup.meal_label}`
+                                  ? "처리 중..."
+                                  : "이 시간대 전체 복용완료"}
+                              </button>
+                            </div>
+                          </div>
+                            );
+                          })()}
+
+                          <div className="d-flex flex-column gap-3">
+                            {selectedMealGroup.items.map((item) => {
+                              const meta = STATUS_META[item.status] || STATUS_META.pending;
+                              const isHighlighted = highlightedItemId === item.id;
+
+                              return (
+                                <div
+                                  key={item.id}
+                                  id={`medication-item-${item.id}`}
+                                  className="rounded-4 p-3"
+                                  style={{
+                                    backgroundColor: isHighlighted ? "#fff7d6" : meta.bg,
+                                    border: isHighlighted ? "2px solid #f59e0b" : "1px solid transparent",
+                                    boxShadow: isHighlighted ? "0 0 0 4px rgba(245, 158, 11, 0.18)" : "none",
+                                    transition: "all 0.2s ease",
+                                  }}
+                                >
+                                  <div className="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                                    <div>
+                                      <div className="d-flex align-items-center gap-2 mb-1">
+                                        <div className="fw-semibold">{getMedicationLabel(item)}</div>
+                                        <span
+                                          style={{
+                                            width: 12,
+                                            height: 12,
+                                            borderRadius: "999px",
+                                            display: "inline-block",
+                                            backgroundColor: meta.dot,
+                                          }}
+                                        />
+                                      </div>
+                                      <div className="small text-muted">{item.scheduled_time} 복용</div>
+                                    </div>
+
+                                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                                      {item.status === "taken" ? (
+                                        <button
+                                          className="btn btn-sm"
+                                          style={{
+                                            backgroundColor: meta.color,
+                                            color: "#fff",
+                                            border: "none",
+                                            minWidth: 110,
+                                          }}
+                                          onClick={() => handleUndo(item)}
+                                          disabled={actionLoadingId === item.id}
+                                        >
+                                          {actionLoadingId === item.id ? "처리 중..." : "복용완료"}
+                                        </button>
+                                      ) : item.status === "skipped" ? (
+                                        <button
+                                          className="btn btn-secondary btn-sm"
+                                          onClick={() => handleUndo(item)}
+                                          disabled={actionLoadingId === item.id}
+                                        >
+                                          {actionLoadingId === item.id ? "처리 중..." : "건너뜀 (취소)"}
+                                        </button>
+                                      ) : (
+                                        <>
+                                          <button
+                                            className="btn btn-sm"
+                                            style={{
+                                              backgroundColor: item.status === "missed" ? "#ef4444" : "#2563eb",
+                                              color: "#fff",
+                                              border: "none",
+                                              minWidth: 110,
+                                            }}
+                                            onClick={() => handleCheck(item)}
+                                            disabled={actionLoadingId === item.id}
+                                          >
+                                            {actionLoadingId === item.id
+                                              ? "처리 중..."
+                                              : item.status === "missed"
+                                              ? "지금 복용 체크"
+                                              : "복용하기"}
+                                          </button>
+
+                                          <button
+                                            className="btn btn-outline-secondary btn-sm"
+                                            onClick={() => handleSkip(item)}
+                                            disabled={actionLoadingId === item.id}
+                                          >
+                                            건너뛰기
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {renderStatusLegend()}
                     </div>
