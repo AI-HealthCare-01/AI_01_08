@@ -671,7 +671,14 @@ def _harmonize_chat_plan(*, analysis: QuestionAnalysis, plan: ChatPlan | None) -
 
     # These domains are more stable when answered from local medical data and
     # deterministic policy instead of planner-led clarifications.
-    if primary in {"external_med", "medication_caution", "profile_guidance", "tonight_check", "schedule_order", "adherence_priority"}:
+    if primary in {
+        "external_med",
+        "medication_caution",
+        "profile_guidance",
+        "tonight_check",
+        "schedule_order",
+        "adherence_priority",
+    }:
         return None
 
     if primary == "hospital_schedule":
@@ -681,7 +688,9 @@ def _harmonize_chat_plan(*, analysis: QuestionAnalysis, plan: ChatPlan | None) -
     if primary in {"med_detail", "med_prn", "med_time_split", "med_regularity"}:
         if analysis.target_med:
             plan.topic = "current_meds" if primary == "med_detail" else "med_schedule"
-            plan.referenced_drug_name = str(analysis.target_med.get("display_name") or "").strip() or plan.referenced_drug_name
+            plan.referenced_drug_name = (
+                str(analysis.target_med.get("display_name") or "").strip() or plan.referenced_drug_name
+            )
             return plan
         return None
 
@@ -958,28 +967,38 @@ def _build_profile_guidance_points(*, profile: PatientProfile | None, guide: Gui
 
         if sleep_hours is not None:
             if float(sleep_hours) < 6:
-                points.append(f"현재 기록상 수면은 하루 평균 {sleep_hours}시간으로 짧은 편이라 수면 부족 원인을 먼저 점검하는 것이 좋습니다.")
+                points.append(
+                    f"현재 기록상 수면은 하루 평균 {sleep_hours}시간으로 짧은 편이라 수면 부족 원인을 먼저 점검하는 것이 좋습니다."
+                )
             elif float(sleep_hours) > 9:
-                points.append(f"현재 기록상 수면은 하루 평균 {sleep_hours}시간으로 긴 편이라 피로감이나 복용약 영향도 함께 확인해 볼 수 있습니다.")
+                points.append(
+                    f"현재 기록상 수면은 하루 평균 {sleep_hours}시간으로 긴 편이라 피로감이나 복용약 영향도 함께 확인해 볼 수 있습니다."
+                )
             else:
                 points.append(f"현재 기록상 수면은 하루 평균 {sleep_hours}시간입니다.")
 
         if exercise_minutes is not None:
             if int(exercise_minutes) < 20:
-                points.append(f"운동은 하루 평균 {exercise_minutes}분으로 적은 편이라 가벼운 활동량 유지 여부를 같이 보는 것이 좋습니다.")
+                points.append(
+                    f"운동은 하루 평균 {exercise_minutes}분으로 적은 편이라 가벼운 활동량 유지 여부를 같이 보는 것이 좋습니다."
+                )
             else:
                 points.append(f"운동은 하루 평균 {exercise_minutes}분으로 기록되어 있습니다.")
 
         if smoker is True:
             if cig_packs is not None:
-                points.append(f"흡연 중이며 주간 흡연량은 {cig_packs}갑으로 기록되어 있어 증상 변화나 약 복용 시 주의사항을 함께 확인하는 것이 좋습니다.")
+                points.append(
+                    f"흡연 중이며 주간 흡연량은 {cig_packs}갑으로 기록되어 있어 증상 변화나 약 복용 시 주의사항을 함께 확인하는 것이 좋습니다."
+                )
             else:
                 points.append("흡연 중으로 기록되어 있어 호흡기 증상이나 약물 주의사항을 함께 보는 것이 좋습니다.")
         elif smoker is False:
             points.append("흡연은 하지 않는 것으로 기록되어 있습니다.")
 
         if alcohol is not None:
-            points.append(f"주간 음주량은 {alcohol}병으로 기록되어 있어 복용 중 약과의 음주 주의가 필요한지 같이 확인할 수 있습니다.")
+            points.append(
+                f"주간 음주량은 {alcohol}병으로 기록되어 있어 복용 중 약과의 음주 주의가 필요한지 같이 확인할 수 있습니다."
+            )
 
         if conditions:
             points.append("현재 건강 상태로는 " + ", ".join(conditions[:2]) + "가 기록되어 있습니다.")
@@ -1024,14 +1043,20 @@ def _build_adherence_guidance_points(*, adherence_summary: dict[str, Any] | None
             names = ", ".join(
                 _dedupe_lines([str(name).strip() for name in recent_missed_names if str(name).strip()], limit=3)
             )
-            points.append(f"최근 복약 기록에서는 놓친 약이 있어 {names}부터 다시 일정대로 챙기는지 확인하는 것이 좋습니다.")
+            points.append(
+                f"최근 복약 기록에서는 놓친 약이 있어 {names}부터 다시 일정대로 챙기는지 확인하는 것이 좋습니다."
+            )
         else:
             points.append("최근 복약 기록에서는 놓친 일정이 있어 미복용이 반복되지 않는지 먼저 확인하는 것이 좋습니다.")
     elif taken > 0:
-        points.append("최근 복약 기록상 이미 복용한 일정이 있어 현재 복약 흐름은 어느 정도 이어지고 있는 것으로 보입니다.")
+        points.append(
+            "최근 복약 기록상 이미 복용한 일정이 있어 현재 복약 흐름은 어느 정도 이어지고 있는 것으로 보입니다."
+        )
 
     if pending > 0:
-        points.append(f"아직 복용 대기 상태로 남아 있는 일정이 {pending}건 있어 오늘 남은 약도 함께 확인하는 것이 좋습니다.")
+        points.append(
+            f"아직 복용 대기 상태로 남아 있는 일정이 {pending}건 있어 오늘 남은 약도 함께 확인하는 것이 좋습니다."
+        )
 
     for line in recent_lines[:2]:
         clean = str(line).strip()
@@ -1065,14 +1090,20 @@ def _build_profile_guidance_sections(
         if _contains_any(normalized, _PROFILE_SLEEP_KEYWORDS) and sleep_hours is not None:
             current_points.append(f"현재 기록상 수면은 하루 평균 {sleep_hours}시간입니다.")
             if float(sleep_hours) < 6:
-                next_points.append("수면 시간이 짧은 편이라 최근 증상 변화나 복용약 영향이 있는지도 함께 확인하는 것이 좋습니다.")
+                next_points.append(
+                    "수면 시간이 짧은 편이라 최근 증상 변화나 복용약 영향이 있는지도 함께 확인하는 것이 좋습니다."
+                )
             elif float(sleep_hours) > 9:
-                next_points.append("수면 시간이 긴 편이라 피로감이 계속되는지, 복용약 이후 졸림이 심해지지는 않는지 같이 보는 것이 좋습니다.")
+                next_points.append(
+                    "수면 시간이 긴 편이라 피로감이 계속되는지, 복용약 이후 졸림이 심해지지는 않는지 같이 보는 것이 좋습니다."
+                )
 
         if _contains_any(normalized, _PROFILE_EXERCISE_KEYWORDS) and exercise_minutes is not None:
             current_points.append(f"현재 기록상 운동은 하루 평균 {exercise_minutes}분입니다.")
             if int(exercise_minutes) < 20:
-                next_points.append("운동량이 적은 편이라 무리 없는 범위에서 가벼운 활동을 유지하는지 함께 보는 것이 좋습니다.")
+                next_points.append(
+                    "운동량이 적은 편이라 무리 없는 범위에서 가벼운 활동을 유지하는지 함께 보는 것이 좋습니다."
+                )
 
         if _contains_any(normalized, _PROFILE_SMOKING_KEYWORDS):
             if smoker is True and cig_packs is not None:
@@ -1129,7 +1160,9 @@ def _build_profile_guidance_sections(
     if _contains_any(normalized, ["잠", "수면", "못 자", "잠을 못", "잠이 안"]):
         next_points.append("최근 복용약 중 졸림이나 각성에 영향을 줄 수 있는 약이 있는지도 함께 보는 것이 좋습니다.")
         if profile and getattr(profile, "avg_sleep_hours_per_day", None) is not None:
-            next_points.append("기록상 수면 시간이 충분해 보여도 실제로는 자주 깨는지, 자고 일어나도 피곤한지 같은 체감 변화를 함께 확인하는 것이 좋습니다.")
+            next_points.append(
+                "기록상 수면 시간이 충분해 보여도 실제로는 자주 깨는지, 자고 일어나도 피곤한지 같은 체감 변화를 함께 확인하는 것이 좋습니다."
+            )
     if _contains_any(normalized, ["술", "음주"]):
         next_points.append("음주와 현재 복용약의 조합은 따로 확인하는 것이 안전합니다.")
     if _contains_any(normalized, ["담배", "흡연"]):
@@ -1139,7 +1172,9 @@ def _build_profile_guidance_sections(
         general_points.extend(_build_profile_guidance_points(profile=profile, guide=guide)[:2])
 
     if not next_points:
-        next_points.append("현재 기록에서 가장 먼저는 생활 습관 변화와 복약 흐름이 함께 흔들리고 있지 않은지부터 확인하는 것이 좋습니다.")
+        next_points.append(
+            "현재 기록에서 가장 먼저는 생활 습관 변화와 복약 흐름이 함께 흔들리고 있지 않은지부터 확인하는 것이 좋습니다."
+        )
 
     return (
         _dedupe_lines(current_points, limit=3),
@@ -1507,7 +1542,12 @@ async def _update_session_memory(
     target_med_name = None
     if analysis.target_med:
         target_med_name = str(analysis.target_med.get("display_name") or "").strip() or None
-    if not target_med_name and analysis.primary_intent in {"tonight_check", "schedule_order", "adherence_priority", "schedule"}:
+    if not target_med_name and analysis.primary_intent in {
+        "tonight_check",
+        "schedule_order",
+        "adherence_priority",
+        "schedule",
+    }:
         for med in context.meds:
             name = str(med.get("display_name") or "").strip()
             if name and name in assistant_content:
@@ -2082,7 +2122,8 @@ def _resolve_answer_mode(*, intents: list[str], is_emergency: bool) -> str:
     }:
         return "direct_fact"
     if any(
-        intent in intents for intent in {"caregiver_check", "self_check", "lifestyle_top", "general_caution", "guide", "profile_guidance"}
+        intent in intents
+        for intent in {"caregiver_check", "self_check", "lifestyle_top", "general_caution", "guide", "profile_guidance"}
     ):
         return "record_counseling"
     return "general_counseling"
@@ -2226,12 +2267,9 @@ def _analyze_question(
     hospital_query = _contains_any(normalized, _HOSPITAL_SCHEDULE_KEYWORDS)
     hospital_followup_query = _is_hospital_followup_query(normalized, session_memory)
     med_list_query = _contains_any(normalized, _MED_LIST_KEYWORDS)
-    current_meds_interaction_query = (
-        _contains_any(normalized, _MED_LIST_KEYWORDS)
-        and _contains_any(
-            normalized,
-            ["같이", "상호작용", "함께", "조합", "조심", "주의", "같이 먹", "함께 먹"],
-        )
+    current_meds_interaction_query = _contains_any(normalized, _MED_LIST_KEYWORDS) and _contains_any(
+        normalized,
+        ["같이", "상호작용", "함께", "조합", "조심", "주의", "같이 먹", "함께 먹"],
     )
     target_med = _extract_target_med(
         message=normalized,
@@ -2240,19 +2278,33 @@ def _analyze_question(
         session_memory=session_memory,
     )
     external_drug_name = None
-    if not profile_query and not hospital_query and not hospital_followup_query and not med_list_query and not current_meds_interaction_query:
-        external_drug_name = None if target_med else _extract_external_drug_name(
-            normalized,
-            recent_messages,
-            session_memory=session_memory,
+    if (
+        not profile_query
+        and not hospital_query
+        and not hospital_followup_query
+        and not med_list_query
+        and not current_meds_interaction_query
+    ):
+        external_drug_name = (
+            None
+            if target_med
+            else _extract_external_drug_name(
+                normalized,
+                recent_messages,
+                session_memory=session_memory,
+            )
         )
     explicit_external_caution_query = bool(
         external_drug_name
         and _contains_any(normalized, ["주의사항", "주의할 점", "부작용", "용도", "무슨 약", "어떤 약", "뭐야"])
-        and not _contains_any(normalized, ["같이 먹", "함께 먹", "추가로 먹", "먹어도 돼", "복용해도 돼", "조합", "상호작용"])
+        and not _contains_any(
+            normalized, ["같이 먹", "함께 먹", "추가로 먹", "먹어도 돼", "복용해도 돼", "조합", "상호작용"]
+        )
     )
     explicit_new_drug_interaction_query = bool(
-        _contains_any(normalized, ["같이 먹", "함께 먹", "추가로 먹", "먹어도 돼", "복용해도 돼", "괜찮아", "조합", "상호작용"])
+        _contains_any(
+            normalized, ["같이 먹", "함께 먹", "추가로 먹", "먹어도 돼", "복용해도 돼", "괜찮아", "조합", "상호작용"]
+        )
         and (external_drug_name or _contains_any(normalized, ["새 감기약", "새 약", "감기약"]))
     )
     target_condition = _extract_condition_name(normalized, profile)
@@ -2329,11 +2381,17 @@ def _analyze_question(
         raw_intents = ["condition_general"]
     elif _is_profile_caution_query(normalized):
         raw_intents = ["general_caution"]
-    elif _contains_any(normalized, _TONIGHT_CHECK_KEYWORDS + ["오늘 약", "오늘 먹을 약", "오늘 복용할 약", "오늘 내가 먹어야 할 약"]):
+    elif _contains_any(
+        normalized, _TONIGHT_CHECK_KEYWORDS + ["오늘 약", "오늘 먹을 약", "오늘 복용할 약", "오늘 내가 먹어야 할 약"]
+    ):
         raw_intents = ["tonight_check"]
     elif _contains_any(normalized, _SCHEDULE_ORDER_KEYWORDS):
         raw_intents = ["schedule_order"]
-    elif _contains_any(normalized, _ADHERENCE_PRIORITY_KEYWORDS + ["안 빼먹어야", "꼭 안 빼먹어야", "꼭 챙겨야", "자주 놓치는 약", "자주 놓치", "놓치는 약"]):
+    elif _contains_any(
+        normalized,
+        _ADHERENCE_PRIORITY_KEYWORDS
+        + ["안 빼먹어야", "꼭 안 빼먹어야", "꼭 챙겨야", "자주 놓치는 약", "자주 놓치", "놓치는 약"],
+    ):
         raw_intents = ["adherence_priority"]
     elif _contains_any(normalized, _SCHOOL_OBSERVATION_KEYWORDS):
         raw_intents = ["school_observation"]
@@ -2492,7 +2550,9 @@ def _answer_profile_intent(
         if not points:
             base = f"{target_label} 기준으로 키, 몸무게, BMI 정보가 등록되어 있지 않습니다."
         else:
-            base = f"{target_label} 기준 건강 프로필 수치는 다음과 같습니다.\n" + "\n".join(f"- {point}" for point in points)
+            base = f"{target_label} 기준 건강 프로필 수치는 다음과 같습니다.\n" + "\n".join(
+                f"- {point}" for point in points
+            )
         return (
             _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
         )
@@ -2652,11 +2712,7 @@ def _extract_target_med(
 
 def _has_record_context(context: PatientChatContext) -> bool:
     return bool(
-        context.profile
-        or context.meds
-        or context.schedules
-        or context.hospital_schedules
-        or context.latest_guide
+        context.profile or context.meds or context.schedules or context.hospital_schedules or context.latest_guide
     )
 
 
@@ -2770,9 +2826,18 @@ def _build_record_required_reply(
             "현재 기록이 충분하지 않아도 일반적인 기준으로는 안내드릴 수 있습니다. "
             "맞춤형 설명이 필요하면 건강 프로필이나 복약 정보를 더 등록해 주세요."
         )
-        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
 
-    if analysis.primary_intent in {"med_list", "schedule", "med_detail", "medication_caution", "tonight_check", "schedule_order"}:
+    if analysis.primary_intent in {
+        "med_list",
+        "schedule",
+        "med_detail",
+        "medication_caution",
+        "tonight_check",
+        "schedule_order",
+    }:
         base = (
             "현재 등록된 복약 정보가 없어 맞춤 복약 답변은 아직 어렵습니다. "
             "대신 일반적인 약 정보나 복용 시 주의점은 안내할 수 있습니다. 정확한 복약 상담을 원하시면 처방 문서나 복약 정보를 먼저 등록해 주세요."
@@ -3339,23 +3404,33 @@ def _answer_lifestyle_top_intent(
         if exercise_minutes is not None:
             record_points.append(f"운동은 하루 평균 {exercise_minutes}분 정도로 기록되어 있습니다.")
         if smoker is True:
-            record_points.append("흡연 중으로 기록되어 있어 호흡기 증상이나 약 복용 시 주의점을 함께 보는 것이 좋습니다.")
+            record_points.append(
+                "흡연 중으로 기록되어 있어 호흡기 증상이나 약 복용 시 주의점을 함께 보는 것이 좋습니다."
+            )
         if alcohol is not None:
             record_points.append(f"주간 음주량은 {alcohol}병으로 기록되어 있습니다.")
         if sleep_hours is not None and float(sleep_hours) < 6:
             next_points.append("수면 시간이 짧은 편이라 먼저 수면 리듬과 최근 복용약 영향을 함께 보는 것이 좋습니다.")
         if exercise_minutes is not None and int(exercise_minutes) < 20:
-            next_points.append("활동량이 적은 편이라 무리 없는 범위에서 가벼운 활동을 유지하는지 확인하는 것이 좋습니다.")
+            next_points.append(
+                "활동량이 적은 편이라 무리 없는 범위에서 가벼운 활동을 유지하는지 확인하는 것이 좋습니다."
+            )
 
     next_points.extend(_build_adherence_guidance_points(adherence_summary=adherence_summary))
 
     if not next_points:
         if profile and getattr(profile, "is_smoker", None) is True:
-            next_points.append("생활관리에서는 흡연과 음주가 현재 증상이나 약 복용에 영향을 주지 않는지 먼저 같이 보는 것이 좋습니다.")
+            next_points.append(
+                "생활관리에서는 흡연과 음주가 현재 증상이나 약 복용에 영향을 주지 않는지 먼저 같이 보는 것이 좋습니다."
+            )
         elif profile and getattr(profile, "avg_sleep_hours_per_day", None) is not None:
-            next_points.append("기록상 수면 시간은 유지되고 있어도 실제 피로감, 중간 각성, 복용 후 졸림 같은 체감 변화가 있는지 함께 확인하는 것이 좋습니다.")
+            next_points.append(
+                "기록상 수면 시간은 유지되고 있어도 실제 피로감, 중간 각성, 복용 후 졸림 같은 체감 변화가 있는지 함께 확인하는 것이 좋습니다."
+            )
         else:
-            next_points.append("생활관리에서는 현재 복약 일정과 생활 습관이 서로 영향을 주는 부분부터 먼저 확인하는 것이 좋습니다.")
+            next_points.append(
+                "생활관리에서는 현재 복약 일정과 생활 습관이 서로 영향을 주는 부분부터 먼저 확인하는 것이 좋습니다."
+            )
 
     if not record_points and not general_points and not next_points:
         base = f"{target_label} 기준 생활관리 요약 정보가 아직 충분하지 않습니다."
@@ -3481,7 +3556,9 @@ def _answer_session_summary_intent(
     else:
         current_points.append("현재 복용 약 정보는 아직 충분하지 않습니다.")
 
-    general_points.append("기록된 건강 상태와 복약 일정, 최근 복약 흐름을 같이 보면서 관리 우선순위를 정리하는 것이 좋습니다.")
+    general_points.append(
+        "기록된 건강 상태와 복약 일정, 최근 복약 흐름을 같이 보면서 관리 우선순위를 정리하는 것이 좋습니다."
+    )
 
     if adherence_summary and int(adherence_summary.get("total", 0) or 0) > 0:
         taken = int(adherence_summary.get("taken", 0) or 0)
@@ -3552,7 +3629,9 @@ def _answer_tonight_check_intent(
 ) -> str:
     if not meds and not schedules:
         base = f"{target_label} 기준으로 등록된 복용약이나 복약 일정이 아직 없습니다."
-        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
 
     tonight_lines = _collect_schedule_lines_for_period(meds=meds, schedules=schedules, period="night")
     extra_points: list[str] = []
@@ -3617,7 +3696,9 @@ def _answer_adherence_priority_intent(
             f"{', '.join(_dedupe_lines(missed_names, limit=3))}이 보입니다.\n"
             "복용 우선순위를 임의로 바꾸기보다, 최근 놓친 약이 오늘 일정에도 있는지 먼저 확인해 빠뜨리지 않는 것이 좋습니다."
         )
-        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
 
     evening_lines = _collect_schedule_lines_for_period(meds=meds, schedules=schedules, period="evening")
     if evening_lines:
@@ -3817,15 +3898,11 @@ def _answer_hospital_schedule_intent(
     filtered = upcoming or hospital_schedules
     if _contains_any(normalized, ["외래", "진료"]) or "외래/진료" in focus:
         filtered = [
-            item
-            for item in filtered
-            if _contains_any(str(getattr(item, "title", "") or ""), ["외래", "진료"])
+            item for item in filtered if _contains_any(str(getattr(item, "title", "") or ""), ["외래", "진료"])
         ] or filtered
     elif _contains_any(normalized, ["검사"]) or "검사" in focus:
         filtered = [
-            item
-            for item in filtered
-            if _contains_any(str(getattr(item, "title", "") or ""), ["검사"])
+            item for item in filtered if _contains_any(str(getattr(item, "title", "") or ""), ["검사"])
         ] or filtered
 
     schedule_index = 0
@@ -3835,8 +3912,10 @@ def _answer_hospital_schedule_intent(
     target_schedules = filtered or hospital_schedules
     has_followup_request = schedule_index == 1
     if has_followup_request and len(target_schedules) <= 1:
-        title_hint = "외래/진료 일정" if (_contains_any(normalized, ["외래", "진료"]) or "외래/진료" in focus) else (
-            "검사 일정" if (_contains_any(normalized, ["검사"]) or "검사" in focus) else "병원 일정"
+        title_hint = (
+            "외래/진료 일정"
+            if (_contains_any(normalized, ["외래", "진료"]) or "외래/진료" in focus)
+            else ("검사 일정" if (_contains_any(normalized, ["검사"]) or "검사" in focus) else "병원 일정")
         )
         first_schedule = target_schedules[0]
         first_title = str(getattr(first_schedule, "title", "") or "병원 일정").strip()
@@ -3851,9 +3930,13 @@ def _answer_hospital_schedule_intent(
             base += f"\n병원: {hospital_name}"
         if location:
             base += f"\n장소: {location}"
-        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
 
-    target_schedule = target_schedules[schedule_index] if len(target_schedules) > schedule_index else target_schedules[0]
+    target_schedule = (
+        target_schedules[schedule_index] if len(target_schedules) > schedule_index else target_schedules[0]
+    )
 
     if _contains_any(normalized, ["언제", "다음", "가장 가까운", "최근", "예약 언제였지"]):
         title = str(getattr(target_schedule, "title", "") or "병원 일정").strip()
@@ -3890,7 +3973,9 @@ def _med_category_flags(name: str) -> set[str]:
     return flags
 
 
-def _build_interaction_focus_points(*, med_names: list[str], adherence_summary: dict[str, Any] | None) -> tuple[list[str], list[str], list[str]]:
+def _build_interaction_focus_points(
+    *, med_names: list[str], adherence_summary: dict[str, Any] | None
+) -> tuple[list[str], list[str], list[str]]:
     record_points: list[str] = []
     general_points: list[str] = []
     next_points: list[str] = []
@@ -3901,7 +3986,9 @@ def _build_interaction_focus_points(*, med_names: list[str], adherence_summary: 
     if adherence_summary and int(adherence_summary.get("missed", 0) or 0) > 0:
         missed_names = adherence_summary.get("recent_missed_names") or []
         if missed_names:
-            record_points.append("최근 놓친 기록이 있는 약은 " + ", ".join(_dedupe_lines(missed_names, limit=3)) + "입니다.")
+            record_points.append(
+                "최근 놓친 기록이 있는 약은 " + ", ".join(_dedupe_lines(missed_names, limit=3)) + "입니다."
+            )
 
     flags_by_med = {name: _med_category_flags(name) for name in med_names}
     nsaid_meds = [name for name, flags in flags_by_med.items() if "nsaid" in flags]
@@ -3909,13 +3996,19 @@ def _build_interaction_focus_points(*, med_names: list[str], adherence_summary: 
     antihistamine_meds = [name for name, flags in flags_by_med.items() if "antihistamine" in flags]
 
     if len(nsaid_meds) >= 2:
-        general_points.append("진통소염제 계열이 겹칠 수 있어 위장 증상, 신장 부담, 출혈 위험을 특히 조심해 보는 것이 좋습니다.")
+        general_points.append(
+            "진통소염제 계열이 겹칠 수 있어 위장 증상, 신장 부담, 출혈 위험을 특히 조심해 보는 것이 좋습니다."
+        )
     if nsaid_meds and acet_meds:
-        general_points.append("해열진통제와 소염진통제를 함께 쓰는 형태일 수 있어 추가 복용을 임의로 늘리지 않는 것이 좋습니다.")
+        general_points.append(
+            "해열진통제와 소염진통제를 함께 쓰는 형태일 수 있어 추가 복용을 임의로 늘리지 않는 것이 좋습니다."
+        )
     if len(antihistamine_meds) >= 2:
         general_points.append("항히스타민 계열이 겹치면 졸림이나 집중력 저하를 더 주의해서 보는 것이 좋습니다.")
     if not general_points:
-        general_points.append("현재 약 이름만으로 중대한 상호작용을 단정하긴 어렵지만, 성분 중복 여부를 먼저 확인하는 것이 안전합니다.")
+        general_points.append(
+            "현재 약 이름만으로 중대한 상호작용을 단정하긴 어렵지만, 성분 중복 여부를 먼저 확인하는 것이 안전합니다."
+        )
 
     next_points.append("처방 외 진통제나 감기약을 추가할 때는 성분표와 현재 복용약 이름을 같이 확인해 주세요.")
     if adherence_summary and int(adherence_summary.get("missed", 0) or 0) > 0:
@@ -3932,17 +4025,27 @@ def _build_external_interaction_points(
     adherence_summary: dict[str, Any] | None,
     lookup: dict[str, Any] | None,
 ) -> tuple[list[str], list[str], list[str]]:
-    med_names = [str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()]
-    record_points: list[str] = [f"현재 복용약은 {', '.join(_dedupe_lines(med_names, limit=4))}입니다."] if med_names else []
+    med_names = [
+        str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()
+    ]
+    record_points: list[str] = (
+        [f"현재 복용약은 {', '.join(_dedupe_lines(med_names, limit=4))}입니다."] if med_names else []
+    )
     general_points: list[str] = []
     next_points: list[str] = []
 
     external_flags = _med_category_flags(external_drug_name)
     current_flags = {name: _med_category_flags(name) for name in med_names}
 
-    overlapping_nsaids = [name for name, flags in current_flags.items() if "nsaid" in flags and "nsaid" in external_flags]
-    overlapping_ace = [name for name, flags in current_flags.items() if "acetaminophen" in flags and "acetaminophen" in external_flags]
-    overlapping_antihistamine = [name for name, flags in current_flags.items() if "antihistamine" in flags and "antihistamine" in external_flags]
+    overlapping_nsaids = [
+        name for name, flags in current_flags.items() if "nsaid" in flags and "nsaid" in external_flags
+    ]
+    overlapping_ace = [
+        name for name, flags in current_flags.items() if "acetaminophen" in flags and "acetaminophen" in external_flags
+    ]
+    overlapping_antihistamine = [
+        name for name, flags in current_flags.items() if "antihistamine" in flags and "antihistamine" in external_flags
+    ]
 
     if overlapping_nsaids:
         general_points.append(
@@ -3993,7 +4096,9 @@ def _build_external_interaction_points(
         next_points.append("새 약 비교와 함께 최근 놓친 약이 있다면 복용 간격이 겹치지 않는지도 같이 확인해 주세요.")
 
     next_points.append("새 약을 추가하기 전에는 제품명뿐 아니라 성분명도 함께 확인해 주세요.")
-    next_points.append("복용 후 발진, 호흡 불편, 심한 어지러움이 있으면 추가 복용 전에 상태를 다시 확인하는 것이 좋습니다.")
+    next_points.append(
+        "복용 후 발진, 호흡 불편, 심한 어지러움이 있으면 추가 복용 전에 상태를 다시 확인하는 것이 좋습니다."
+    )
 
     return record_points, general_points, next_points
 
@@ -4006,10 +4111,14 @@ def _answer_drug_interaction_overview(
     requester_role: RequesterRole,
     audience: str,
 ) -> str:
-    med_names = [str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()]
+    med_names = [
+        str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()
+    ]
     if len(med_names) < 2:
         base = f"{target_label} 기준으로 비교할 복용약 정보가 아직 충분하지 않습니다."
-        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
 
     record_points, general_points, next_points = _build_interaction_focus_points(
         med_names=med_names,
@@ -4066,7 +4175,9 @@ def _build_clarification_reply(
             )
 
         if _contains_any(message, _FOLLOWUP_MED_REFERENCES):
-            base = "어떤 약을 말하는지 약 이름을 한 번만 다시 적어 주세요. 복용 시간과 주의점까지 이어서 설명드리겠습니다."
+            base = (
+                "어떤 약을 말하는지 약 이름을 한 번만 다시 적어 주세요. 복용 시간과 주의점까지 이어서 설명드리겠습니다."
+            )
             return (
                 _to_caregiver_style(answer=base, audience=audience)
                 if requester_role == RequesterRole.CAREGIVER
@@ -4414,16 +4525,24 @@ async def _answer_medication_caution_intent(
 
     if _contains_any(message, ["새 감기약", "새 약", "감기약 추가", "감기약"]) and meds:
         record_points, general_points, next_points = _build_interaction_focus_points(
-            med_names=[str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()],
+            med_names=[
+                str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()
+            ],
             adherence_summary=adherence_summary,
         )
-        general_points.insert(0, "새 감기약을 추가할 때는 해열진통제, 항히스타민, 진해거담 성분이 현재 복용약과 겹치지 않는지 먼저 확인하는 것이 좋습니다.")
+        general_points.insert(
+            0,
+            "새 감기약을 추가할 때는 해열진통제, 항히스타민, 진해거담 성분이 현재 복용약과 겹치지 않는지 먼저 확인하는 것이 좋습니다.",
+        )
         base = _compose_medical_sections(
             current_record_points=record_points,
             general_info_points=general_points,
-            next_check_points=next_points or ["새로 추가할 감기약의 제품명이나 성분명을 알려 주시면 현재 약과 비교해 드릴 수 있습니다."],
+            next_check_points=next_points
+            or ["새로 추가할 감기약의 제품명이나 성분명을 알려 주시면 현재 약과 비교해 드릴 수 있습니다."],
         )
-        return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        return (
+            _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
+        )
 
     matched_med = matched_med or _extract_target_med(message=message, meds=meds, recent_messages=recent_messages)
     record_points: list[str] = []
@@ -4640,8 +4759,12 @@ async def _answer_external_med_intent(
             if first_kids:
                 general_points.append(f"추가 안전 근거로는 {first_kids}")
         if profile_points:
-            record_points.append("현재 건강기록 기준으로는 " + " / ".join(profile_points[:2]) + "를 함께 보는 것이 좋습니다.")
-        next_points.append("실제 복용 전에는 처방 여부와 성분을 다시 확인하고, 복용 판단은 의료진이나 약사와 상의하는 것이 좋습니다.")
+            record_points.append(
+                "현재 건강기록 기준으로는 " + " / ".join(profile_points[:2]) + "를 함께 보는 것이 좋습니다."
+            )
+        next_points.append(
+            "실제 복용 전에는 처방 여부와 성분을 다시 확인하고, 복용 판단은 의료진이나 약사와 상의하는 것이 좋습니다."
+        )
         base = _compose_medical_sections(
             current_record_points=record_points,
             general_info_points=general_points,
@@ -4654,7 +4777,11 @@ async def _answer_external_med_intent(
     base = _compose_medical_sections(
         current_record_points=[
             f"{drug_name}{topic_particle} 현재 복용 중인 약으로 기록되어 있지는 않습니다.",
-            *([f"현재 건강기록 기준으로는 {' / '.join(profile_points[:2])}를 함께 볼 수 있습니다."] if profile_points else []),
+            *(
+                [f"현재 건강기록 기준으로는 {' / '.join(profile_points[:2])}를 함께 볼 수 있습니다."]
+                if profile_points
+                else []
+            ),
         ],
         general_info_points=[],
         next_check_points=["제품명이나 성분명이 더 정확하면 안내 범위를 더 좁힐 수 있습니다."],
@@ -5126,7 +5253,9 @@ def _fallback_reply(
     requester_role: RequesterRole,
     audience: str,
 ) -> str:
-    data_readiness = "rich" if (meds or schedule_text != "등록된 복약 일정 없음" or latest_guide or profile) else "empty"
+    data_readiness = (
+        "rich" if (meds or schedule_text != "등록된 복약 일정 없음" or latest_guide or profile) else "empty"
+    )
     short_profile: list[str] = []
     allergies = _split_text_items(getattr(profile, "allergies", None) if profile else None)
     conditions = _split_text_items(getattr(profile, "conditions", None) if profile else None)
@@ -5750,7 +5879,9 @@ class ChatService:
                         + _extract_core_answer(composed_answer, requester_role)
                     )
                 external_lookup = (
-                    await _lookup_external_med_info(analysis.external_drug_name) if analysis.external_drug_name else None
+                    await _lookup_external_med_info(analysis.external_drug_name)
+                    if analysis.external_drug_name
+                    else None
                 )
                 external_drug_text = _build_external_drug_text(
                     drug_name=analysis.external_drug_name,
