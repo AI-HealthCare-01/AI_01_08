@@ -539,9 +539,11 @@ const NotificationPage = ({
     }
 
     if (item.type === "guide_ready") {
-      return guideId
-        ? `/auth-demo/app/documents?guide_id=${guideId}`
-        : "/auth-demo/app/documents";
+      const params = new URLSearchParams();
+      if (patientId) params.set("patient_id", patientId);
+      if (documentId) params.set("document_id", documentId);
+      if (guideId) params.set("guide_id", guideId);
+      return `/auth-demo/app/ai${params.toString() ? `?${params.toString()}` : ""}`;
     }
 
     return null;
