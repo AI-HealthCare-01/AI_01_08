@@ -919,7 +919,8 @@ function App() {
         name: signupForm.name,
         gender: signupForm.gender,
         birth_date: signupForm.birthDate,
-        phone_number: signupForm.phoneNumber
+        phone_number: signupForm.phoneNumber,
+        role: signupForm.role
       };
       const res = await fetch("/api/v1/auth/signup", {
         method: "POST",
