@@ -841,7 +841,9 @@ class DocumentService:
             confirmed_at__not_isnull=True,
         ).exists()
 
-    async def _resolve_preferred_ocr_job_for_view(self, *, document: Document, latest_job: OcrJob | None) -> OcrJob | None:
+    async def _resolve_preferred_ocr_job_for_view(
+        self, *, document: Document, latest_job: OcrJob | None
+    ) -> OcrJob | None:
         if not latest_job:
             return None
 

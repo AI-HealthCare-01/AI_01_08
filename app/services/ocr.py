@@ -21,9 +21,7 @@ from app.models.users import User
 from app.services.barcode import BarcodeService
 from app.services.queue_service import enqueue_send_notification
 
-MED_NAME_SUFFIX_PATTERN = (
-    "연질캡슐|장용캡슐|경질캡슐|필름코팅정|장용정|서방정|캅셀|캡셀|캅슐|캡슐|정제|정|시럽|세립|과립|현탁액|주사액|주사|크림|로션|패취|패치"
-)
+MED_NAME_SUFFIX_PATTERN = "연질캡슐|장용캡슐|경질캡슐|필름코팅정|장용정|서방정|캅셀|캡셀|캅슐|캡슐|정제|정|시럽|세립|과립|현탁액|주사액|주사|크림|로션|패취|패치"
 KOREAN_MED_NAME_PATTERN = re.compile(rf"([A-Za-z가-힣0-9+\-/]{{2,}}(?:{MED_NAME_SUFFIX_PATTERN}))")
 ENGLISH_MED_WITH_DOSE_PATTERN = re.compile(
     r"\b([A-Za-z][A-Za-z0-9+\-/]{2,})\b\s*(\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|mL))",
@@ -499,7 +497,9 @@ class OcrService:
         ocr_fields = self._extract_ocr_fields(data=data)
         raw_text = self._extract_raw_text(data=data)
         if not raw_text and ocr_fields:
-            raw_text = "\n".join(str(field["text"]).strip() for field in ocr_fields if str(field.get("text") or "").strip())
+            raw_text = "\n".join(
+                str(field["text"]).strip() for field in ocr_fields if str(field.get("text") or "").strip()
+            )
         if not raw_text:
             raise RuntimeError("OCR_EMPTY_RESULT")
         return raw_text, ocr_fields
@@ -529,7 +529,7 @@ class OcrService:
             if not text:
                 continue
 
-            vertices = ((raw_field.get("boundingPoly") or {}).get("vertices") or [])
+            vertices = (raw_field.get("boundingPoly") or {}).get("vertices") or []
             points: list[tuple[float, float]] = []
             for vertex in vertices:
                 try:
@@ -752,7 +752,9 @@ class OcrService:
             summary_lines = self._fields_to_lines(fields=ocr_fields)
 
         summary_med_names = self._extract_summary_med_names(lines=summary_lines)
-        summary_schedule_map = self._extract_summary_schedule_map(lines=summary_lines, summary_med_names=summary_med_names)
+        summary_schedule_map = self._extract_summary_schedule_map(
+            lines=summary_lines, summary_med_names=summary_med_names
+        )
         dictionary_names = [name for name in summary_med_names if name]
 
         if med_guide_fields:
@@ -873,7 +875,10 @@ class OcrService:
             schedule = self._find_schedule_from_summary(med_name=med_name, summary_schedule_map=summary_schedule_map)
             if not schedule:
                 continue
-            if schedule.get("dosage_text") and (not med.get("dosage_text") or re.search(r"(mg|g|mcg|ml)$", str(med.get("dosage_text") or ""), re.IGNORECASE)):
+            if schedule.get("dosage_text") and (
+                not med.get("dosage_text")
+                or re.search(r"(mg|g|mcg|ml)$", str(med.get("dosage_text") or ""), re.IGNORECASE)
+            ):
                 med["dosage_text"] = schedule["dosage_text"]
             if schedule.get("frequency_text") and not med.get("frequency_text"):
                 med["frequency_text"] = schedule["frequency_text"]
@@ -923,7 +928,11 @@ class OcrService:
         current_block: dict[str, list[str] | list[dict[str, str]]] | None = None
 
         for idx, row_fields in enumerate(rows):
-            row_text = row_lines[idx] if idx < len(row_lines) else self._normalize_line(self._build_row_text(row_fields=row_fields))
+            row_text = (
+                row_lines[idx]
+                if idx < len(row_lines)
+                else self._normalize_line(self._build_row_text(row_fields=row_fields))
+            )
             if not row_text:
                 continue
             if self._is_summary_header_row_text(current_line=row_text, next_lines=row_lines[idx + 1 : idx + 6]):
@@ -1010,7 +1019,9 @@ class OcrService:
         return med_item
 
     # REQ-DOC-005 - block에서 약명 후보 추출
-    def _extract_med_name_candidates(self, block: dict[str, list[str] | list[dict[str, str]]]) -> list[tuple[str, str | None]]:
+    def _extract_med_name_candidates(
+        self, block: dict[str, list[str] | list[dict[str, str]]]
+    ) -> list[tuple[str, str | None]]:
         candidates: list[tuple[str, str | None]] = []
         seen_keys: set[str] = set()
         med_rows = block.get("med_rows") or []
@@ -1027,9 +1038,7 @@ class OcrService:
         return candidates
 
     # REQ-DOC-005 - block에서 복약 스케줄 후보 추출
-    def _extract_schedule_candidates(
-        self, block: dict[str, list[str] | list[dict[str, str]]]
-    ) -> list[dict[str, str]]:
+    def _extract_schedule_candidates(self, block: dict[str, list[str] | list[dict[str, str]]]) -> list[dict[str, str]]:
         schedule_candidates: list[dict[str, str]] = []
         seen_schedule_keys: set[tuple[str | None, str | None, str | None]] = set()
 
@@ -1330,14 +1339,14 @@ class OcrService:
         normalized_text = re.sub(r"\[(?:내복|외용|주사|경구|흡입)\]", "", normalized_text, flags=re.IGNORECASE)
         normalized_text = re.sub(r"\((?:내복|외용|주사|경구|흡입)\)", "", normalized_text, flags=re.IGNORECASE)
         normalized_text = re.sub(r"/(?:내복|외용|주사|경구|흡입)", "", normalized_text, flags=re.IGNORECASE)
-        normalized_text = re.sub(r"/\d+(?:\.\d+)?\s*(?:정|캡슐|알|포|ml|mL|T|t)$", "", normalized_text, flags=re.IGNORECASE)
+        normalized_text = re.sub(
+            r"/\d+(?:\.\d+)?\s*(?:정|캡슐|알|포|ml|mL|T|t)$", "", normalized_text, flags=re.IGNORECASE
+        )
         normalized_text = normalized_text.strip().strip("/")
         if not normalized_text:
             return "", None
 
-        med_form_suffix_pattern = (
-            "연질캡슐|장용캡슐|경질캡슐|필름코팅정|장용정|서방정|캡슐|정제|정|시럽|세립|과립|현탁액|액|주사액|주사|크림|로션|패취|패치"
-        )
+        med_form_suffix_pattern = "연질캡슐|장용캡슐|경질캡슐|필름코팅정|장용정|서방정|캡슐|정제|정|시럽|세립|과립|현탁액|액|주사액|주사|크림|로션|패취|패치"
         strength_pattern = r"(\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?\s*(?:mg|g|mcg|ml|mL))$"
         suffix_strength_match = re.search(
             rf"(?P<name>.*?(?:{med_form_suffix_pattern}))\s*(?P<strength>{strength_pattern})",
@@ -1377,7 +1386,8 @@ class OcrService:
             )
             return {
                 "dosage_text": dosage_text,
-                "frequency_text": self._normalize_frequency_text(raw_text=f"{frequency_count}회") or f"{frequency_count}회",
+                "frequency_text": self._normalize_frequency_text(raw_text=f"{frequency_count}회")
+                or f"{frequency_count}회",
                 "duration_text": f"{duration_days}일분",
             }
 
@@ -1394,7 +1404,8 @@ class OcrService:
             )
             return {
                 "dosage_text": dosage_text,
-                "frequency_text": self._normalize_frequency_text(raw_text=f"{frequency_count}회") or f"{frequency_count}회",
+                "frequency_text": self._normalize_frequency_text(raw_text=f"{frequency_count}회")
+                or f"{frequency_count}회",
                 "duration_text": f"{duration_days}일분",
             }
 
@@ -1442,7 +1453,9 @@ class OcrService:
         if matched_count >= 1 and len(normalized_line) >= 18 and not has_med_suffix:
             return True
 
-        if "정제" in normalized_line and ("백색" in normalized_line or "흰색" in normalized_line or "장방형" in normalized_line):
+        if "정제" in normalized_line and (
+            "백색" in normalized_line or "흰색" in normalized_line or "장방형" in normalized_line
+        ):
             return True
         return False
 
