@@ -139,6 +139,14 @@ const collectGuideLines = (section) => {
 const pickGuideSectionByKeyword = (sections, keywords) =>
   sections.find((section) => keywords.some((keyword) => String(section?.title || "").includes(keyword)));
 
+const isGuideOverviewSection = (section) => {
+  const title = String(section?.title || "").trim();
+  if (!title) return false;
+  return ["복약", "생활", "건강 프로필", "건강프로필", "확인 포인트", "주의", "위험", "신호"].some((keyword) =>
+    title.includes(keyword),
+  );
+};
+
 const uniqueGuideLines = (lines, seen = new Set()) =>
   lines.filter((line) => {
     const normalized = String(line).trim();
@@ -534,7 +542,9 @@ function AiPage({
   const guideSections = normalizeGuideSections(guideDetailState.data);
   const caregiverPoints = normalizeCaregiverPoints(guideDetailState.data);
   const primaryGuideSection = guideSections[0] || null;
-  const visibleGuideSections = primaryGuideSection ? guideSections.slice(1) : guideSections;
+  const visibleGuideSections = (primaryGuideSection ? guideSections.slice(1) : guideSections).filter(
+    (section) => !isGuideOverviewSection(section),
+  );
   const guideBriefing = buildGuideBriefing(guideSections, caregiverPoints);
   const profileBriefing = buildProfileBriefing(profileState.data);
   const medicationSnapshot = buildMedicationSnapshot(medGuideState.data);
