@@ -909,8 +909,10 @@ class DocumentService:
             )
             if existing_schedule_ids:
                 await MedSchedule.filter(id__in=existing_schedule_ids).using_db(using_db).update(status="inactive")
-                await MedScheduleTime.filter(schedule_id__in=list(existing_schedule_ids)).using_db(using_db).update(
-                    is_active=False
+                await (
+                    MedScheduleTime.filter(schedule_id__in=list(existing_schedule_ids))
+                    .using_db(using_db)
+                    .update(is_active=False)
                 )
 
         await (

@@ -1,4 +1,4 @@
-from app.models.chat import ChatMessage, ChatSession
+from app.models.chat import ChatFeedback, ChatMessage, ChatSession, ChatSessionMemory
 from app.models.common_codes import Code, CodeGroup
 from app.models.core_auth import AuthAccount, PhoneVerification, RefreshToken, Role, UserRole
 from app.models.documents import Document, ExtractedMed, OcrJob, OcrRawText
@@ -16,8 +16,10 @@ from app.models.users import Gender, User
 __all__ = [
     "AuthAccount",
     "CaregiverPatientLink",
+    "ChatFeedback",
     "ChatMessage",
     "ChatSession",
+    "ChatSessionMemory",
     "Code",
     "CodeGroup",
     "Document",

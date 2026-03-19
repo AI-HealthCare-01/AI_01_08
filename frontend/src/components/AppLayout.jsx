@@ -11,7 +11,7 @@ const BASE_MENU = [
   { key: "health", label: "건강 프로필", href: "/auth-demo/app/health-profile" },
 ];
 const API_PREFIX = "/api/v1";
-const getChatStorageKey = (role, patientId) => `global-ai-chat-session:${role || "UNKNOWN"}:${patientId || "unknown"}`;
+const getChatStorageKey = (role, patientId) => `ai-chat-session:${role || "UNKNOWN"}:${patientId || "unknown"}`;
 
 const safeJson = async (res) => {
   try {
@@ -31,6 +31,12 @@ const formatApiError = (value) => {
     return JSON.stringify(value);
   }
   return String(value);
+};
+
+const extractMePayload = (body) => {
+  if (!body || typeof body !== "object") return null;
+  if (body.data && typeof body.data === "object") return body.data;
+  return body;
 };
 
 const handleLogout = async () => {
@@ -109,7 +115,21 @@ function AppLayout({
   });
   const chatContainerRef = useRef(null);
 
-  const authFetch = async (url, options = {}) => {
+  const refreshAccessToken = async () => {
+    const res = await fetch(`${API_PREFIX}/auth/token/refresh`, {
+      method: "GET",
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    const body = await safeJson(res);
+    const token = body?.access_token;
+    if (token && typeof window !== "undefined") {
+      window.localStorage.setItem("access_token", token);
+    }
+    return token || null;
+  };
+
+  const authFetch = async (url, options = {}, retryOnUnauthorized = true) => {
     const token = localStorage.getItem("access_token");
     const headers = new Headers(options.headers || {});
     if (options.body && !headers.has("Content-Type")) {
@@ -118,11 +138,43 @@ function AppLayout({
     if (token) {
       headers.set("Authorization", `Bearer ${token}`);
     }
-    return fetch(url, {
+    const response = await fetch(url, {
       ...options,
       headers,
       credentials: "include",
     });
+
+    if (response.status === 401 && retryOnUnauthorized) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        headers.set("Authorization", `Bearer ${newToken}`);
+        return fetch(url, {
+          ...options,
+          headers,
+          credentials: "include",
+        });
+      }
+    }
+
+    return response;
+  };
+
+  const fetchSelfPatientContext = async () => {
+    const meRes = await authFetch(`${API_PREFIX}/users/me`);
+    if (meRes.ok) {
+      const meBody = await meRes.json();
+      const payload = extractMePayload(meBody);
+      const patientId = String(payload?.patient_id || "");
+      if (patientId) {
+        return {
+          patientId,
+          label: payload?.name || resolvedUserName || "본인",
+        };
+      }
+    } else {
+      throw new Error(formatApiError(await safeJson(meRes)));
+    }
+    return { patientId: "", label: resolvedUserName || "본인" };
   };
 
   const loadChatTargets = async () => {
@@ -149,6 +201,14 @@ function AppLayout({
         setChatTargetsState({ loading: false, items, error: null });
         setSelectedChatPatientId(nextSelected);
         return { items, selectedId: nextSelected };
+      }
+
+      const meContext = await fetchSelfPatientContext();
+      if (meContext.patientId) {
+        const items = [{ value: meContext.patientId, label: meContext.label }];
+        setChatTargetsState({ loading: false, items, error: null });
+        setSelectedChatPatientId(meContext.patientId);
+        return { items, selectedId: meContext.patientId };
       }
 
       const res = await authFetch(`${API_PREFIX}/users/me/health-profile`);
@@ -203,15 +263,67 @@ function AppLayout({
     }
   };
 
-  const ensureChatSession = async (patientId = selectedChatPatientId) => {
+  const ensurePatientContextForGlobalChat = async () => {
+    if (selectedChatPatientId || isCaregiverMode) {
+      return selectedChatPatientId;
+    }
+
+    const meContext = await fetchSelfPatientContext();
+    if (meContext.patientId) {
+      const items = [{ value: meContext.patientId, label: meContext.label }];
+      setChatTargetsState({ loading: false, items, error: null });
+      setSelectedChatPatientId(meContext.patientId);
+      return meContext.patientId;
+    }
+
+    const profileRes = await authFetch(`${API_PREFIX}/users/me/health-profile`);
+    if (profileRes.ok) {
+      const profileBody = await profileRes.json();
+      const patientId = String(profileBody?.data?.patient_id || "");
+      if (patientId) {
+        const items = [{ value: patientId, label: resolvedUserName || "본인" }];
+        setChatTargetsState({ loading: false, items, error: null });
+        setSelectedChatPatientId(patientId);
+        return patientId;
+      }
+    } else if (profileRes.status !== 404) {
+      throw new Error(formatApiError(await safeJson(profileRes)));
+    }
+
+    const createRes = await authFetch(`${API_PREFIX}/users/me/health-profile`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (!createRes.ok) {
+      throw new Error("상담을 시작할 환자 정보를 준비하지 못했습니다. 건강 프로필 페이지에서 먼저 확인해 주세요.");
+    }
+
+    const createBody = await createRes.json();
+    const patientId = String(createBody?.data?.patient_id || "");
     if (!patientId) {
+      throw new Error("상담 대상 정보를 확인하지 못했습니다. 건강 프로필을 한 번 확인해 주세요.");
+    }
+
+    const items = [{ value: patientId, label: resolvedUserName || "본인" }];
+    setChatTargetsState({ loading: false, items, error: null });
+    setSelectedChatPatientId(patientId);
+    return patientId;
+  };
+
+  const ensureChatSession = async (patientId = selectedChatPatientId) => {
+    let resolvedPatientId = patientId;
+    if (!resolvedPatientId && !isCaregiverMode) {
+      resolvedPatientId = await ensurePatientContextForGlobalChat();
+    }
+
+    if (!resolvedPatientId) {
       throw new Error("상담 대상을 먼저 선택해 주세요.");
     }
     if (chatState.sessionId) {
       return chatState.sessionId;
     }
 
-    const storageKey = getChatStorageKey(effectiveCurrentMode, patientId);
+    const storageKey = getChatStorageKey(effectiveCurrentMode, resolvedPatientId);
     const savedSessionId = localStorage.getItem(storageKey);
     if (savedSessionId) {
       try {
@@ -225,7 +337,7 @@ function AppLayout({
     const res = await authFetch(`${API_PREFIX}/chat/sessions`, {
       method: "POST",
       body: JSON.stringify({
-        patient_id: Number(patientId),
+        patient_id: Number(resolvedPatientId),
         mode: isCaregiverMode ? "caregiver" : "general",
       }),
     });
@@ -245,11 +357,28 @@ function AppLayout({
 
     let patientId = selectedChatPatientId;
     if (!patientId) {
-      const loaded = await loadChatTargets();
-      patientId = loaded.selectedId;
+      if (isCaregiverMode) {
+        const loaded = await loadChatTargets();
+        patientId = loaded.selectedId;
+      } else {
+        try {
+          patientId = await ensurePatientContextForGlobalChat();
+        } catch (error) {
+          setChatState((prev) => ({
+            ...prev,
+            error: error?.message || String(error),
+          }));
+          return;
+        }
+      }
     }
     if (!patientId) {
-      setChatState((prev) => ({ ...prev, error: "상담 가능한 복약자 정보가 없습니다." }));
+      setChatState((prev) => ({
+        ...prev,
+        error: isCaregiverMode
+          ? "연동된 복약자가 없어 상담을 시작할 수 없습니다. 복약자 연결을 먼저 진행해 주세요."
+          : "상담 대상 정보를 확인하지 못했습니다. 건강 프로필을 한 번 확인해 주세요.",
+      }));
       return;
     }
 
@@ -482,31 +611,33 @@ function AppLayout({
                     </button>
                   </div>
 
-                  <div
-                    className="mt-3"
-                    style={{
-                      borderRadius: "14px",
-                      border: "1px solid #d8e5f6",
-                      background: "#ffffff",
-                      padding: "10px 12px",
-                    }}
-                  >
-                    <label className="form-label small text-muted mb-2">상담 대상</label>
-                    <select
-                      className="form-select form-select-sm"
-                      value={selectedChatPatientId}
-                      onChange={(event) => setSelectedChatPatientId(event.target.value)}
-                      disabled={chatTargetsState.loading || chatTargetsState.items.length === 0}
+                  {isCaregiverMode && (
+                    <div
+                      className="mt-3"
+                      style={{
+                        borderRadius: "14px",
+                        border: "1px solid #d8e5f6",
+                        background: "#ffffff",
+                        padding: "10px 12px",
+                      }}
                     >
-                      {chatTargetsState.items.length === 0 && <option value="">선택 가능한 복약자 없음</option>}
-                      {chatTargetsState.items.map((item) => (
-                        <option key={item.value} value={item.value}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                    {chatTargetsState.error && <div className="small text-danger mt-2">{chatTargetsState.error}</div>}
-                  </div>
+                      <label className="form-label small text-muted mb-2">상담 대상</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={selectedChatPatientId}
+                        onChange={(event) => setSelectedChatPatientId(event.target.value)}
+                        disabled={chatTargetsState.loading || chatTargetsState.items.length === 0}
+                      >
+                        {chatTargetsState.items.length === 0 && <option value="">선택 가능한 복약자 없음</option>}
+                        {chatTargetsState.items.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                      {chatTargetsState.error && <div className="small text-danger mt-2">{chatTargetsState.error}</div>}
+                    </div>
+                  )}
                 </div>
 
                 <div
