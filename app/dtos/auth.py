@@ -2,21 +2,6 @@ from datetime import date
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, EmailStr, Field
-
-from app.models.users import Gender
-from app.validators.user_validators import (
-    validate_birthday,
-    validate_email_format,
-    validate_password,
-    validate_phone_number,
-)
-
-
-from datetime import date
-from enum import StrEnum
-from typing import Annotated
-
 from pydantic import AfterValidator, BaseModel, EmailStr, Field, field_validator
 
 from app.models.users import Gender
@@ -39,8 +24,8 @@ class SignUpRequest(BaseModel):
     birth_date: Annotated[date, AfterValidator(validate_birthday)]
     phone_number: Annotated[str, AfterValidator(validate_phone_number)]
     role: str = Field(default="PATIENT", description="회원가입 역할: PATIENT, CAREGIVER, ADMIN")
-    
-    @field_validator('email')
+
+    @field_validator("email")
     @classmethod
     def validate_email_field(cls, v: str) -> str:
         return validate_email_format(v)
