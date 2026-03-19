@@ -86,6 +86,7 @@ async def admin_signup_page() -> HTMLResponse:
 @app.get("/auth-demo/app/mascot.png", include_in_schema=False)
 async def mascot_image():
     from fastapi.responses import FileResponse
+
     mascot_file = auth_app_dir / "mascot.png"
     if mascot_file.exists():
         return FileResponse(mascot_file)

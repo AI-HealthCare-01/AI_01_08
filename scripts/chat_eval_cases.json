@@ -1,0 +1,538 @@
+[
+  {
+    "id": "daily_001",
+    "stage": "smoke",
+    "priority": "core",
+    "category": "daily_chat",
+    "data_state": "any",
+    "persona": "any",
+    "message": "안녕",
+    "expect_any": ["안녕하세요", "복약", "건강"],
+    "reject_any": ["약 정보명은", "현재 기록 기준\n- 일정은 현재 복용 중인 약", "질문 범위가 아직 넓습니다"]
+  },
+  {
+    "id": "daily_002",
+    "stage": "smoke",
+    "priority": "core",
+    "category": "daily_chat",
+    "data_state": "any",
+    "persona": "any",
+    "message": "너는 뭘 도와줘?",
+    "expect_any": ["복약", "건강", "병원 일정"],
+    "reject_any": ["질문 범위가 아직 넓습니다"]
+  },
+  {
+    "id": "hospital_001",
+    "stage": "smoke",
+    "priority": "core",
+    "category": "hospital_schedule",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "다음 병원 예약이 언제인지 장소까지 알려줘",
+    "expect_any": ["병원", "장소", "일정"],
+    "reject_any": ["약 정보명은", "현재 복용 중인 약"]
+  },
+  {
+    "id": "profile_001",
+    "stage": "smoke",
+    "priority": "core",
+    "category": "profile",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "내 bmi랑 키 몸무게 알려줘",
+    "expect_any": ["BMI", "키", "몸무게"],
+    "reject_any": ["현재 복용 중인 약", "약 정보명은"]
+  },
+  {
+    "id": "med_current_001",
+    "stage": "smoke",
+    "priority": "core",
+    "category": "current_meds",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "현재 먹는 약들 알려줘",
+    "expect_any": ["복용 중인 약", "기준", "약"],
+    "reject_any": ["병원 일정", "장소"]
+  },
+  {
+    "id": "interaction_001",
+    "stage": "smoke",
+    "priority": "core",
+    "category": "drug_interaction",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "지금 먹는 약들끼리 같이 먹을 때 조심해야 할 조합 있어?",
+    "expect_any": ["현재 기록 기준", "중복", "지금 확인할 포인트"],
+    "expect_all": ["현재 기록 기준", "지금 확인할 포인트"]
+  },
+  {
+    "id": "external_drug_001",
+    "stage": "smoke",
+    "priority": "core",
+    "category": "external_drug",
+    "data_state": "any",
+    "persona": "any",
+    "message": "게보린이 뭐야?",
+    "expect_any": ["현재 기록 기준", "일반적으로 보면", "지금 확인할 포인트"],
+    "expect_all": ["일반적으로 보면", "지금 확인할 포인트"]
+  },
+  {
+    "id": "empty_001",
+    "stage": "smoke",
+    "priority": "core",
+    "category": "empty_state",
+    "data_state": "empty",
+    "persona": "patient",
+    "message": "혹시 오늘 내가 먹어야 할 게 뭐야?",
+    "expect_any": ["복약", "일정", "없"],
+    "reject_any": ["약 정보명은", "현재 복용 중인 약"]
+  },
+
+  {
+    "id": "daily_003",
+    "stage": "core",
+    "priority": "high",
+    "category": "daily_chat",
+    "data_state": "any",
+    "persona": "any",
+    "message": "고마워",
+    "expect_any": ["도움", "이어", "말씀"],
+    "reject_any": ["질문 범위가 아직 넓습니다"]
+  },
+  {
+    "id": "profile_002",
+    "stage": "core",
+    "priority": "high",
+    "category": "profile",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "건강프로필 기준으로 수면이랑 운동 기록 알려줘",
+    "expect_any": ["수면", "운동"],
+    "reject_any": ["약 정보명은"]
+  },
+  {
+    "id": "profile_003",
+    "stage": "core",
+    "priority": "high",
+    "category": "profile",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "내 주간 흡연량이랑 음주량 알려줘",
+    "expect_any": ["흡연", "음주", "주간"]
+  },
+  {
+    "id": "profile_004",
+    "stage": "core",
+    "priority": "medium",
+    "category": "profile",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "내 알레르기랑 기저질환 뭐로 기록돼 있어?",
+    "expect_any": ["알레르기", "건강 상태", "기록"]
+  },
+  {
+    "id": "profile_005",
+    "stage": "core",
+    "priority": "medium",
+    "category": "profile",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "입원이나 퇴원 관련 기록 있어?",
+    "expect_any": ["입원", "퇴원", "기록"]
+  },
+  {
+    "id": "guidance_001",
+    "stage": "core",
+    "priority": "high",
+    "category": "guidance",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "요즘 잠이 부족한데 내 건강프로필 기준으로 먼저 봐야 할 게 뭐야?",
+    "expect_any": ["현재 기록 기준", "지금 확인할 포인트", "수면"],
+    "expect_all": ["현재 기록 기준", "지금 확인할 포인트"]
+  },
+  {
+    "id": "guidance_002",
+    "stage": "core",
+    "priority": "high",
+    "category": "guidance",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "생활관리에서 지금 제일 중요한 점 알려줘",
+    "expect_any": ["현재 기록 기준", "일반적으로 보면", "지금 확인할 포인트"],
+    "expect_all": ["현재 기록 기준", "지금 확인할 포인트"]
+  },
+  {
+    "id": "guidance_003",
+    "stage": "core",
+    "priority": "medium",
+    "category": "guidance",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "전반적으로 내 건강 상태를 요약해줘",
+    "expect_any": ["현재 기록 기준", "복약", "건강 상태"]
+  },
+  {
+    "id": "med_current_002",
+    "stage": "core",
+    "priority": "high",
+    "category": "current_meds",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "엘스테인캡슐은 어떤 약이야?",
+    "expect_any": ["현재 기록 기준", "일반적으로 보면", "지금 확인할 포인트"],
+    "expect_all": ["현재 기록 기준", "일반적으로 보면", "지금 확인할 포인트"]
+  },
+  {
+    "id": "med_current_003",
+    "stage": "core",
+    "priority": "high",
+    "category": "current_meds",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "엘스테인캡슐 주의할 점 있어?",
+    "expect_any": ["주의", "현재 기록 기준", "지금 확인할 포인트"]
+  },
+  {
+    "id": "med_current_004",
+    "stage": "core",
+    "priority": "medium",
+    "category": "current_meds",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "오늘 저녁에 먹어야 하는 약만 정리해줘",
+    "expect_any": ["오늘 밤", "복약", "약"]
+  },
+  {
+    "id": "med_current_005",
+    "stage": "core",
+    "priority": "medium",
+    "category": "current_meds",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "아침 약 순서대로 정리해줘",
+    "expect_any": ["아침", "순서", "복약"]
+  },
+  {
+    "id": "interaction_002",
+    "stage": "core",
+    "priority": "high",
+    "category": "drug_interaction",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "오늘 약 중에서 특히 같이 먹을 때 조심해야 하는 조합 있어?",
+    "expect_any": ["현재 기록 기준", "조합", "지금 확인할 포인트"],
+    "expect_all": ["현재 기록 기준", "지금 확인할 포인트"]
+  },
+  {
+    "id": "interaction_003",
+    "stage": "core",
+    "priority": "high",
+    "category": "drug_interaction",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "게보린이랑 지금 먹는 약 같이 먹어도 돼?",
+    "expect_any": ["현재 기록 기준", "일반적으로 보면", "지금 확인할 포인트"],
+    "expect_all": ["현재 기록 기준", "지금 확인할 포인트"]
+  },
+  {
+    "id": "interaction_004",
+    "stage": "core",
+    "priority": "high",
+    "category": "drug_interaction",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "새 감기약 추가로 먹어도 괜찮아?",
+    "expect_any": ["현재 기록 기준", "일반적으로 보면", "성분"]
+  },
+  {
+    "id": "external_drug_002",
+    "stage": "core",
+    "priority": "medium",
+    "category": "external_drug",
+    "data_state": "any",
+    "persona": "any",
+    "message": "탁센이 뭐야?",
+    "expect_any": ["현재 기록 기준", "일반적으로 보면", "지금 확인할 포인트"]
+  },
+  {
+    "id": "external_drug_003",
+    "stage": "core",
+    "priority": "medium",
+    "category": "external_drug",
+    "data_state": "any",
+    "persona": "any",
+    "message": "게보린 주의사항 알려줘",
+    "expect_any": ["주의", "현재 기록 기준", "지금 확인할 포인트"]
+  },
+  {
+    "id": "schedule_001",
+    "stage": "core",
+    "priority": "high",
+    "category": "med_schedule",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "오늘 내가 먹어야 할 약 뭐야?",
+    "expect_any": ["복약", "일정", "기준"]
+  },
+  {
+    "id": "schedule_002",
+    "stage": "core",
+    "priority": "medium",
+    "category": "med_schedule",
+    "data_state": "rich",
+    "persona": "patient",
+    "message": "그 약은 언제 먹어?",
+    "expect_any": ["복용", "시간", "기록"]
+  },
+  {
+    "id": "schedule_003",
+    "stage": "core",
+    "priority": "medium",
+    "category": "med_schedule",
+    "data_state": "rich",
+    "message": "자주 놓치는 약 뭐야?",
+    "expect_any": ["놓친", "복약", "기준"]
+  },
+  {
+    "id": "hospital_002",
+    "stage": "core",
+    "priority": "high",
+    "category": "hospital_schedule",
+    "data_state": "rich",
+    "message": "다음 외래 일정 알려줘",
+    "expect_any": ["병원", "일정", "기준"],
+    "reject_any": ["약 정보명은", "현재 복용 중인 약"]
+  },
+  {
+    "id": "hospital_003",
+    "stage": "core",
+    "priority": "medium",
+    "category": "hospital_schedule",
+    "data_state": "rich",
+    "message": "검사 예약 잡힌 거 있어?",
+    "expect_any": ["검사", "일정", "기준"],
+    "reject_any": ["약 정보명은", "현재 복용 중인 약"]
+  },
+  {
+    "id": "condition_001",
+    "stage": "core",
+    "priority": "medium",
+    "category": "condition_general",
+    "data_state": "rich",
+    "message": "당뇨는 보통 어떻게 관리해?",
+    "expect_any": ["당뇨", "관리", "현재 기록 기준"]
+  },
+  {
+    "id": "condition_002",
+    "stage": "core",
+    "priority": "medium",
+    "category": "condition_general",
+    "data_state": "rich",
+    "message": "고혈압이면 어떤 점을 같이 봐야 해?",
+    "expect_any": ["고혈압", "현재 기록 기준", "안전"]
+  },
+  {
+    "id": "safety_001",
+    "stage": "core",
+    "priority": "medium",
+    "category": "general_caution",
+    "data_state": "rich",
+    "message": "전반적으로 지금 특히 조심해야 할 점 있어?",
+    "expect_any": ["주의", "현재", "기준"]
+  },
+  {
+    "id": "empty_002",
+    "stage": "core",
+    "priority": "medium",
+    "category": "empty_state",
+    "data_state": "empty",
+    "message": "건강프로필에 뭐를 입력하면 돼?",
+    "expect_any": ["건강프로필", "입력", "안내"]
+  },
+  {
+    "id": "empty_003",
+    "stage": "core",
+    "priority": "medium",
+    "category": "empty_state",
+    "data_state": "empty",
+    "message": "기록이 없어도 뭘 물어볼 수 있어?",
+    "expect_any": ["일반", "약 정보", "안내"]
+  },
+
+  {
+    "id": "profile_006",
+    "stage": "full",
+    "priority": "medium",
+    "category": "profile",
+    "data_state": "rich",
+    "message": "건강프로필 기준으로 전반적인 요약 알려줘",
+    "expect_any": ["현재 기록 기준", "건강 상태", "복약"]
+  },
+  {
+    "id": "guidance_004",
+    "stage": "full",
+    "priority": "medium",
+    "category": "guidance",
+    "data_state": "rich",
+    "message": "운동이 적은 편이면 뭘 먼저 바꾸는 게 좋아?",
+    "expect_any": ["현재 기록 기준", "운동", "지금 확인할 포인트"]
+  },
+  {
+    "id": "guidance_005",
+    "stage": "full",
+    "priority": "medium",
+    "category": "guidance",
+    "data_state": "rich",
+    "message": "흡연 기록까지 포함해서 생활관리 포인트 알려줘",
+    "expect_any": ["흡연", "현재 기록 기준", "지금 확인할 포인트"]
+  },
+  {
+    "id": "med_current_006",
+    "stage": "full",
+    "priority": "medium",
+    "category": "current_meds",
+    "data_state": "rich",
+    "message": "그 약은 복용 메모에 뭐라고 적혀 있어?",
+    "expect_any": ["메모", "기록", "복용"]
+  },
+  {
+    "id": "interaction_005",
+    "stage": "full",
+    "priority": "medium",
+    "category": "drug_interaction",
+    "data_state": "rich",
+    "message": "현재 복용약끼리",
+    "expect_any": ["현재 기록 기준", "일반적으로 보면", "지금 확인할 포인트"]
+  },
+  {
+    "id": "interaction_006",
+    "stage": "full",
+    "priority": "medium",
+    "category": "drug_interaction",
+    "data_state": "rich",
+    "message": "진통제 하나 더 먹어도 괜찮을까?",
+    "expect_any": ["성분", "중복", "지금 확인할 포인트"]
+  },
+  {
+    "id": "external_drug_004",
+    "stage": "full",
+    "priority": "low",
+    "category": "external_drug",
+    "data_state": "any",
+    "message": "게보린은 언제 먹는 약이야?",
+    "expect_any": ["일반적으로 보면", "복용", "지금 확인할 포인트"]
+  },
+  {
+    "id": "schedule_004",
+    "stage": "full",
+    "priority": "medium",
+    "category": "med_schedule",
+    "data_state": "rich",
+    "message": "오늘 밤 챙겨야 할 약 알려줘",
+    "expect_any": ["오늘 밤", "복약", "최근 놓친"]
+  },
+  {
+    "id": "hospital_004",
+    "stage": "full",
+    "priority": "medium",
+    "category": "hospital_schedule",
+    "data_state": "rich",
+    "message": "병원일정이 궁금해",
+    "expect_any": ["병원", "일정", "기준"],
+    "reject_any": ["약 정보명은", "현재 복용 중인 약"]
+  },
+  {
+    "id": "empty_004",
+    "stage": "full",
+    "priority": "low",
+    "category": "empty_state",
+    "data_state": "empty",
+    "message": "게보린이 뭐야?",
+    "expect_any": ["일반적으로 보면", "지금 확인할 포인트", "현재 기록 기준"]
+  },
+  {
+    "id": "caregiver_001",
+    "stage": "smoke",
+    "priority": "core",
+    "category": "caregiver_chat",
+    "data_state": "rich",
+    "persona": "caregiver",
+    "message": "복약자 기준으로 다음 병원 일정 알려줘",
+    "expect_any": ["병원", "일정", "복약자"],
+    "reject_any": ["약 정보명은", "현재 복용 중인 약"]
+  },
+  {
+    "id": "caregiver_002",
+    "stage": "core",
+    "priority": "high",
+    "category": "caregiver_chat",
+    "data_state": "rich",
+    "persona": "caregiver",
+    "message": "복약자 기준으로 오늘 저녁에 챙겨야 할 약 뭐야?",
+    "expect_any": ["복약자", "저녁", "복약"],
+    "reject_any": ["질문 범위가 아직 넓습니다"]
+  },
+  {
+    "id": "caregiver_003",
+    "stage": "core",
+    "priority": "high",
+    "category": "caregiver_chat",
+    "data_state": "rich",
+    "persona": "caregiver",
+    "message": "복약자 기록 기준으로 지금 먹는 약들끼리 조심해야 할 조합 있어?",
+    "expect_any": ["복약자", "현재 기록 기준", "지금 확인할 포인트"],
+    "expect_all": ["현재 기록 기준", "지금 확인할 포인트"]
+  },
+  {
+    "id": "caregiver_004",
+    "stage": "core",
+    "priority": "medium",
+    "category": "caregiver_chat",
+    "data_state": "rich",
+    "persona": "caregiver",
+    "message": "복약자가 최근 놓친 약이 있어?",
+    "expect_any": ["복약자", "놓친", "복약"],
+    "reject_any": ["질문 범위가 아직 넓습니다"]
+  },
+  {
+    "id": "caregiver_005",
+    "stage": "core",
+    "priority": "medium",
+    "category": "caregiver_chat",
+    "data_state": "partial",
+    "persona": "caregiver",
+    "message": "복약자 건강프로필 기준으로 조심할 점 뭐야?",
+    "expect_any": ["복약자", "기록", "확인할 포인트"]
+  },
+  {
+    "id": "caregiver_006",
+    "stage": "full",
+    "priority": "medium",
+    "category": "caregiver_chat",
+    "data_state": "partial",
+    "persona": "caregiver",
+    "message": "복약자 기준으로 오늘 먹어야 할 약 있어?",
+    "expect_any": ["복약자", "복약", "기준"]
+  },
+  {
+    "id": "caregiver_007",
+    "stage": "full",
+    "priority": "low",
+    "category": "caregiver_empty_link",
+    "data_state": "empty",
+    "persona": "caregiver",
+    "message": "상담 가능한 복약자가 없으면 어떻게 해야 해?",
+    "expect_any": ["복약자", "연결", "안내"]
+  },
+  {
+    "id": "caregiver_008",
+    "stage": "full",
+    "priority": "medium",
+    "category": "caregiver_chat",
+    "data_state": "rich",
+    "persona": "caregiver",
+    "message": "보호자 입장에서 지금 가장 먼저 확인할 점 알려줘",
+    "expect_any": ["복약자", "현재 기록 기준", "지금 확인할 포인트"]
+  }
+]
