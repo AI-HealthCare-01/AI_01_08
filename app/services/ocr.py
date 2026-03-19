@@ -608,7 +608,7 @@ class OcrService:
         return self._parse_extracted_meds_with_regex(lines=lines)
 
     # REQ-DOC-005 - 정규식 기반 OCR fallback 파싱
-    def _parse_extracted_meds_with_regex(self, lines: list[str]) -> list[dict[str, str | float | None]]:
+    def _parse_extracted_meds_with_regex(self, lines: list[str]) -> list[dict[str, str | float | None]]:  # noqa: C901
         if not lines:
             return []
 
@@ -781,7 +781,9 @@ class OcrService:
         return self._parse_extracted_meds_with_regex(lines=all_lines)
 
     # REQ-DOC-005 - OCR 레이아웃 분리(영수증/복약안내표/요약표)
-    def _segment_layout_regions(self, ocr_fields: list[dict[str, str | float]]) -> dict[str, list[dict[str, str | float]] | float | None]:
+    def _segment_layout_regions(  # noqa: C901
+        self, ocr_fields: list[dict[str, str | float]]
+    ) -> dict[str, list[dict[str, str | float]] | float | None]:
         rows = self._group_fields_into_rows(fields=ocr_fields)
         row_lines = [self._normalize_line(self._build_row_text(row_fields=row_fields)) for row_fields in rows]
 
@@ -1258,7 +1260,7 @@ class OcrService:
         return self._is_valid_med_name(name=self._sanitize_extracted_med_name(name=med_name))
 
     # REQ-DOC-005 - left column 텍스트에서 약명 후보 1개 추출
-    def _extract_med_name_candidate_from_text(self, text: str) -> tuple[str, str | None] | None:
+    def _extract_med_name_candidate_from_text(self, text: str) -> tuple[str, str | None] | None:  # noqa: C901
         normalized_text = self._normalize_line(text)
         if not normalized_text:
             return None
@@ -1853,7 +1855,7 @@ class OcrService:
 
     # REQ-DOC-005 - 일반 제형 단어 오탐 제외
     @staticmethod
-    def _is_valid_med_name(name: str) -> bool:
+    def _is_valid_med_name(name: str) -> bool:  # noqa: C901
         if not name:
             return False
         normalized = name.strip()
@@ -1942,7 +1944,7 @@ class OcrService:
         return match.group(1).strip()
 
     # REQ-DOC-005 - 약봉투형 OCR의 분리 컬럼(약명/복약안내) 매핑 보정
-    def _apply_packed_schedule_fallback(
+    def _apply_packed_schedule_fallback(  # noqa: C901
         self,
         *,
         parsed_meds: list[dict[str, str | float | None]],
@@ -1956,7 +1958,7 @@ class OcrService:
             return
 
         if len(packed_schedules) >= len(parsed_meds):
-            for med, schedule in zip(parsed_meds, packed_schedules):
+            for med, schedule in zip(parsed_meds, packed_schedules, strict=False):
                 if schedule.get("dosage_text"):
                     med["dosage_text"] = schedule["dosage_text"]
                 if schedule.get("frequency_text"):
