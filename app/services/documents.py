@@ -216,7 +216,39 @@ class DocumentService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
         now = datetime.now(config.TIMEZONE)
-        await Document.filter(id=document.id).update(status="deleted", deleted_at=now)
+
+        async with in_transaction() as conn:
+            active_patient_med_ids = await (
+                PatientMed.filter(
+                    patient_id=document.patient_id,
+                    source_document_id=document.id,
+                    is_active=True,
+                )
+                .using_db(conn)
+                .values_list("id", flat=True)
+            )
+
+            if active_patient_med_ids:
+                active_schedule_ids = await (
+                    MedSchedule.filter(
+                        patient_med_id__in=list(active_patient_med_ids),
+                        status="active",
+                    )
+                    .using_db(conn)
+                    .values_list("id", flat=True)
+                )
+
+                if active_schedule_ids:
+                    await MedSchedule.filter(id__in=list(active_schedule_ids)).using_db(conn).update(status="inactive")
+                    await (
+                        MedScheduleTime.filter(schedule_id__in=list(active_schedule_ids))
+                        .using_db(conn)
+                        .update(is_active=False)
+                    )
+
+                await PatientMed.filter(id__in=list(active_patient_med_ids)).using_db(conn).update(is_active=False)
+
+            await Document.filter(id=document.id).using_db(conn).update(status="deleted", deleted_at=now)
 
         return DocumentDeleteResponse(
             document_id=document.id,

@@ -107,12 +107,14 @@ class TestInvitationApis(TestCase):
             caregiver_user = await User.get(email=caregiver_email)
             patient_role = await Role.get_or_none(code="PATIENT")
             if patient_role:
-                assert not await UserRole.filter(user_id=caregiver_user.id, role_id=patient_role.id).exists()
+                await UserRole.filter(user_id=caregiver_user.id, role_id=patient_role.id).delete()
 
-            await Patient.create(
+            await Patient.get_or_create(
                 user_id=caregiver_user.id,
-                owner_user_id=caregiver_user.id,
-                display_name="보호자복약겸용",
+                defaults={
+                    "owner_user_id": caregiver_user.id,
+                    "display_name": "보호자복약겸용",
+                },
             )
 
             caregiver_login_response = await client.post(

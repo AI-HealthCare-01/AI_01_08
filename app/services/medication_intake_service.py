@@ -18,6 +18,8 @@ from app.dtos.medication_intake_dtos import (
     IntakeUndoRequest,
     IntakeUndoResponse,
 )
+from app.models.documents import Document
+from app.models.medications import PatientMed
 from app.repositories.intake_log_repository import IntakeLogRepository
 from app.repositories.med_schedule_repository import MedScheduleRepository
 
@@ -404,11 +406,16 @@ class MedicationIntakeService:
         if now is None:
             now = datetime.now()
 
+        allowed_patient_med_ids = await self._resolve_allowed_patient_med_ids(patient_id=patient_id)
         schedules = await self.schedule_repo.list_active_schedules_by_patient_in_range(
             patient_id=patient_id,
             date_from=date_from,
             date_to=date_to,
         )
+        if allowed_patient_med_ids:
+            schedules = [schedule for schedule in schedules if schedule.patient_med_id in allowed_patient_med_ids]
+        else:
+            schedules = []
         schedule_ids = [s.id for s in schedules]
 
         schedule_times = await self.schedule_repo.list_times_by_schedule_ids(schedule_ids)
@@ -529,6 +536,16 @@ class MedicationIntakeService:
             days=daily_list,
             summary=summary,
         )
+
+    async def _resolve_allowed_patient_med_ids(self, *, patient_id: int) -> set[int]:
+        deleted_document_ids = await Document.filter(patient_id=patient_id, status="deleted").values_list(
+            "id", flat=True
+        )
+        patient_meds_query = PatientMed.filter(patient_id=patient_id, is_active=True)
+        if deleted_document_ids:
+            patient_meds_query = patient_meds_query.exclude(source_document_id__in=list(deleted_document_ids))
+        patient_med_ids = await patient_meds_query.values_list("id", flat=True)
+        return set(patient_med_ids)
 
     async def get_patient_adherence(
         self,
