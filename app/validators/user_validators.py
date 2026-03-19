@@ -11,17 +11,17 @@ def validate_email_format(email: str) -> str:
     """이메일 형식 검증 - 소셜 로그인 사용자 고려"""
     if not re.fullmatch(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         raise ValueError("유효하지 않은 이메일 형식입니다.")
-    
+
     domain = email.rsplit("@", 1)[1].lower()
-    
+
     # 소셜 로그인 도메인은 항상 허용
     if domain in SOCIAL_EMAIL_DOMAINS:
         return email
-    
+
     # 일반 허용 도메인 검증
     if domain not in ALLOWED_EMAIL_DOMAINS:
         raise ValueError("지원하지 않는 이메일 도메인입니다. gmail.com, naver.com, daum.net만 사용 가능합니다.")
-    
+
     return email
 
 

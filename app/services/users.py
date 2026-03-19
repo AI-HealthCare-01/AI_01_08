@@ -28,12 +28,12 @@ class UserManageService:
     async def update_user(self, user: User, data: UserUpdateRequest) -> User:
         is_social_user = await self._is_social_user(user)
         social_data_flags = await self._is_social_generated_data(user)
-        
+
         # 이메일 검증 (소셜 사용자가 소셜 생성 이메일을 변경하려는 경우만 검증)
         if data.email:
             if not (is_social_user and social_data_flags["email"]):
                 await self.auth_service.check_email_exists(data.email, exclude_user_id=user.id)
-        
+
         # 전화번호 검증 (소셜 사용자가 소셜 생성 전화번호를 변경하려는 경우만 검증)
         if data.phone_number:
             if not (is_social_user and social_data_flags["phone"]):
@@ -43,7 +43,7 @@ class UserManageService:
             else:
                 # 소셜 사용자의 경우 전화번호 정규화만 수행
                 data.phone_number = normalize_phone_number(data.phone_number)
-        
+
         async with in_transaction():
             await self.repo.update_instance(user=user, data=data.model_dump(exclude_none=True))
             await user.refresh_from_db()
