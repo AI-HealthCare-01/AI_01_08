@@ -37,6 +37,7 @@ class DocumentListItemResponse(BaseSerializerModel):
     file_size: int | None
     status: DocumentStatus
     ocr_status: OcrStatus | None
+    has_confirmed_meds: bool = False
     created_at: datetime
 
 
@@ -68,6 +69,7 @@ class DocumentOcrStatusResponse(BaseSerializerModel):
     document_id: int
     patient_id: int
     document_status: DocumentStatus
+    has_confirmed_meds: bool = False
     ocr_job_id: int | None
     ocr_status: OcrStatus | None
     retry_count: int | None

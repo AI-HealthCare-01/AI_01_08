@@ -221,6 +221,10 @@ body {
   margin-bottom: 1.5rem;
 }
 
+.app-page-header.app-page-header-compact {
+  margin-bottom: 0.6rem;
+}
+
 .app-page-title {
   margin: 0;
   font-size: 1.45rem;
@@ -297,9 +301,13 @@ body {
 
 .doc-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.doc-result-intro {
+  margin-bottom: 0.5rem;
 }
 
 /* 상단 카드 영역 */
