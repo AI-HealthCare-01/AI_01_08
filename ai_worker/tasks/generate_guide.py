@@ -10,9 +10,12 @@ from typing import Any
 import httpx
 
 from app.models.guides import Guide, GuideStatus
-from app.models.patients import PatientProfile
+from app.models.notification_settings import NotificationSettings
+from app.models.notifications import Notification
+from app.models.patients import CaregiverPatientLink, Patient, PatientProfile
 from app.services.guide import GuideContextBundle, GuideService, GuideServiceError
 from app.services.guide_validation import get_guide_disclaimer, validate_guide_payload
+from app.services.queue_service import enqueue_send_notification
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +339,73 @@ async def _call_openai_json(*, system_prompt: str, user_prompt: str) -> dict[str
 
 
 # 실패 상태 저장
+async def _is_guide_ready_notification_enabled(user_id: int) -> bool:
+    settings = await NotificationSettings.get_or_none(user_id=user_id)
+    if settings is None:
+        return True
+    return bool(settings.guide_ready)
+
+
+async def _guide_ready_notification_exists(*, user_id: int, reminder_key: str) -> bool:
+    return await Notification.filter(
+        user_id=user_id,
+        type="guide_ready",
+        payload_json__contains=f'"reminder_key":"{reminder_key}"',
+    ).exists()
+
+
+async def _notify_guide_ready(guide: Guide) -> None:
+    patient = await Patient.get_or_none(id=guide.patient_id)
+    if patient is None:
+        return
+
+    recipients: set[int] = set()
+    if getattr(patient, "user_id", None):
+        recipients.add(int(patient.user_id))
+
+    links = await CaregiverPatientLink.filter(
+        patient_id=guide.patient_id,
+        status="active",
+        revoked_at__isnull=True,
+    ).all()
+    for link in links:
+        caregiver_user_id = getattr(link, "caregiver_user_id", None)
+        if caregiver_user_id:
+            recipients.add(int(caregiver_user_id))
+
+    if not recipients:
+        return
+
+    reminder_key = f"guide_ready:{guide.document_id}:{guide.id}"
+    title = "새 가이드가 준비되었어요" if int(guide.version or 1) > 1 else "복약 가이드가 준비되었어요"
+    body = "AI 가이드 생성이 완료되었어요. 알림센터에서 내용을 확인해 주세요."
+    payload = {
+        "guide_id": int(guide.id),
+        "document_id": int(guide.document_id),
+        "patient_id": int(guide.patient_id),
+        "version": int(guide.version or 1),
+        "reminder_key": reminder_key,
+    }
+    payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+    for user_id in recipients:
+        if not await _is_guide_ready_notification_enabled(user_id):
+            continue
+        if await _guide_ready_notification_exists(user_id=user_id, reminder_key=reminder_key):
+            continue
+
+        notification = await Notification.create(
+            user_id=user_id,
+            patient_id=guide.patient_id,
+            type="guide_ready",
+            title=title,
+            body=body,
+            payload_json=payload_json,
+            sent_at=None,
+        )
+        await enqueue_send_notification(notification.id)
+
+
 async def _mark_failed(guide: Guide, *, code: str, message: str) -> None:
     guide.status = GuideStatus.FAILED
     guide.failure_code = code
@@ -398,6 +468,7 @@ async def generate_guide(guide_id: int) -> None:
                 "updated_at",
             ]
         )
+        await _notify_guide_ready(guide)
 
         logger.info("guide generated guide_id=%s", guide.id)
 
