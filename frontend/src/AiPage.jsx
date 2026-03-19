@@ -437,6 +437,8 @@ function AiPage({
 }) {
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const requestedPatientId = searchParams.get("patient_id");
+  const requestedGuideId = searchParams.get("guide_id");
+  const requestedDocumentId = searchParams.get("document_id");
   const shouldOpenChat = searchParams.get("open_chat") === "1";
 
   const readCookie = (name) => {
@@ -474,8 +476,8 @@ function AiPage({
   const [chatInput, setChatInput] = useState("");
   const [chatFeedbackState, setChatFeedbackState] = useState({});
   const [selectedPatientId, setSelectedPatientId] = useState(requestedPatientId || "");
-  const [selectedGuideId, setSelectedGuideId] = useState("");
-  const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const [selectedGuideId, setSelectedGuideId] = useState(requestedGuideId || "");
+  const [selectedDocumentId, setSelectedDocumentId] = useState(requestedDocumentId || "");
   const effectiveMode = currentMode || loginRole;
 
   const chatContainerRef = useRef(null);
