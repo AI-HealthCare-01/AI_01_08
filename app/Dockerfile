@@ -21,7 +21,8 @@ RUN uv sync --group app --group docs --no-dev --frozen
 COPY ./docs ./docs
 RUN uv run --no-sync mkdocs build
 
-# 5. 로컬 소스 코드를 컨테이너 내부로 복사합니다.
+# 5. 프롬프트와 로컬 소스 코드를 컨테이너 내부로 복사합니다.
+COPY ./prompts ./prompts
 COPY ./app ./app
 
 # 6. 해당 이미지를 활용하여 도커컨테이너 실행시 실행되는 명령어입니다.

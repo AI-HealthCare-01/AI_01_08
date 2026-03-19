@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 
 from app.dependencies.security import get_request_user
 from app.dtos.chat import (
+    ChatFeedbackCreateRequest,
+    ChatFeedbackCreateResponse,
     ChatMessageCreateRequest,
     ChatMessageCreateResponse,
     ChatMessageListResponse,
@@ -180,5 +182,33 @@ async def list_chat_messages(
 
     try:
         return await ChatService.list_messages(session_id=session_id)
+    except ChatServiceError as exc:
+        _raise_service_error(exc)
+
+
+@chat_router.post(
+    "/sessions/{session_id}/feedback",
+    response_model=ChatFeedbackCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_chat_feedback(
+    session_id: int = Path(..., ge=1),
+    req: ChatFeedbackCreateRequest = ...,
+    requester: User = Depends(get_request_user),
+) -> ChatFeedbackCreateResponse:
+    await _assert_can_access_session(
+        requester=requester,
+        session_id=session_id,
+    )
+
+    try:
+        return await ChatService.create_feedback(
+            requester=requester,
+            session_id=session_id,
+            assistant_message_id=req.assistant_message_id,
+            helpful=req.helpful,
+            feedback_type=req.feedback_type,
+            comment=req.comment,
+        )
     except ChatServiceError as exc:
         _raise_service_error(exc)

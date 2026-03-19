@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import json
 import re
 import uuid
 from datetime import UTC, datetime
@@ -12,9 +13,12 @@ from starlette import status
 from app.core import config
 from app.dtos.documents import DocumentOcrRetryResponse
 from app.models.documents import Document, ExtractedMed, OcrJob, OcrRawText
+from app.models.notification_settings import NotificationSettings
+from app.models.notifications import Notification
 from app.models.patients import CaregiverPatientLink, Patient
 from app.models.users import User
 from app.services.barcode import BarcodeService
+from app.services.queue_service import enqueue_send_notification
 
 MED_NAME_SUFFIX_PATTERN = "연질캡슐|장용캡슐|경질캡슐|필름코팅정|장용정|서방정|캅셀|캡셀|캅슐|캡슐|정제|정|시럽|현탁액|주사액|주사|크림|로션|패취|패치"
 KOREAN_MED_NAME_PATTERN = re.compile(rf"([A-Za-z가-힣0-9+\-/]{{2,}}(?:{MED_NAME_SUFFIX_PATTERN}))")
@@ -251,12 +255,139 @@ class OcrService:
             await self._save_extracted_meds(ocr_job_id=ocr_job.id, patient_id=ocr_job.patient_id, raw_text=raw_text)
 
             await OcrJob.filter(id=ocr_job.id).update(status="success")
+            try:
+                await self._notify_ocr_done(ocr_job=ocr_job)
+            except Exception:
+                pass
         except Exception as exc:  # noqa: BLE001
             await OcrJob.filter(id=ocr_job.id).update(
                 status="failed",
                 error_code=self._build_error_code(exc),
                 error_message=str(exc)[:1000],
             )
+            try:
+                await self._notify_ocr_failed(ocr_job=ocr_job, error_message=str(exc))
+            except Exception:
+                pass
+
+    async def _notify_ocr_done(self, ocr_job: OcrJob) -> None:
+        patient = await Patient.filter(id=ocr_job.patient_id).prefetch_related("caregiver_links").first()
+        if not patient:
+            return
+
+        recipients: set[int] = set()
+        if patient.user_id:
+            recipients.add(int(patient.user_id))
+
+        for link in getattr(patient, "caregiver_links", []):
+            if getattr(link, "status", None) != "active" or getattr(link, "revoked_at", None) is not None:
+                continue
+            caregiver_user_id = getattr(link, "caregiver_user_id", None)
+            if caregiver_user_id:
+                recipients.add(int(caregiver_user_id))
+
+        if not recipients:
+            return
+
+        reminder_key = f"ocr_done:{ocr_job.document_id}:{ocr_job.id}"
+        document_title = (ocr_job.document.original_filename or "").strip() if ocr_job.document else ""
+        title = "OCR 분석이 완료되었어요"
+        body = (
+            f"{document_title} 문서의 약 정보 추출이 완료되었어요."
+            if document_title
+            else "업로드한 문서의 약 정보 추출이 완료되었어요."
+        )
+        payload = {
+            "document_id": ocr_job.document_id,
+            "ocr_job_id": ocr_job.id,
+            "patient_id": ocr_job.patient_id,
+            "reminder_key": reminder_key,
+        }
+        payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+        for user_id in recipients:
+            if not await self._is_ocr_done_notification_enabled(user_id):
+                continue
+
+            if await self._ocr_done_notification_exists(user_id=user_id, reminder_key=reminder_key):
+                continue
+
+            notification = await Notification.create(
+                user_id=user_id,
+                patient_id=ocr_job.patient_id,
+                type="ocr_done",
+                title=title,
+                body=body,
+                payload_json=payload_json,
+                sent_at=None,
+            )
+            await enqueue_send_notification(notification.id)
+
+    async def _notify_ocr_failed(self, *, ocr_job: OcrJob, error_message: str) -> None:
+        uploaded_by_user_id = getattr(ocr_job.document, "uploaded_by_user_id", None) if ocr_job.document else None
+        if not uploaded_by_user_id:
+            return
+
+        if not await self._is_ocr_done_notification_enabled(int(uploaded_by_user_id)):
+            return
+
+        reminder_key = f"ocr_failed:{ocr_job.document_id}:{ocr_job.id}"
+        if await self._notification_exists(
+            user_id=int(uploaded_by_user_id),
+            notification_type="ocr_failed",
+            reminder_key=reminder_key,
+        ):
+            return
+
+        document_title = (ocr_job.document.original_filename or "").strip() if ocr_job.document else ""
+        title = "OCR 분석에 실패했어요"
+        body = (
+            f"{document_title} 문서 분석에 실패했어요. 다시 시도해 주세요."
+            if document_title
+            else "업로드한 문서 분석에 실패했어요. 다시 시도해 주세요."
+        )
+        payload = {
+            "document_id": ocr_job.document_id,
+            "ocr_job_id": ocr_job.id,
+            "patient_id": ocr_job.patient_id,
+            "error_message": error_message[:300],
+            "reminder_key": reminder_key,
+        }
+        payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+        notification = await Notification.create(
+            user_id=int(uploaded_by_user_id),
+            patient_id=ocr_job.patient_id,
+            type="ocr_failed",
+            title=title,
+            body=body,
+            payload_json=payload_json,
+            sent_at=None,
+        )
+        await enqueue_send_notification(notification.id)
+
+    @staticmethod
+    async def _is_ocr_done_notification_enabled(user_id: int) -> bool:
+        settings = await NotificationSettings.get_or_none(user_id=user_id)
+        if settings is None:
+            return True
+        return bool(settings.ocr_done)
+
+    @staticmethod
+    async def _notification_exists(*, user_id: int, notification_type: str, reminder_key: str) -> bool:
+        return await Notification.filter(
+            user_id=user_id,
+            type=notification_type,
+            payload_json__contains=f'"reminder_key":"{reminder_key}"',
+        ).exists()
+
+    @classmethod
+    async def _ocr_done_notification_exists(cls, *, user_id: int, reminder_key: str) -> bool:
+        return await cls._notification_exists(
+            user_id=user_id,
+            notification_type="ocr_done",
+            reminder_key=reminder_key,
+        )
 
     # REQ-DOC-004, REQ-DOC-009 - OCR 원문/바코드 결과 결합
     async def _build_combined_raw_text(self, document: Document, barcode_text: str) -> str:

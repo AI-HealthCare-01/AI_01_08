@@ -41,6 +41,7 @@ from app.models.documents import Document, ExtractedMed, OcrJob, OcrRawText
 from app.models.dur import DurAlert
 from app.models.medications import DrugInfoCache, PatientMed
 from app.models.patients import CaregiverPatientLink, Patient
+from app.models.schedules import MedSchedule, MedScheduleTime
 from app.models.users import User
 from app.services.barcode import BarcodeService
 from app.services.mfds import MfdsService
@@ -51,6 +52,12 @@ ALLOWED_FILE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".heic", ".heif"}
 HEIC_FILE_EXTENSIONS = {".heic", ".heif"}
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 DRUG_FORM_SUFFIXES = ("장용캡슐", "연질캡슐", "서방정", "캡슐", "정", "액", "주", "겔", "시럽", "크림", "로션")
+DOCUMENT_MED_TIME_SLOTS: tuple[tuple[str, time], ...] = (
+    ("아침", time(hour=8, minute=0)),
+    ("점심", time(hour=13, minute=0)),
+    ("저녁", time(hour=19, minute=0)),
+    ("취침", time(hour=22, minute=0)),
+)
 
 
 @dataclass(frozen=True)
@@ -881,6 +888,32 @@ class DocumentService:
         self, document: Document, ocr_job: OcrJob, extracted_meds: list[ExtractedMed], using_db
     ) -> int:
         now = datetime.now(config.TIMEZONE)
+        source_start_date = (document.created_at or now).date()
+
+        existing_patient_meds = (
+            await PatientMed.filter(
+                patient_id=document.patient_id,
+                source_document_id=document.id,
+                is_active=True,
+            )
+            .using_db(using_db)
+            .all()
+        )
+        existing_patient_med_ids = [med.id for med in existing_patient_meds]
+
+        if existing_patient_med_ids:
+            existing_schedule_ids = (
+                await MedSchedule.filter(patient_med_id__in=existing_patient_med_ids, status="active")
+                .using_db(using_db)
+                .values_list("id", flat=True)
+            )
+            if existing_schedule_ids:
+                await MedSchedule.filter(id__in=existing_schedule_ids).using_db(using_db).update(status="inactive")
+                await (
+                    MedScheduleTime.filter(schedule_id__in=list(existing_schedule_ids))
+                    .using_db(using_db)
+                    .update(is_active=False)
+                )
 
         await (
             PatientMed.filter(
@@ -896,7 +929,7 @@ class DocumentService:
         for med in extracted_meds:
             matched_cache_resolution = await self._resolve_drug_cache(name=med.name, fetch_missing=True)
             matched_cache = matched_cache_resolution.cache
-            await PatientMed.create(
+            patient_med = await PatientMed.create(
                 patient_id=document.patient_id,
                 source_document_id=document.id,
                 source_ocr_job_id=ocr_job.id,
@@ -910,8 +943,75 @@ class DocumentService:
                 confirmed_at=now,
                 using_db=using_db,
             )
+            await self._sync_confirmed_med_schedule(
+                patient_med=patient_med,
+                extracted_med=med,
+                source_start_date=source_start_date,
+                using_db=using_db,
+            )
             created_count += 1
         return created_count
+
+    async def _sync_confirmed_med_schedule(
+        self,
+        *,
+        patient_med: PatientMed,
+        extracted_med: ExtractedMed,
+        source_start_date: date,
+        using_db,
+    ) -> None:
+        schedule_times = self._extract_schedule_times_from_frequency_text(extracted_med.frequency_text)
+        if not schedule_times:
+            return
+
+        end_date = self._extract_schedule_end_date(
+            start_date=source_start_date,
+            duration_text=extracted_med.duration_text,
+        )
+        schedule = await MedSchedule.create(
+            patient_id=patient_med.patient_id,
+            patient_med_id=patient_med.id,
+            start_date=source_start_date,
+            end_date=end_date,
+            status="active",
+            using_db=using_db,
+        )
+
+        for scheduled_time in schedule_times:
+            await MedScheduleTime.create(
+                schedule_id=schedule.id,
+                time_of_day=scheduled_time,
+                days_of_week=None,
+                is_active=True,
+                using_db=using_db,
+            )
+
+    @staticmethod
+    def _extract_schedule_times_from_frequency_text(frequency_text: str | None) -> list[time]:
+        if not frequency_text:
+            return []
+
+        detected_times: list[time] = []
+        for keyword, slot_time in DOCUMENT_MED_TIME_SLOTS:
+            if keyword in frequency_text and slot_time not in detected_times:
+                detected_times.append(slot_time)
+
+        return detected_times
+
+    @staticmethod
+    def _extract_schedule_end_date(*, start_date: date, duration_text: str | None) -> date | None:
+        if not duration_text:
+            return None
+
+        match = re.search(r"(\d+)\s*(?:일분|일|days?)", duration_text, flags=re.IGNORECASE)
+        if not match:
+            return None
+
+        duration_days = int(match.group(1))
+        if duration_days <= 0:
+            return None
+
+        return start_date + timedelta(days=duration_days - 1)
 
     # 입력 문자열 정규화 - REQ-DOC-007
     @staticmethod
