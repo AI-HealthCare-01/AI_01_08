@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
@@ -92,6 +92,8 @@ const MedicationCheckPage = ({
   const [selectedCaregiverMealByPatient, setSelectedCaregiverMealByPatient] = useState({});
   const [mealReminderDraft, setMealReminderDraft] = useState(null);
   const [notificationTargetApplied, setNotificationTargetApplied] = useState(false);
+  const statusLoadVersionRef = useRef(0);
+  const calendarLoadVersionRef = useRef(0);
   const notificationTarget = useMemo(() => {
     if (typeof window === "undefined") return null;
 
@@ -118,10 +120,27 @@ const MedicationCheckPage = ({
   }, []);
 
   useEffect(() => {
-    if (!isCaregiver && patients[0]?.id) {
-      setSelectedPatientId(patients[0].id);
+    if (isCaregiver) {
+      if (patients.length === 0) {
+        setSelectedPatientId("");
+        return;
+      }
+      if (selectedPatientId === "all") {
+        return;
+      }
+      const hasSelectedPatient = patients.some(
+        (patient) => String(patient.id) === String(selectedPatientId)
+      );
+      if (!hasSelectedPatient) {
+        setSelectedPatientId("all");
+      }
+      return;
     }
-  }, [isCaregiver, patients]);
+
+    setSelectedPatientId(patients[0]?.id || "");
+    setSelectedIds([]);
+    setSelectedCaregiverMealByPatient({});
+  }, [isCaregiver, patients, selectedPatientId]);
 
   useEffect(() => {
     if (!notificationTarget?.scheduledDate) return;
@@ -359,6 +378,8 @@ const MedicationCheckPage = ({
   };
 
   const loadStatus = async () => {
+    const requestVersion = statusLoadVersionRef.current + 1;
+    statusLoadVersionRef.current = requestVersion;
     setLoading(true);
     setError(null);
 
@@ -366,8 +387,10 @@ const MedicationCheckPage = ({
       const targets = resolveTargetPatientIds();
 
       if (targets.length === 0) {
+        if (requestVersion !== statusLoadVersionRef.current) return;
         setStatusData([]);
         setSummaryMap({});
+        setMedicationNameMap({});
         return;
       }
 
@@ -389,22 +412,28 @@ const MedicationCheckPage = ({
         Object.assign(nextMedicationNameMap, result.guideMap);
       });
 
+      if (requestVersion !== statusLoadVersionRef.current) return;
       setStatusData(mergedItems);
       setSummaryMap(nextSummaryMap);
       setMedicationNameMap(nextMedicationNameMap);
     } catch (err) {
+      if (requestVersion !== statusLoadVersionRef.current) return;
       setError(err.message || "복약 현황을 불러오지 못했습니다.");
       setStatusData([]);
       setSummaryMap({});
       setMedicationNameMap({});
     } finally {
+      if (requestVersion !== statusLoadVersionRef.current) return;
       setLoading(false);
     }
   };
 
   const loadCalendarStatus = async () => {
+    const requestVersion = calendarLoadVersionRef.current + 1;
+    calendarLoadVersionRef.current = requestVersion;
     const targets = resolveTargetPatientIds();
     if (targets.length === 0) {
+      if (requestVersion !== calendarLoadVersionRef.current) return;
       setCalendarStatusData([]);
       return;
     }
@@ -415,8 +444,10 @@ const MedicationCheckPage = ({
       const rows = await Promise.all(
         targets.map((patientId) => fetchPatientCalendarStatus(patientId, from, to))
       );
+      if (requestVersion !== calendarLoadVersionRef.current) return;
       setCalendarStatusData(rows.flat());
     } catch {
+      if (requestVersion !== calendarLoadVersionRef.current) return;
       setCalendarStatusData([]);
     }
   };

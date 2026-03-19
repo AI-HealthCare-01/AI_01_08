@@ -1,3 +1,5 @@
+from datetime import date, time
+
 from httpx import ASGITransport, AsyncClient
 from starlette import status
 from tortoise.contrib.test import TestCase
@@ -7,6 +9,7 @@ from app.models.documents import Document, ExtractedMed, OcrJob
 from app.models.healthcare import Role, UserRole
 from app.models.medications import PatientMed
 from app.models.patients import Patient
+from app.models.schedules import MedSchedule, MedScheduleTime
 from app.models.users import User
 
 
@@ -27,7 +30,10 @@ class TestDocumentDrugsApis(TestCase):
             user = await User.get(email=signup_data["email"])
             patient_role, _ = await Role.get_or_create(code="PATIENT", defaults={"name": "PATIENT"})
             await UserRole.get_or_create(user_id=user.id, role_id=patient_role.id)
-            patient = await Patient.create(user_id=user.id, owner_user_id=user.id, display_name="문서환자1")
+            patient, _ = await Patient.get_or_create(
+                user_id=user.id,
+                defaults={"owner_user_id": user.id, "display_name": "문서환자1"},
+            )
 
             login_response = await client.post(
                 "/api/v1/auth/login",
@@ -80,7 +86,10 @@ class TestDocumentDrugsApis(TestCase):
             user = await User.get(email=signup_data["email"])
             patient_role, _ = await Role.get_or_create(code="PATIENT", defaults={"name": "PATIENT"})
             await UserRole.get_or_create(user_id=user.id, role_id=patient_role.id)
-            patient = await Patient.create(user_id=user.id, owner_user_id=user.id, display_name="문서환자2")
+            patient, _ = await Patient.get_or_create(
+                user_id=user.id,
+                defaults={"owner_user_id": user.id, "display_name": "문서환자2"},
+            )
 
             login_response = await client.post(
                 "/api/v1/auth/login",
@@ -148,3 +157,135 @@ class TestDocumentDrugsApis(TestCase):
                 is_active=True,
             )
             assert len(active_patient_meds) == 2
+
+    async def test_soft_delete_document_deactivates_related_meds_and_schedules(self):
+        signup_data = {
+            "email": "patient.docs3@gmail.com",
+            "password": "Password123!",
+            "name": "문서환자3",
+            "gender": "FEMALE",
+            "birth_date": "1995-05-05",
+            "phone_number": "01070003333",
+        }
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            await client.post("/api/v1/auth/signup", json=signup_data)
+
+            user = await User.get(email=signup_data["email"])
+            patient_role, _ = await Role.get_or_create(code="PATIENT", defaults={"name": "PATIENT"})
+            await UserRole.get_or_create(user_id=user.id, role_id=patient_role.id)
+            patient, _ = await Patient.get_or_create(
+                user_id=user.id,
+                defaults={"owner_user_id": user.id, "display_name": "문서환자3"},
+            )
+
+            login_response = await client.post(
+                "/api/v1/auth/login",
+                json={"email": signup_data["email"], "password": signup_data["password"]},
+            )
+            access_token = login_response.json()["access_token"]
+            headers = {"Authorization": f"Bearer {access_token}"}
+
+            document = await Document.create(
+                patient_id=patient.id,
+                uploaded_by_user_id=user.id,
+                file_url="uploads/documents/test3.jpg",
+                original_filename="test3.jpg",
+                file_type="image",
+                status="uploaded",
+            )
+            patient_med = await PatientMed.create(
+                patient_id=patient.id,
+                source_document_id=document.id,
+                display_name="삭제검증약",
+                dosage="1정",
+                route="PO",
+                notes="test",
+                is_active=True,
+            )
+            schedule = await MedSchedule.create(
+                patient_id=patient.id,
+                patient_med_id=patient_med.id,
+                start_date=date(2026, 3, 19),
+                end_date=date(2026, 3, 25),
+                status="active",
+            )
+            schedule_time = await MedScheduleTime.create(
+                schedule_id=schedule.id,
+                time_of_day=time(8, 0),
+                days_of_week="MON,TUE,WED,THU,FRI,SAT,SUN",
+                is_active=True,
+            )
+
+            response = await client.delete(f"/api/v1/documents/{document.id}", headers=headers)
+            assert response.status_code == status.HTTP_200_OK
+            assert response.json()["status"] == "deleted"
+
+            await document.refresh_from_db()
+            await patient_med.refresh_from_db()
+            await schedule.refresh_from_db()
+            await schedule_time.refresh_from_db()
+
+            assert document.status == "deleted"
+            assert patient_med.is_active is False
+            assert schedule.status == "inactive"
+            assert schedule_time.is_active is False
+
+    async def test_schedule_status_excludes_stale_schedule_from_deleted_document_source(self):
+        signup_data = {
+            "email": "patient.docs4@gmail.com",
+            "password": "Password123!",
+            "name": "문서환자4",
+            "gender": "MALE",
+            "birth_date": "1994-06-06",
+            "phone_number": "01070004444",
+        }
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            await client.post("/api/v1/auth/signup", json=signup_data)
+
+            user = await User.get(email=signup_data["email"])
+            patient, _ = await Patient.get_or_create(
+                user_id=user.id,
+                defaults={"owner_user_id": user.id, "display_name": "문서환자4"},
+            )
+
+            deleted_document = await Document.create(
+                patient_id=patient.id,
+                uploaded_by_user_id=user.id,
+                file_url="uploads/documents/test4.jpg",
+                original_filename="test4.jpg",
+                file_type="image",
+                status="deleted",
+            )
+            stale_patient_med = await PatientMed.create(
+                patient_id=patient.id,
+                source_document_id=deleted_document.id,
+                display_name="삭제문서유래약",
+                dosage="1정",
+                route="PO",
+                notes="stale",
+                is_active=True,
+            )
+            stale_schedule = await MedSchedule.create(
+                patient_id=patient.id,
+                patient_med_id=stale_patient_med.id,
+                start_date=date(2026, 3, 1),
+                end_date=date(2026, 3, 31),
+                status="active",
+            )
+            await MedScheduleTime.create(
+                schedule_id=stale_schedule.id,
+                time_of_day=time(8, 0),
+                days_of_week="MON,TUE,WED,THU,FRI,SAT,SUN",
+                is_active=True,
+            )
+
+            status_response = await client.get(
+                f"/api/v1/schedules/status?patient_id={patient.id}&from=2026-03-19&to=2026-03-19"
+            )
+            assert status_response.status_code == status.HTTP_200_OK
+            body = status_response.json()
+            assert body["summary"]["expected_total"] == 0
+            assert len(body["days"]) == 1
+            assert body["days"][0]["items"] == []
