@@ -173,6 +173,16 @@ class DocumentService:
             .order_by("-created_at")
         )
 
+        confirmed_document_ids: set[int] = set()
+        document_ids = [document.id for document in documents]
+        if document_ids:
+            confirmed_source_document_ids = await PatientMed.filter(
+                source_document_id__in=document_ids,
+                is_active=True,
+                confirmed_at__not_isnull=True,
+            ).values_list("source_document_id", flat=True)
+            confirmed_document_ids = set(confirmed_source_document_ids)
+
         items: list[DocumentListItemResponse] = []
         for document in documents:
             latest_ocr_status = self._get_latest_ocr_status(document=document)
@@ -189,6 +199,7 @@ class DocumentService:
                     file_size=document.file_size,
                     status=document.status,
                     ocr_status=latest_ocr_status,
+                    has_confirmed_meds=document.id in confirmed_document_ids,
                     created_at=document.created_at,
                 )
             )
@@ -292,22 +303,28 @@ class DocumentService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
         latest_job = self._get_latest_ocr_job(document=document)
-        barcode_values = await self._load_barcode_values(ocr_job_id=latest_job.id if latest_job else None)
+        has_confirmed_meds = await self._has_active_confirmed_patient_meds(
+            document_id=document.id,
+            patient_id=document.patient_id,
+        )
+        preferred_job = await self._resolve_preferred_ocr_job_for_view(document=document, latest_job=latest_job)
+        barcode_values = await self._load_barcode_values(ocr_job_id=preferred_job.id if preferred_job else None)
 
         return DocumentOcrStatusResponse(
             document_id=document.id,
             patient_id=document.patient_id,
             document_status=document.status,
-            ocr_job_id=latest_job.id if latest_job else None,
-            ocr_status=latest_job.status if latest_job else None,
-            retry_count=latest_job.retry_count if latest_job else None,
-            error_code=latest_job.error_code if latest_job else None,
-            error_message=latest_job.error_message if latest_job else None,
+            has_confirmed_meds=has_confirmed_meds,
+            ocr_job_id=preferred_job.id if preferred_job else None,
+            ocr_status=preferred_job.status if preferred_job else None,
+            retry_count=preferred_job.retry_count if preferred_job else None,
+            error_code=preferred_job.error_code if preferred_job else None,
+            error_message=preferred_job.error_message if preferred_job else None,
             barcode_detected=bool(barcode_values),
             barcode_count=len(barcode_values),
             barcode_values=barcode_values,
-            created_at=latest_job.created_at if latest_job else document.created_at,
-            updated_at=latest_job.updated_at if latest_job else None,
+            created_at=preferred_job.created_at if preferred_job else document.created_at,
+            updated_at=preferred_job.updated_at if preferred_job else None,
         )
 
     # OCR 결과 원문 조회(권한 검증 포함) - REQ-DOC-003
@@ -320,7 +337,8 @@ class DocumentService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
         latest_job = self._get_latest_ocr_job(document=document)
-        if not latest_job:
+        preferred_job = await self._resolve_preferred_ocr_job_for_view(document=document, latest_job=latest_job)
+        if not preferred_job:
             return DocumentOcrTextResponse(
                 document_id=document.id,
                 patient_id=document.patient_id,
@@ -330,14 +348,14 @@ class DocumentService:
                 created_at=document.created_at,
             )
 
-        raw_text_row = await OcrRawText.get_or_none(ocr_job_id=latest_job.id)
+        raw_text_row = await OcrRawText.get_or_none(ocr_job_id=preferred_job.id)
         return DocumentOcrTextResponse(
             document_id=document.id,
             patient_id=document.patient_id,
-            ocr_job_id=latest_job.id,
-            ocr_status=latest_job.status,
+            ocr_job_id=preferred_job.id,
+            ocr_status=preferred_job.status,
             raw_text=raw_text_row.raw_text if raw_text_row else None,
-            created_at=raw_text_row.created_at if raw_text_row else latest_job.created_at,
+            created_at=raw_text_row.created_at if raw_text_row else preferred_job.created_at,
         )
 
     # 추출 약 목록 조회(권한 검증 포함) - REQ-DOC-006
@@ -351,22 +369,22 @@ class DocumentService:
         if not await self._has_patient_access(user=user, patient_id=document.patient_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
-        latest_job = await OcrJob.filter(document_id=document.id).order_by("-created_at").first()
-        if not latest_job or latest_job.status != "success":
+        latest_success_job = await self._get_latest_success_ocr_job(document_id=document.id)
+        if not latest_success_job:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="UNPROCESSABLE")
-        barcode_values = await self._load_barcode_values(ocr_job_id=latest_job.id)
+        barcode_values = await self._load_barcode_values(ocr_job_id=latest_success_job.id)
 
-        extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_job.id).order_by("id")
+        extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_success_job.id).order_by("id")
         if not extracted_meds:
             # REQ-DOC-005, REQ-DOC-006 - 과거 OCR 성공건의 raw_text 기반 추출 결과 백필
-            backfilled_count = await self.ocr_service.backfill_extracted_meds(ocr_job_id=latest_job.id)
+            backfilled_count = await self.ocr_service.backfill_extracted_meds(ocr_job_id=latest_success_job.id)
             if backfilled_count > 0:
-                extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_job.id).order_by("id")
+                extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_success_job.id).order_by("id")
         elif self._needs_extracted_meds_backfill(extracted_meds=extracted_meds):
             # REQ-DOC-005, REQ-DOC-006 - 구버전 파서 결과(용량/횟수/기간 비어있는 경우) 자동 보정
-            backfilled_count = await self.ocr_service.backfill_extracted_meds(ocr_job_id=latest_job.id)
+            backfilled_count = await self.ocr_service.backfill_extracted_meds(ocr_job_id=latest_success_job.id)
             if backfilled_count > 0:
-                extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_job.id).order_by("id")
+                extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_success_job.id).order_by("id")
 
         response_items = await self._build_extracted_drug_items(
             extracted_meds=extracted_meds, fetch_missing=include_mfds
@@ -375,8 +393,8 @@ class DocumentService:
         return DocumentDrugsResponse(
             document_id=document.id,
             patient_id=document.patient_id,
-            ocr_job_id=latest_job.id,
-            ocr_status=latest_job.status,
+            ocr_job_id=latest_success_job.id,
+            ocr_status=latest_success_job.status,
             barcode_detected=bool(barcode_values),
             barcode_count=len(barcode_values),
             barcode_values=barcode_values,
@@ -395,18 +413,18 @@ class DocumentService:
         if not await self._has_patient_access(user=user, patient_id=document.patient_id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
 
-        latest_job = await OcrJob.filter(document_id=document.id).order_by("-created_at").first()
-        if not latest_job or latest_job.status != "success":
+        latest_success_job = await self._get_latest_success_ocr_job(document_id=document.id)
+        if not latest_success_job:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="UNPROCESSABLE")
 
         updated_meds = await self._apply_extracted_med_patch(
-            ocr_job_id=latest_job.id,
+            ocr_job_id=latest_success_job.id,
             patient_id=document.patient_id,
             payload=payload,
         )
         confirmed_patient_med_count = await self._confirm_document_drugs_if_needed(
             document=document,
-            ocr_job=latest_job,
+            ocr_job=latest_success_job,
             extracted_meds=updated_meds,
             confirm=payload.confirm,
             force_confirm=payload.force_confirm,
@@ -416,7 +434,7 @@ class DocumentService:
         return DocumentDrugPatchResponse(
             document_id=document.id,
             patient_id=document.patient_id,
-            ocr_job_id=latest_job.id,
+            ocr_job_id=latest_success_job.id,
             confirmed=payload.confirm,
             updated_count=len(response_items),
             confirmed_patient_med_count=confirmed_patient_med_count,
@@ -794,7 +812,15 @@ class DocumentService:
     @staticmethod
     def _get_latest_ocr_status(document: Document) -> str | None:
         latest_job = DocumentService._get_latest_ocr_job(document=document)
-        return latest_job.status if latest_job else None
+        if not latest_job:
+            return None
+        if latest_job.status == "success":
+            return "success"
+
+        has_success_job = any(job.status == "success" for job in list(document.ocr_jobs))
+        if has_success_job:
+            return "success"
+        return latest_job.status
 
     # 문서별 최신 OCR Job 계산 - REQ-DOC-003
     @staticmethod
@@ -803,6 +829,26 @@ class DocumentService:
         if not jobs:
             return None
         return max(jobs, key=lambda job: job.created_at)
+
+    async def _get_latest_success_ocr_job(self, document_id: int) -> OcrJob | None:
+        return await OcrJob.filter(document_id=document_id, status="success").order_by("-created_at").first()
+
+    async def _has_active_confirmed_patient_meds(self, *, document_id: int, patient_id: int) -> bool:
+        return await PatientMed.filter(
+            patient_id=patient_id,
+            source_document_id=document_id,
+            is_active=True,
+            confirmed_at__not_isnull=True,
+        ).exists()
+
+    async def _resolve_preferred_ocr_job_for_view(self, *, document: Document, latest_job: OcrJob | None) -> OcrJob | None:
+        if not latest_job:
+            return None
+
+        latest_success_job = await self._get_latest_success_ocr_job(document_id=document.id)
+        if latest_success_job:
+            return latest_success_job
+        return latest_job
 
     # 바코드 인식 결과 로드 - REQ-DOC-009
     async def _load_barcode_values(self, ocr_job_id: int | None) -> list[str]:
