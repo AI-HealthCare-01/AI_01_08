@@ -61,6 +61,7 @@ function AppLayout({
   title,
   description,
   children,
+  headerCompact = false,
   loginRole,
   userName,
   modeOptions = [],
@@ -509,7 +510,7 @@ function AppLayout({
       </aside>
 
       <main className="doc-main">
-        <header className="app-page-header">
+        <header className={`app-page-header ${headerCompact ? "app-page-header-compact" : ""}`}>
           <div>
             <h2 className="app-page-title">{title}</h2>
             {description && <p className="app-page-description">{description}</p>}

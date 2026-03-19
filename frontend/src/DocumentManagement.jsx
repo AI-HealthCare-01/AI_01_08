@@ -369,6 +369,11 @@ function DocumentManagement({
     e.preventDefault();
     if (!selectedFile) return;
     if (!validateUploadFile(selectedFile)) return;
+    if (isCaregiver && !patientId) {
+      setError("업로드 대상을 선택해주세요.");
+      setUploadNotice(null);
+      return;
+    }
     setUploading(true);
     setError(null);
     setUploadNotice(null);
@@ -400,9 +405,26 @@ function DocumentManagement({
     }
   };
 
+  const refreshOcrStatus = async (docId, options = {}) => {
+    const { loadSuccessDrugs = true } = options;
+    try {
+      const res = await authFetch(`${API_PREFIX}/documents/${docId}/status`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      setOcrStatus(data);
+      if (loadSuccessDrugs && data.ocr_status === "success") {
+        loadDrugs(docId);
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  };
+
   // OCR 뷰 열기
   const openOcrView = (doc) => {
     if (pollingId) clearInterval(pollingId);
+    const initialOcrStatus = doc.ocr_status || null;
     setCurrentDoc(doc);
     setView("ocr");
     setDrugs([]);
@@ -412,6 +434,34 @@ function DocumentManagement({
     setPreviewMimeType("");
     setUploadNotice(null);
     loadDocumentPreview(doc.document_id);
+
+    if (initialOcrStatus === "success") {
+      setOcrStatus({
+        document_id: doc.document_id,
+        patient_id: doc.patient_id,
+        document_status: doc.status || "uploaded",
+        has_confirmed_meds: Boolean(doc.has_confirmed_meds),
+        ocr_job_id: null,
+        ocr_status: "success",
+        retry_count: null,
+        error_code: null,
+        error_message: null,
+        barcode_detected: false,
+        barcode_count: 0,
+        barcode_values: [],
+        created_at: doc.created_at,
+        updated_at: null,
+      });
+      loadDrugs(doc.document_id);
+      refreshOcrStatus(doc.document_id, { loadSuccessDrugs: false }).then((statusData) => {
+        if (!statusData) return;
+        if (statusData.ocr_status === "queued" || statusData.ocr_status === "processing") {
+          pollOcrStatus(doc.document_id);
+        }
+      });
+      return;
+    }
+
     pollOcrStatus(doc.document_id);
   };
 
@@ -419,18 +469,10 @@ function DocumentManagement({
   const pollOcrStatus = async (docId) => {
     if (pollingId) clearInterval(pollingId);
     const poll = async () => {
-      try {
-        const res = await authFetch(`${API_PREFIX}/documents/${docId}/status`);
-        if (!res.ok) return;
-        const data = await res.json();
-        setOcrStatus(data);
-
-        if (data.ocr_status === "success") {
-          loadDrugs(docId);
-          return true; // stop polling
-        }
-        if (data.ocr_status === "failed") return true;
-      } catch { /* ignore */ }
+      const data = await refreshOcrStatus(docId, { loadSuccessDrugs: true });
+      if (!data) return false;
+      if (data.ocr_status === "success") return true;
+      if (data.ocr_status === "failed") return true;
       return false;
     };
 
@@ -520,6 +562,7 @@ function DocumentManagement({
   // 확정하기
   const handleConfirm = async () => {
     if (!currentDoc) return;
+    const wasConfirmedDoc = Boolean(ocrStatus?.has_confirmed_meds || currentDoc?.has_confirmed_meds);
     setSaving(true);
     setSaveMsg(null);
     try {
@@ -545,7 +588,14 @@ function DocumentManagement({
         const body = await res.json().catch(() => ({}));
         throw new Error(typeof body.detail === "object" ? body.detail.message : (body.detail || `status ${res.status}`));
       }
-      setSaveMsg({ type: "success", text: "확정 완료! 복약 가이드에 반영되었습니다." });
+      setCurrentDoc((prev) => (prev ? { ...prev, has_confirmed_meds: true } : prev));
+      setOcrStatus((prev) => (prev ? { ...prev, has_confirmed_meds: true } : prev));
+      setUploadNotice(
+        wasConfirmedDoc
+          ? "수정 완료! 복약 가이드에 반영되었습니다."
+          : "확정 완료! 복약 가이드에 반영되었습니다.",
+      );
+      goBackToList();
     } catch (err) {
       setSaveMsg({ type: "danger", text: err.message });
     } finally { setSaving(false); }
@@ -713,12 +763,15 @@ function DocumentManagement({
     const isProcessing = !ocrStatus || ocrStatus.ocr_status === "queued" || ocrStatus.ocr_status === "processing";
     const isFailed = ocrStatus?.ocr_status === "failed";
     const isSuccess = ocrStatus?.ocr_status === "success";
+    const isConfirmedDoc = Boolean(ocrStatus?.has_confirmed_meds || currentDoc?.has_confirmed_meds);
+    const confirmButtonLabel = isConfirmedDoc ? "수정하기" : "확정하기";
 
     return (
       <AppLayout
         activeKey="documents"
         title="처방전 업로드"
         description="처방전을 업로드하고 추출된 약 정보를 검토합니다."
+        headerCompact
         loginRole={loginRole}
         userName={userName}
         modeOptions={modeOptions}
@@ -726,11 +779,10 @@ function DocumentManagement({
         onModeChange={onModeChange}
       >
           <div className="doc-header">
-            <h4 className="fw-bold mb-0">인식 결과 상세</h4>
             <div className="d-flex align-items-center gap-2">
               {isSuccess && (
                 <span className="badge bg-success-subtle text-success px-3 py-2" style={{ fontSize: "0.85rem" }}>
-                  ✅ 문서 인식 완료
+                  문서 인식 완료
                 </span>
               )}
               <button
@@ -771,9 +823,13 @@ function DocumentManagement({
           {/* OCR 성공 */}
           {isSuccess && (
             <>
-              <div className="mb-3">
-                <h5 className="fw-bold">문서 인식 결과 확인</h5>
-                <p className="text-muted mb-0">추출된 약 정보를 확인하고 필요 시 수정한 뒤 확정해주세요.</p>
+              <div className="doc-result-intro">
+                <h5 className="fw-bold mb-1">문서 인식 결과 확인</h5>
+                <p className="text-muted mb-0">
+                  {isConfirmedDoc
+                    ? "확정된 약 정보를 수정하고 저장할 수 있습니다."
+                    : "추출된 약 정보를 확인하고 필요 시 수정한 뒤 확정해주세요."}
+                </p>
               </div>
 
               {/* 상단 카드 영역 */}
@@ -832,11 +888,11 @@ function DocumentManagement({
                       className="btn btn-outline-primary btn-sm flex-fill"
                       onClick={() => handleOpenOriginalFile(currentDoc.document_id)}
                     >
-                      👁 원본 보기
+                      원본 보기
                     </button>
                     <button className="btn btn-outline-secondary btn-sm flex-fill" onClick={() => {
                       document.getElementById("reuploadInput")?.click();
-                    }}>↑ 다시 업로드</button>
+                    }}>다시 업로드</button>
                     <button
                       className="btn btn-outline-danger btn-sm flex-fill"
                       onClick={() => handleDeleteDocument(currentDoc.document_id, { afterDelete: "backToList" })}
@@ -917,7 +973,7 @@ function DocumentManagement({
                   임시저장
                 </button>
                 <button className="btn btn-primary btn-lg px-5" onClick={handleConfirm} disabled={saving}>
-                  확정하기
+                  {confirmButtonLabel}
                 </button>
                 <button className="btn btn-outline-secondary" onClick={goBackToList}>
                   목록으로
@@ -1106,6 +1162,8 @@ function DocumentManagement({
                                 document_id: docId, patient_id: doc.patient_id,
                                 original_filename: doc.original_filename, created_at: doc.created_at,
                                 uploaded_by_user_id: doc.uploaded_by_user_id,
+                                status: doc.status, ocr_status: doc.ocr_status,
+                                has_confirmed_meds: Boolean(doc.has_confirmed_meds),
                               })}>
                                 인식 결과
                               </button>
