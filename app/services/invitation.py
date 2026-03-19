@@ -13,15 +13,26 @@ from app.services.role_utils import user_has_role
 
 
 class InvitationService:
-    # 초대 코드 생성 - REQ-USER-004
-    async def create_invite_code(self, user: User, expires_in_minutes: int) -> InvitationCode:
-        is_patient = await user_has_role(user.id, "PATIENT")
-        if not is_patient:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
-
+    async def _get_self_patient_for_invite(self, user: User, *, create_if_missing: bool) -> Patient:
         patient = await Patient.get_or_none(user_id=user.id)
         if not patient:
+            patient = await Patient.get_or_none(user_id=user.id, owner_user_id=user.id)
+
+        is_patient = await user_has_role(user.id, "PATIENT")
+        if not is_patient and not patient:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
+
+        if not patient and create_if_missing:
             patient = await Patient.create(user_id=user.id, owner_user_id=user.id, display_name=user.name)
+
+        if not patient:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="활성 초대코드가 없습니다.")
+
+        return patient
+
+    # 초대 코드 생성 - REQ-USER-004
+    async def create_invite_code(self, user: User, expires_in_minutes: int) -> InvitationCode:
+        patient = await self._get_self_patient_for_invite(user=user, create_if_missing=True)
 
         now = datetime.now(config.TIMEZONE)
         expires_at = now + timedelta(minutes=expires_in_minutes)
@@ -38,13 +49,7 @@ class InvitationService:
 
     # 초대 코드 폐기 - REQ-USER-004
     async def delete_invite_code(self, user: User) -> None:
-        is_patient = await user_has_role(user.id, "PATIENT")
-        if not is_patient:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="FORBIDDEN")
-
-        patient = await Patient.get_or_none(user_id=user.id)
-        if not patient:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="활성 초대코드가 없습니다.")
+        patient = await self._get_self_patient_for_invite(user=user, create_if_missing=False)
 
         deleted_count = await InvitationCode.filter(patient_id=patient.id, used_at__isnull=True).delete()
         if deleted_count == 0:
