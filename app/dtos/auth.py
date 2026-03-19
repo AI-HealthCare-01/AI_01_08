@@ -25,7 +25,7 @@ class SignUpRequest(BaseModel):
     phone_number: Annotated[str, AfterValidator(validate_phone_number)]
     role: str = Field(default="PATIENT", description="회원가입 역할: PATIENT, CAREGIVER, ADMIN")
 
-    @field_validator('email')
+    @field_validator("email")
     @classmethod
     def validate_email_field(cls, v: str) -> str:
         return validate_email_format(v)

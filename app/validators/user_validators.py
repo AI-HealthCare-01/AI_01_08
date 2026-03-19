@@ -47,10 +47,10 @@ def validate_password(password: str) -> str:
 def validate_phone_number(phone_number: str) -> str:
     """전화번호 형식 검증 - 소셜 로그인 사용자 고려"""
     patterns = [
-        r"010-\d{4}-\d{4}",      # 010-1234-5678
-        r"010\d{8}",             # 01012345678
-        r"\+8210\d{8}",          # +821012345678
-        r"0\d{10}",              # 소셜 로그인으로 생성된 전화번호 (01234567890)
+        r"010-\d{4}-\d{4}",  # 010-1234-5678
+        r"010\d{8}",  # 01012345678
+        r"\+8210\d{8}",  # +821012345678
+        r"0\d{10}",  # 소셜 로그인으로 생성된 전화번호 (01234567890)
     ]
 
     if not any(re.fullmatch(p, phone_number) for p in patterns):

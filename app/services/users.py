@@ -22,7 +22,9 @@ class UserManageService:
         """소셜 로그인으로 생성된 데이터인지 확인"""
         return {
             "email": user.email.endswith("@social.local"),
-            "phone": user.phone_number.startswith("0") and len(user.phone_number) == 11 and user.phone_number[1:].isdigit()
+            "phone": user.phone_number.startswith("0")
+            and len(user.phone_number) == 11
+            and user.phone_number[1:].isdigit(),
         }
 
     async def update_user(self, user: User, data: UserUpdateRequest) -> User:

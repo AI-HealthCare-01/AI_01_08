@@ -31,7 +31,7 @@ class UserUpdateRequest(BaseModel):
         Field(None, description="'MALE' or 'FEMALE'"),
     ]
 
-    @field_validator('email')
+    @field_validator("email")
     @classmethod
     def validate_email_field(cls, v: str | None) -> str | None:
         if v is None:
