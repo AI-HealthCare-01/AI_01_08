@@ -87,3 +87,46 @@ class TestInvitationApis(TestCase):
             links_after_unlink_response = await client.get("/api/v1/users/links", headers=caregiver_headers)
             assert links_after_unlink_response.status_code == status.HTTP_200_OK
             assert links_after_unlink_response.json()["links"] == []
+
+    async def test_caregiver_with_self_patient_row_can_create_invite_code_in_patient_mode(self):
+        caregiver_email = "caregiver.with.patient.id@naver.com"
+        caregiver_signup_data = {
+            "email": caregiver_email,
+            "password": "Password123!",
+            "name": "보호자복약겸용",
+            "gender": "FEMALE",
+            "birth_date": "1992-05-05",
+            "phone_number": "01077778888",
+            "role": "CAREGIVER",
+        }
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            signup_response = await client.post("/api/v1/auth/signup", json=caregiver_signup_data)
+            assert signup_response.status_code == status.HTTP_201_CREATED
+
+            caregiver_user = await User.get(email=caregiver_email)
+            patient_role = await Role.get_or_none(code="PATIENT")
+            if patient_role:
+                assert not await UserRole.filter(user_id=caregiver_user.id, role_id=patient_role.id).exists()
+
+            await Patient.create(
+                user_id=caregiver_user.id,
+                owner_user_id=caregiver_user.id,
+                display_name="보호자복약겸용",
+            )
+
+            caregiver_login_response = await client.post(
+                "/api/v1/auth/login",
+                json={"email": caregiver_email, "password": "Password123!", "role": "CAREGIVER"},
+            )
+            assert caregiver_login_response.status_code == status.HTTP_200_OK
+            caregiver_access_token = caregiver_login_response.json()["access_token"]
+            caregiver_headers = {"Authorization": f"Bearer {caregiver_access_token}"}
+
+            create_invite_response = await client.post(
+                "/api/v1/users/invite-code",
+                json={"expires_in_minutes": 60},
+                headers=caregiver_headers,
+            )
+            assert create_invite_response.status_code == status.HTTP_201_CREATED
+            assert create_invite_response.json()["code"]
