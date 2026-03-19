@@ -4,15 +4,24 @@ from datetime import date, datetime
 from app.core import config
 
 ALLOWED_EMAIL_DOMAINS = {"gmail.com", "naver.com", "daum.net", "daum.com"}
+SOCIAL_EMAIL_DOMAINS = {"social.local"}
 
 
 def validate_email_format(email: str) -> str:
-    # EmailStr 검증 이후에도 가입 규칙을 명시적으로 고정한다.
+    """이메일 형식 검증 - 소셜 로그인 사용자 고려"""
     if not re.fullmatch(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         raise ValueError("유효하지 않은 이메일 형식입니다.")
+    
     domain = email.rsplit("@", 1)[1].lower()
+    
+    # 소셜 로그인 도메인은 항상 허용
+    if domain in SOCIAL_EMAIL_DOMAINS:
+        return email
+    
+    # 일반 허용 도메인 검증
     if domain not in ALLOWED_EMAIL_DOMAINS:
         raise ValueError("지원하지 않는 이메일 도메인입니다. gmail.com, naver.com, daum.net만 사용 가능합니다.")
+    
     return email
 
 
@@ -36,14 +45,16 @@ def validate_password(password: str) -> str:
 
 
 def validate_phone_number(phone_number: str) -> str:
+    """전화번호 형식 검증 - 소셜 로그인 사용자 고려"""
     patterns = [
-        r"010-\d{4}-\d{4}",
-        r"010\d{8}",
-        r"\+8210\d{8}",
+        r"010-\d{4}-\d{4}",      # 010-1234-5678
+        r"010\d{8}",             # 01012345678
+        r"\+8210\d{8}",          # +821012345678
+        r"0\d{10}",              # 소셜 로그인으로 생성된 전화번호 (01234567890)
     ]
 
     if not any(re.fullmatch(p, phone_number) for p in patterns):
-        raise ValueError("유효하지 않은 전화번호 형식입니다.")
+        raise ValueError("휴대폰 번호 형식이 올바르지 않습니다.")
 
     return phone_number
 
