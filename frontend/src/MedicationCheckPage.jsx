@@ -118,9 +118,21 @@ const MedicationCheckPage = ({
   }, []);
 
   useEffect(() => {
-    if (!isCaregiver && patients[0]?.id) {
-      setSelectedPatientId(patients[0].id);
+    if (isCaregiver) {
+      setSelectedPatientId("all");
+      setSelectedIds([]);
+      setSelectedCaregiverMealByPatient({});
+      setMealReminderDraft(null);
+      return;
     }
+
+    if (patients[0]?.id) {
+      setSelectedPatientId(patients[0].id);
+    } else {
+      setSelectedPatientId("");
+    }
+
+    setSelectedMealLabel("아침");
   }, [isCaregiver, patients]);
 
   useEffect(() => {
