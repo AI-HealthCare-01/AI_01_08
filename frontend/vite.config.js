@@ -5,7 +5,7 @@ const apiProxy = process.env.VITE_API_PROXY || "http://127.0.0.1:8002";
 
 export default defineConfig(({ command }) => ({
   // Keep dev at root and serve built assets under /app.
-  base: command === "serve" ? "/" : "/app/",
+  base: "/",
   plugins: [react()],
   server: {
     port: 5173,
@@ -18,7 +18,6 @@ export default defineConfig(({ command }) => ({
     }
   },
   build: {
-    outDir: "../app/ui/auth-demo",
-    emptyOutDir: true
+    outDir: "dist",
   },
 }));

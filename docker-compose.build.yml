@@ -1,0 +1,27 @@
+services:
+  fastapi:
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+      platforms:
+        - "linux/amd64"
+        - "linux/arm64"
+
+  ai-worker:
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:ai-${APP_VERSION}
+    build:
+      context: .
+      dockerfile: ai_worker/Dockerfile
+      platforms:
+        - "linux/amd64"
+        - "linux/arm64"
+
+  nginx:
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:nginx
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+      platforms:
+        - "linux/amd64"
+        - "linux/arm64"
