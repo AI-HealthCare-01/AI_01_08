@@ -889,10 +889,30 @@ function AiPage({
   const sendChatMessage = async () => {
     if (!chatInput.trim() || chatState.sending) return;
 
-    setChatState((prev) => ({ ...prev, sending: true, error: null }));
+    const content = chatInput.trim();
+    const tempKey = Date.now();
+    const optimisticUserMessage = {
+      message_id: `temp-user-${tempKey}`,
+      role: "user",
+      content,
+      created_at: new Date().toISOString(),
+    };
+    const pendingAssistantMessage = {
+      message_id: `temp-assistant-${tempKey}`,
+      role: "assistant",
+      content: "",
+      created_at: new Date().toISOString(),
+      pending: true,
+    };
+
+    setChatState((prev) => ({
+      ...prev,
+      sending: true,
+      error: null,
+      messages: [...prev.messages, optimisticUserMessage, pendingAssistantMessage],
+    }));
     try {
       const sessionId = await ensureChatSession();
-      const content = chatInput.trim();
       setChatInput("");
       const res = await authFetch(`${API_PREFIX}/chat/sessions/${sessionId}/messages`, {
         method: "POST",
@@ -906,13 +926,22 @@ function AiPage({
         ...prev,
         sending: false,
         sessionId,
-        messages: [...prev.messages, userMessage, assistantMessage].filter(Boolean),
+        messages: prev.messages.flatMap((message) => {
+          if (message.message_id === optimisticUserMessage.message_id) {
+            return [userMessage || message];
+          }
+          if (message.message_id === pendingAssistantMessage.message_id) {
+            return assistantMessage ? [assistantMessage] : [];
+          }
+          return [message];
+        }),
       }));
     } catch (error) {
       setChatState((prev) => ({
         ...prev,
         sending: false,
         error: error?.message || String(error),
+        messages: prev.messages.filter((message) => message.message_id !== pendingAssistantMessage.message_id),
       }));
     }
   };
@@ -1838,7 +1867,18 @@ function AiPage({
                             fontSize: "0.98rem",
                           }}
                         >
-                          <div>{renderChatContent(message.content)}</div>
+                          {message.pending ? (
+                            <div className="chat-typing-bubble" aria-live="polite" aria-label="AI가 응답을 준비하고 있습니다.">
+                              <span className="chat-typing-label">입력 중</span>
+                              <span className="chat-typing-dots" aria-hidden="true">
+                                <span />
+                                <span />
+                                <span />
+                              </span>
+                            </div>
+                          ) : (
+                            <div>{renderChatContent(message.content)}</div>
+                          )}
                           {message.emergency_message && (
                             <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "#c0392b", lineHeight: 1.7 }}>
                               {message.emergency_message}
