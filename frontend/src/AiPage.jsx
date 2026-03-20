@@ -1108,7 +1108,7 @@ function AiPage({
 
   if (!accessToken) {
     if (typeof window !== "undefined") {
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
     }
     return null;
   }
@@ -1787,7 +1787,7 @@ function AiPage({
                       className="btn btn-primary btn-sm"
                       style={primaryActionButtonStyle}
                       onClick={() => {
-                        window.location.href = "/auth-demo/app/profile";
+                        window.location.href = "/app/profile";
                       }}
                     >
                       {chatSetupHint.ctaLabel}

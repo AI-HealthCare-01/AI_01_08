@@ -101,7 +101,7 @@
         </div>
         <button onclick="login()">로그인</button>
         <button class="sub-btn" onclick="showSignup()">회원가입 화면으로 이동</button>
-        <div class="helper">기본 이동 경로: <code>/auth-demo/app</code></div>
+        <div class="helper">기본 이동 경로: <code>/app</code></div>
         <div class="social">
           <button class="sub-btn" onclick="socialLogin('kakao')">카카오로 로그인</button>
         </div>
@@ -179,8 +179,8 @@
             sessionStorage.setItem("access_token", body.access_token);
           }
           sessionStorage.setItem("login_role", payload.role);
-          setOut({ status: res.status, ok: true, body, redirect_to: "/auth-demo/app" });
-          window.location.href = "/auth-demo/app";
+          setOut({ status: res.status, ok: true, body, redirect_to: "/app" });
+          window.location.href = "/app";
         } catch (err) {
           setOut({ status: "fetch_error", error: String(err) });
         }

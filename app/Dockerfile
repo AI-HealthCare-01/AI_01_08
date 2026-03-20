@@ -22,11 +22,6 @@ COPY ./docs ./docs
 RUN uv run --no-sync mkdocs build
 
 # 5. 프롬프트와 로컬 소스 코드를 컨테이너 내부로 복사합니다.
+COPY ./app_worker ./app_worker
 COPY ./prompts ./prompts
 COPY ./app ./app
-
-# 6. 해당 이미지를 활용하여 도커컨테이너 실행시 실행되는 명령어입니다.
-# FastAPI를 uvicorn을 활용하여 비동기 환경으로 서버를 실행합니다.
-# --no-sync 옵션은 uv run시 uv.lock파일과 환경에 설치된 패키지들을 비교하여 없는 패키지를 설치하기 때문에
-# 불필요한 의존성을 설치하지 않기 위해 사용합니다.
-CMD ["uv", "run", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "3"]

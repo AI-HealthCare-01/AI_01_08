@@ -315,7 +315,7 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange,
       }
       clearAuthState();
       if (typeof window !== "undefined") {
-        window.location.href = "/auth-demo/login";
+        window.location.href = "/login";
       }
     } catch (error) {
       setWithdrawState({
@@ -416,8 +416,8 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange,
             <div className="card-body">
               <h5 className="fw-bold mb-3">계정</h5>
               <div className="d-grid gap-2">
-                <a className="btn btn-outline-primary" href="/auth-demo/app/profile">내 정보 수정</a>
-                <a className="btn btn-outline-secondary" href="/auth-demo/login">로그인 화면으로 이동</a>
+                <a className="btn btn-outline-primary" href="/app/profile">내 정보 수정</a>
+                <a className="btn btn-outline-secondary" href="/login">로그인 화면으로 이동</a>
               </div>
 
               <hr className="my-4" />

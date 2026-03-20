@@ -247,40 +247,40 @@ function App() {
 
   const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
   const isLoginPage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/login") || pathname.startsWith("/auth-demo/app/login");
+    return pathname.startsWith("/login") || pathname.startsWith("/app/login");
   }, [pathname]);
   const isSignupPage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/signup") || pathname.startsWith("/auth-demo/app/signup");
+    return pathname.startsWith("/signup") || pathname.startsWith("/app/signup");
   }, [pathname]);
   const isProfilePage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/profile") || pathname.startsWith("/auth-demo/app/profile");
+    return pathname.startsWith("/profile") || pathname.startsWith("/app/profile");
   }, [pathname]);
   const isDashboardPage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/dashboard") || pathname.startsWith("/auth-demo/app/dashboard");
+    return pathname.startsWith("/dashboard") || pathname.startsWith("/app/dashboard");
   }, [pathname]);
   const isHealthProfilePage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/health-profile") || pathname.startsWith("/auth-demo/app/health-profile");
+    return pathname.startsWith("/health-profile") || pathname.startsWith("/app/health-profile");
   }, [pathname]);
   const isDocumentsPage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/documents") || pathname.startsWith("/auth-demo/app/documents");
+    return pathname.startsWith("/documents") || pathname.startsWith("/app/documents");
   }, [pathname]);
   const isCaregiverPage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/caregiver") || pathname.startsWith("/auth-demo/app/caregiver");
+    return pathname.startsWith("/caregiver") || pathname.startsWith("/app/caregiver");
   }, [pathname]);
   const isAiPage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/ai") || pathname.startsWith("/auth-demo/app/ai");
+    return pathname.startsWith("/ai") || pathname.startsWith("/app/ai");
   }, [pathname]);
   const isDrugSearchPage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/drug-search") || pathname.startsWith("/auth-demo/app/drug-search");
+    return pathname.startsWith("/drug-search") || pathname.startsWith("/app/drug-search");
   }, [pathname]);
   const isMedicationCheckPage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/medication-check") || pathname.startsWith("/auth-demo/app/medication-check");
+    return pathname.startsWith("/medication-check") || pathname.startsWith("/app/medication-check");
   }, [pathname]);
   const isSchedulePage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/schedule") || pathname.startsWith("/auth-demo/app/schedule");
+    return pathname.startsWith("/schedule") || pathname.startsWith("/app/schedule");
   }, [pathname]);
   const isSettingsPage = useMemo(() => {
-    return pathname.startsWith("/auth-demo/settings") || pathname.startsWith("/auth-demo/app/settings");
+    return pathname.startsWith("/settings") || pathname.startsWith("/app/settings");
   }, [pathname]);
   const isHomePage =
     !isLoginPage &&
@@ -536,9 +536,9 @@ function App() {
       let nextPath = currentPath;
 
       if (nextMode === "ADMIN") {
-        nextPath = "/auth-demo/app/dashboard";
-      } else if (currentPath.startsWith("/auth-demo/app/dashboard") || currentPath.startsWith("/auth-demo/dashboard")) {
-        nextPath = "/auth-demo/app";
+        nextPath = "/app/dashboard";
+      } else if (currentPath.startsWith("/app/dashboard") || currentPath.startsWith("/dashboard")) {
+        nextPath = "/app";
       }
 
       if (nextPath !== currentPath) {
@@ -933,7 +933,7 @@ function App() {
         throw new Error(message);
       }
       setSignupState({ submitting: false, error: null, success: true });
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
     } catch (error) {
       setSignupState({
         submitting: false,
@@ -975,7 +975,7 @@ function App() {
         persistLoginRole(role);
       }
       setLoginState({ submitting: false, error: null });
-      window.location.href = "/auth-demo/app";
+      window.location.href = "/app";
     } catch (error) {
       setLoginState({ submitting: false, error: formatApiError(error?.message || error) });
     }
@@ -1078,7 +1078,7 @@ function App() {
       setNotificationsState({ loading: false, items: [], nextCursor: null, error: null });
       setUnreadCountState({ loading: false, count: 0, error: null });
       if (typeof window !== "undefined") {
-        window.location.href = "/auth-demo/login";
+        window.location.href = "/login";
       }
     }
   };
@@ -1095,7 +1095,7 @@ function App() {
         throw new Error(formatApiError(body) || `status ${res.status}`);
       }
       persistAccessToken(null);
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
     } catch (error) {
       setWithdrawState({ submitting: false, error: error.message || "탈퇴 처리 중 오류가 발생했습니다." });
     }
@@ -1522,7 +1522,7 @@ function App() {
                       <button type="submit" className="btn btn-primary btn-lg" disabled={signupState.submitting}>
                         {signupState.submitting ? "처리 중..." : "회원가입"}
                       </button>
-                      <a className="btn btn-outline-secondary" href="/auth-demo/login">
+                      <a className="btn btn-outline-secondary" href="/login">
                         로그인으로 돌아가기
                       </a>
                     </div>
@@ -1543,7 +1543,7 @@ function App() {
 
   if (isLoginPage) {
     if (accessToken) {
-      window.location.href = "/auth-demo/app";
+      window.location.href = "/app";
       return null;
     }
     if (authChecking) {
@@ -1619,7 +1619,7 @@ function App() {
                       >
                         카카오톡 간편로그인
                       </button>
-                      <a className="btn btn-outline-secondary" href="/auth-demo/signup">
+                      <a className="btn btn-outline-secondary" href="/signup">
                         회원가입
                       </a>
                       <button
@@ -1790,7 +1790,7 @@ function App() {
         </div>
       );
     }
-    window.location.href = "/auth-demo/login";
+    window.location.href = "/login";
     return null;
   }
 
@@ -1804,7 +1804,7 @@ function App() {
         </div>
       );
     }
-    window.location.href = "/auth-demo/login";
+    window.location.href = "/login";
     return null;
   }
 
@@ -1819,7 +1819,7 @@ function App() {
           </div>
         );
       }
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
       return null;
     }
     if (normalizedLoginMode !== "ADMIN") {
@@ -1857,7 +1857,7 @@ function App() {
           </div>
         );
       }
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
       return null;
     }
     return (
@@ -1882,7 +1882,7 @@ function App() {
           </div>
         );
       }
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
       return null;
     }
     return (
@@ -1910,7 +1910,7 @@ function App() {
           </div>
         );
       }
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
       return null;
     }
 
@@ -1940,7 +1940,7 @@ function App() {
           </div>
         );
       }
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
       return null;
     }
     return (
@@ -1964,7 +1964,7 @@ function App() {
           </div>
         );
       }
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
       return null;
     }
     return (
@@ -1988,7 +1988,7 @@ function App() {
           </div>
         );
       }
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
       return null;
     }
 
@@ -2017,7 +2017,7 @@ function App() {
           </div>
         );
       }
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
       return null;
     }
 
@@ -2045,7 +2045,7 @@ function App() {
           </div>
         );
       }
-      window.location.href = "/auth-demo/login";
+      window.location.href = "/login";
       return null;
     }
     return (
@@ -2554,7 +2554,7 @@ function App() {
         </section>
 
         <div className="home-side-stack">
-          <a className="card home-info-card home-core-card home-core-link-card" href="/auth-demo/app/medication-check">
+          <a className="card home-info-card home-core-card home-core-link-card" href="/app/medication-check">
             <div className="card-body">
               <h6 className="card-title fw-semibold">
                 {isCaregiverRole ? "💊 복약 확인 필요" : "💊 오늘 복약 일정"}
@@ -2607,7 +2607,7 @@ function App() {
             </div>
           </a>
 
-          <a className="card home-info-card home-core-card home-core-link-card" href="/auth-demo/app/caregiver">
+          <a className="card home-info-card home-core-card home-core-link-card" href="/app/caregiver">
             <div className="card-body">
               <h6 className="card-title fw-semibold">{isCaregiverRole ? "🔔 알림/리마인드" : "🔔 새로운 알림"}</h6>
               {homeNotificationsState.loading ? (

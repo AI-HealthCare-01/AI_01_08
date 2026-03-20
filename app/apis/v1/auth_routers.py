@@ -170,7 +170,7 @@ async def social_login_callback(
 
     accept_header = request.headers.get("accept", "")
     if "text/html" in accept_header:
-        redirect = RedirectResponse(url="/auth-demo/app", status_code=status.HTTP_302_FOUND)
+        redirect = RedirectResponse(url="/app", status_code=status.HTTP_302_FOUND)
         _set_refresh_cookie(redirect, tokens)
         return redirect
 

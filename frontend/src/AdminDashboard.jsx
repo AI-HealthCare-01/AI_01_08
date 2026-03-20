@@ -117,7 +117,7 @@ function AdminDashboard({ modeOptions = [], currentMode = "ADMIN", onModeChange 
     try {
       const token = localStorage.getItem("access_token");
       if (!token) {
-        window.location.href = "/auth-demo/login";
+        window.location.href = "/login";
         return;
       }
       
@@ -131,14 +131,14 @@ function AdminDashboard({ modeOptions = [], currentMode = "ADMIN", onModeChange 
       
       if (res.status === 401) {
         localStorage.removeItem("access_token");
-        window.location.href = "/auth-demo/login";
+        window.location.href = "/login";
         return;
       }
       
       if (res.status === 403) {
         localStorage.removeItem("access_token");
         alert("접근 권한이 없습니다. 로그인을 다시 해주세요.");
-        window.location.href = "/auth-demo/login";
+        window.location.href = "/login";
         return;
       }
       
@@ -229,7 +229,7 @@ function AdminDashboard({ modeOptions = [], currentMode = "ADMIN", onModeChange 
       <div className="py-2">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div className="d-flex align-items-center">
-          <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
+          <a href="/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
             <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
           </a>
           <div>
