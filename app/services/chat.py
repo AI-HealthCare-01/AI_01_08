@@ -310,6 +310,8 @@ def _extract_bracketed_drug_name(message: str) -> str | None:
     if len(candidate) < 2:
         return None
     return candidate
+
+
 _GENERAL_CAUTION_KEYWORDS = [
     "주의",
     "조심",
@@ -2320,7 +2322,8 @@ def _analyze_question(
     med_list_query = _contains_any(normalized, _MED_LIST_KEYWORDS)
     current_meds_interaction_query = _contains_any(
         normalized,
-        _MED_LIST_KEYWORDS + ["오늘 약", "오늘 먹는 약", "오늘 복용약", "지금 먹는 약", "현재 먹는 약", "현재 약", "복용약"],
+        _MED_LIST_KEYWORDS
+        + ["오늘 약", "오늘 먹는 약", "오늘 복용약", "지금 먹는 약", "현재 먹는 약", "현재 약", "복용약"],
     ) and _contains_any(normalized, ["같이", "상호작용", "함께", "조합", "조심", "주의", "같이 먹", "함께 먹"])
     target_med = _extract_target_med(
         message=normalized,
