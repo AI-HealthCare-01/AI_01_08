@@ -220,7 +220,15 @@ _TONIGHT_CHECK_KEYWORDS = [
     "오늘 복용할 약",
 ]
 _SCHEDULE_ORDER_KEYWORDS = ["순서대로", "정리해줘", "정리해 줘", "아침에 약이 너무 많", "복용 순서"]
-_ADHERENCE_PRIORITY_KEYWORDS = ["제일 중요한 약", "놓치면 안 되는 약", "까먹", "놓치면 안", "자주 까먹"]
+_ADHERENCE_PRIORITY_KEYWORDS = [
+    "제일 중요한 약",
+    "놓치면 안 되는 약",
+    "까먹",
+    "놓치면 안",
+    "자주 까먹",
+    "최근 놓친 약",
+    "최근 놓친",
+]
 _SYMPTOM_CAUSE_KEYWORDS = ["약 때문", "부작용일 수도", "의심해야", "원인일 수도", "때문일 수도"]
 _SYMPTOM_WORDS = ["어지러", "식은땀", "멍", "출혈", "두드러기", "발진", "기침", "숨", "호흡", "복통", "속쓰림"]
 _OBSERVATION_CHECK_KEYWORDS = ["뭘 더 봐", "무엇을 더 봐", "뭘 봐야", "상태가 뭐", "상태", "확인해야 할 상태"]
@@ -277,6 +285,31 @@ _BOT_CAPABILITY_KEYWORDS = [
 _MED_DETAIL_KEYWORDS = ["어떤 약", "무슨 약", "뭐하는 약", "설명해줘", "설명해 줘", "약 설명"]
 _FOLLOWUP_MED_REFERENCES = ["그 약", "이 약", "그거", "이거", "저 약", "해당 약"]
 _AFFIRMATIVE_SHORT_REPLIES = ["어", "응", "네", "넵", "예", "맞아", "그래", "맞아요", "그렇지", "좋아"]
+
+
+def _normalize_user_message(content: str) -> str:
+    normalized = str(content or "").replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized.strip()
+
+
+def _mask_log_value(value: str, *, keep: int = 12) -> str:
+    clean = _normalize_user_message(value)
+    if len(clean) <= keep:
+        return clean
+    return clean[:keep] + "..."
+
+
+def _extract_bracketed_drug_name(message: str) -> str | None:
+    normalized = _normalize_user_message(message)
+    match = re.fullmatch(r"[\(\[\{＜<]\s*([가-힣A-Za-z0-9+\-_/\.]{2,60})\s*[\)\]\}＞>]", normalized)
+    if not match:
+        return None
+    candidate = str(match.group(1) or "").strip()
+    if len(candidate) < 2:
+        return None
+    return candidate
 _GENERAL_CAUTION_KEYWORDS = [
     "주의",
     "조심",
@@ -2208,6 +2241,24 @@ def _is_profile_summary_query(message: str) -> bool:
     )
 
 
+def _is_profile_related_query(message: str) -> bool:
+    normalized = _normalize_user_message(message)
+    return (
+        _is_profile_body_query(normalized)
+        or _is_profile_summary_query(normalized)
+        or _contains_any(
+            normalized,
+            _PROFILE_SMOKING_KEYWORDS
+            + _PROFILE_ALCOHOL_KEYWORDS
+            + _PROFILE_SLEEP_KEYWORDS
+            + _PROFILE_EXERCISE_KEYWORDS
+            + _PROFILE_CONDITION_KEYWORDS
+            + _PROFILE_ALLERGY_KEYWORDS
+            + _PROFILE_HOSPITALIZATION_KEYWORDS,
+        )
+    )
+
+
 def _detect_time_period(message: str) -> str | None:
     normalized = (message or "").strip()
     if _contains_any(normalized, ["오늘 밤", "오늘 저녁", "자기 전", "취침 전", "밤에"]):
@@ -2262,15 +2313,15 @@ def _analyze_question(
     profile: PatientProfile | None,
     session_memory: ChatSessionMemory | None,
 ) -> QuestionAnalysis:
-    normalized = (message or "").strip()
-    profile_query = _is_profile_body_query(normalized) or _is_profile_summary_query(normalized)
+    normalized = _normalize_user_message(message)
+    profile_query = _is_profile_related_query(normalized)
     hospital_query = _contains_any(normalized, _HOSPITAL_SCHEDULE_KEYWORDS)
     hospital_followup_query = _is_hospital_followup_query(normalized, session_memory)
     med_list_query = _contains_any(normalized, _MED_LIST_KEYWORDS)
-    current_meds_interaction_query = _contains_any(normalized, _MED_LIST_KEYWORDS) and _contains_any(
+    current_meds_interaction_query = _contains_any(
         normalized,
-        ["같이", "상호작용", "함께", "조합", "조심", "주의", "같이 먹", "함께 먹"],
-    )
+        _MED_LIST_KEYWORDS + ["오늘 약", "오늘 먹는 약", "오늘 복용약", "지금 먹는 약", "현재 먹는 약", "현재 약", "복용약"],
+    ) and _contains_any(normalized, ["같이", "상호작용", "함께", "조합", "조심", "주의", "같이 먹", "함께 먹"])
     target_med = _extract_target_med(
         message=normalized,
         meds=meds,
@@ -2309,6 +2360,7 @@ def _analyze_question(
     )
     target_condition = _extract_condition_name(normalized, profile)
     time_period = _detect_time_period(normalized)
+    bracketed_drug_name = _extract_bracketed_drug_name(normalized)
     if (
         target_condition
         and external_drug_name
@@ -2345,6 +2397,19 @@ def _analyze_question(
         )
     elif _contains_any(normalized, _RASH_KEYWORDS):
         raw_intents = ["rash"]
+    elif bracketed_drug_name:
+        recent_topic = str(getattr(session_memory, "recent_topic", "") or "").strip()
+        pending = str(getattr(session_memory, "pending_clarification", "") or "").strip()
+        if target_med and recent_topic == "med_schedule":
+            raw_intents = ["med_detail", "schedule"]
+        elif target_med and pending == "interaction_scope":
+            raw_intents = ["medication_caution", "med_detail"]
+        elif pending == "interaction_scope":
+            raw_intents = ["medication_caution", "external_med"]
+        elif target_med:
+            raw_intents = ["med_detail"]
+        else:
+            raw_intents = ["external_med"]
     elif current_meds_interaction_query:
         raw_intents = ["medication_caution", "med_list"]
     elif explicit_new_drug_interaction_query:
@@ -2403,6 +2468,10 @@ def _analyze_question(
         normalized, _SYMPTOM_CAUSE_KEYWORDS + _FIRST_CHECK_KEYWORDS
     ):
         raw_intents = ["symptom_cause"]
+    elif _contains_any(normalized, _FOLLOWUP_MED_REFERENCES) and _contains_any(
+        normalized, _SCHEDULE_KEYWORDS + _MED_TIME_SPLIT_KEYWORDS
+    ):
+        raw_intents = ["med_detail", "schedule"]
     elif target_med and _contains_any(normalized, _SCHEDULE_KEYWORDS + _MED_TIME_SPLIT_KEYWORDS):
         raw_intents = ["med_detail", "schedule"]
     elif target_med:
@@ -2681,7 +2750,14 @@ def _extract_target_med(
     recent_messages: list[ChatMessage] | None = None,
     session_memory: ChatSessionMemory | None = None,
 ) -> dict[str, Any] | None:
-    normalized = (message or "").strip()
+    normalized = _normalize_user_message(message)
+    bracketed_name = _extract_bracketed_drug_name(normalized)
+    if bracketed_name:
+        for med in meds:
+            name = str(med.get("display_name") or "").strip()
+            if name and (_contains_keyword(bracketed_name, name) or _contains_keyword(name, bracketed_name)):
+                return med
+
     for med in meds:
         name = str(med.get("display_name") or "").strip()
         if name and _contains_keyword(normalized, name):
@@ -2874,7 +2950,10 @@ def _extract_external_drug_name(
     *,
     session_memory: ChatSessionMemory | None = None,
 ) -> str | None:
-    normalized = str(message or "").strip()
+    normalized = _normalize_user_message(message)
+    bracketed_name = _extract_bracketed_drug_name(normalized)
+    if bracketed_name:
+        return bracketed_name
     if _contains_any(
         normalized,
         _MED_LIST_KEYWORDS
@@ -2964,7 +3043,7 @@ async def _lookup_external_med_info(drug_name: str) -> dict[str, Any]:
                     result["mfds"] = item
                     break
     except Exception:
-        logger.exception("external med mfds lookup failed drug=%s", drug_name)
+        logger.exception("external med mfds lookup failed drug=%s", _mask_log_value(drug_name))
 
     try:
         if kids_client.is_enabled():
@@ -2976,7 +3055,7 @@ async def _lookup_external_med_info(drug_name: str) -> dict[str, Any]:
                     filtered_kids.append(item)
             result["kids"] = filtered_kids[:5]
     except Exception:
-        logger.exception("external med kids lookup failed drug=%s", drug_name)
+        logger.exception("external med kids lookup failed drug=%s", _mask_log_value(drug_name))
 
     return result
 
@@ -3641,7 +3720,7 @@ def _answer_tonight_check_intent(
         if name and any(keyword in notes for keyword in ["필요", "열날", "증상"]):
             extra_points.append(f"{name}은 증상이 있을 때만 복용하는 약인지 함께 확인해 주세요.")
     if tonight_lines:
-        base = f"{target_label} 기준으로 오늘 밤 챙겨야 할 약은 다음과 같습니다.\n" + "\n".join(
+        base = f"{target_label} 기준 오늘 복약 일정에서 밤에 챙겨야 할 약은 다음과 같습니다.\n" + "\n".join(
             f"- {line}" for line in tonight_lines
         )
         if extra_points:
@@ -4140,7 +4219,7 @@ def _build_clarification_reply(
     requester_role: RequesterRole,
     audience: str,
 ) -> str | None:
-    message = analysis.raw_message
+    message = _normalize_user_message(analysis.raw_message)
 
     if analysis.primary_intent == "general":
         if _contains_any(message, ["예약", "병원", "외래", "검사", "진료"]):
@@ -4176,7 +4255,8 @@ def _build_clarification_reply(
 
         if _contains_any(message, _FOLLOWUP_MED_REFERENCES):
             base = (
-                "어떤 약을 말하는지 약 이름을 한 번만 다시 적어 주세요. 복용 시간과 주의점까지 이어서 설명드리겠습니다."
+                "약 이름만 괄호로 다시 보내 주세요. 예: (푸마티펜정케토티펜)\n"
+                "이렇게 보내 주시면 그 약 기준으로 복용 시간이나 설명을 바로 이어서 안내해 드리겠습니다."
             )
             return (
                 _to_caregiver_style(answer=base, audience=audience)
@@ -4229,6 +4309,17 @@ async def _render_planned_reply(
         )
         >= 2
     ):
+        plan = ChatPlan(
+            topic=plan.topic,
+            requested_fields=plan.requested_fields,
+            referenced_drug_name=plan.referenced_drug_name,
+            needs_clarification=False,
+            clarification_question=None,
+            use_record_data=plan.use_record_data,
+            answer_style=plan.answer_style,
+        )
+
+    if plan.topic == "med_schedule" and plan.needs_clarification and context.schedules:
         plan = ChatPlan(
             topic=plan.topic,
             requested_fields=plan.requested_fields,
@@ -5748,7 +5839,13 @@ class ChatService:
         session_id: int,
         content: str,
     ) -> ChatMessageCreateResponse:
-        stripped = content.strip()
+        stripped = _normalize_user_message(content)
+        if not stripped:
+            raise ChatServiceError(
+                status_code=422,
+                code="MESSAGE_EMPTY",
+                message="메시지를 입력해 주세요.",
+            )
         if len(stripped) > CHAT_MAX_MESSAGE_CHARS:
             raise ChatServiceError(
                 status_code=422,
