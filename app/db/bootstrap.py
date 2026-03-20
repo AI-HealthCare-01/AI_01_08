@@ -152,10 +152,4 @@ async def _seed_admin_accounts() -> None:
 
 
 async def bootstrap_database() -> None:
-    # Create missing tables for current models without dropping existing data.
-    await Tortoise.generate_schemas(safe=True)
-    await ensure_users_schema_compatibility()
-    await ensure_roles_schema_compatibility()
-    await ensure_user_roles_schema_compatibility()
-    await ensure_notification_settings_schema_compatibility()
     await _seed_admin_accounts()

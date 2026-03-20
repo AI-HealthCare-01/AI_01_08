@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const BASE_MENU = [
-  { key: "home", label: "홈", href: "/auth-demo/app" },
-  { key: "documents", label: "처방전 업로드", href: "/auth-demo/app/documents" },
-  { key: "ai", label: "AI 가이드", href: "/auth-demo/app/ai" },
-  { key: "drug-search", label: "약 검색", href: "/auth-demo/app/drug-search" },
-  { key: "caregiver", label: "알림센터", href: "/auth-demo/app/caregiver" },
-  { key: "medication-check", label: "복약 체크", href: "/auth-demo/app/medication-check" },
-  { key: "schedule", label: "스케줄", href: "/auth-demo/app/schedule" },
-  { key: "health", label: "건강 프로필", href: "/auth-demo/app/health-profile" },
+  { key: "home", label: "홈", href: "/app" },
+  { key: "documents", label: "처방전 업로드", href: "/app/documents" },
+  { key: "ai", label: "AI 가이드", href: "/app/ai" },
+  { key: "drug-search", label: "약 검색", href: "/app/drug-search" },
+  { key: "caregiver", label: "알림센터", href: "/app/caregiver" },
+  { key: "medication-check", label: "복약 체크", href: "/app/medication-check" },
+  { key: "schedule", label: "스케줄", href: "/app/schedule" },
+  { key: "health", label: "건강 프로필", href: "/app/health-profile" },
 ];
 const API_PREFIX = "/api/v1";
 const getChatStorageKey = (role, patientId) => `ai-chat-session:${role || "UNKNOWN"}:${patientId || "unknown"}`;
@@ -52,7 +52,7 @@ const handleLogout = async () => {
     localStorage.removeItem("login_role");
     document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     document.cookie = "refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-    window.location.href = "/auth-demo/login";
+    window.location.href = "/login";
   }
 };
 
@@ -97,7 +97,7 @@ function AppLayout({
     `${effectiveCurrentMode}모드`;
   const canSwitchMode = typeof onModeChange === "function" && effectiveModeOptions.length > 1;
   const pathname = typeof window !== "undefined" ? window.location.pathname : "";
-  const isAiPage = pathname.startsWith("/auth-demo/ai") || pathname.startsWith("/auth-demo/app/ai");
+  const isAiPage = pathname.startsWith("/ai") || pathname.startsWith("/app/ai");
   const isChatMode = effectiveCurrentMode === "PATIENT" || effectiveCurrentMode === "CAREGIVER";
   const hasAccessToken = typeof window !== "undefined" && !!window.localStorage.getItem("access_token");
   const shouldRenderGlobalChat = !isAiPage && isChatMode && hasAccessToken;
@@ -470,7 +470,7 @@ function AppLayout({
     if (effectiveCurrentMode === "ADMIN") {
       return [
         ...BASE_MENU,
-        { key: "admin-dashboard", label: "관리자 대시보드", href: "/auth-demo/app/dashboard" },
+        { key: "admin-dashboard", label: "관리자 대시보드", href: "/app/dashboard" },
       ];
     }
     return BASE_MENU;
@@ -502,7 +502,7 @@ function AppLayout({
 
         <div className="doc-sidebar-bottom">
           <div className="doc-sidebar-footer">
-            <a className={`doc-sidebar-link ${activeKey === "settings" ? "active" : ""}`} href="/auth-demo/app/settings">
+            <a className={`doc-sidebar-link ${activeKey === "settings" ? "active" : ""}`} href="/app/settings">
               설정
             </a>
           </div>
@@ -531,7 +531,7 @@ function AppLayout({
                 ))}
               </select>
             </div>
-            <a className="app-profile-button" href="/auth-demo/app/profile" title="프로필">
+            <a className="app-profile-button" href="/app/profile" title="프로필">
               {profileInitial}
             </a>
             <button className="btn btn-outline-secondary btn-sm" type="button" onClick={handleLogout}>

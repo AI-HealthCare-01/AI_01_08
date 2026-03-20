@@ -49,6 +49,9 @@ class Config(BaseSettings):
     NAVER_OCR_API_URL: str = ""
     NAVER_OCR_SECRET_KEY: str = ""
     NAVER_OCR_TIMEOUT_SECONDS: int = 20
+    NAVER_OCR_MAX_RETRIES: int = 1
+    NAVER_OCR_RETRY_BACKOFF_SECONDS: float = 0.35
+    OCR_ENABLE_SUMMARY_AUGMENT_FOR_MED_GUIDE: bool = True
 
     MFDS_SERVICE_KEY: str = ""
     MFDS_BASE_URL: str = "http://apis.data.go.kr/1471000"

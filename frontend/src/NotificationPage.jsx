@@ -521,7 +521,7 @@ const NotificationPage = ({
       if (scheduledAt) params.set("scheduled_at", scheduledAt);
       if (scheduledDate) params.set("scheduled_date", scheduledDate);
       if (mealLabel) params.set("meal_label", mealLabel);
-      return `/auth-demo/app/medication-check${params.toString() ? `?${params.toString()}` : ""}`;
+      return `/app/medication-check${params.toString() ? `?${params.toString()}` : ""}`;
     }
 
     if (item.type === "hospital_schedule_reminder") {
@@ -529,13 +529,13 @@ const NotificationPage = ({
       if (patientId) params.set("patient_id", patientId);
       if (scheduleId) params.set("schedule_id", scheduleId);
       if (scheduledAt) params.set("scheduled_at", scheduledAt);
-      return `/auth-demo/app/schedule${params.toString() ? `?${params.toString()}` : ""}`;
+      return `/app/schedule${params.toString() ? `?${params.toString()}` : ""}`;
     }
 
     if (item.type === "ocr_done" || item.type === "ocr_failed") {
       return documentId
-        ? `/auth-demo/app/documents?document_id=${documentId}`
-        : "/auth-demo/app/documents";
+        ? `/app/documents?document_id=${documentId}`
+        : "/app/documents";
     }
 
     if (item.type === "guide_ready") {
@@ -543,7 +543,7 @@ const NotificationPage = ({
       if (patientId) params.set("patient_id", patientId);
       if (documentId) params.set("document_id", documentId);
       if (guideId) params.set("guide_id", guideId);
-      return `/auth-demo/app/ai${params.toString() ? `?${params.toString()}` : ""}`;
+      return `/app/ai${params.toString() ? `?${params.toString()}` : ""}`;
     }
 
     return null;

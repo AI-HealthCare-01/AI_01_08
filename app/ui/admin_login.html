@@ -66,7 +66,7 @@
                 <div class="card admin-login-card border-0 p-4">
                     <div class="card-body text-center">
                         <div class="mb-4">
-                            <img src="/auth-demo/app/assets/mascot.png" alt="약속이" style="width: 80px; height: auto;">
+                            <img src="/app/assets/mascot.png" alt="약속이" style="width: 80px; height: auto;">
                         </div>
                         
                         <div class="admin-badge">
@@ -111,7 +111,7 @@
                                 <a href="/admin/signup" class="text-decoration-none">관리자 회원가입</a>
                                 <br><br>
                                 일반 사용자이신가요? 
-                                <a href="/auth-demo/login" class="text-decoration-none">일반 로그인</a>
+                                <a href="/login" class="text-decoration-none">일반 로그인</a>
                             </small>
                         </div>
                     </div>
@@ -159,7 +159,7 @@
                     localStorage.setItem('user_role', 'ADMIN');
                     
                     // 관리자 대시보드로 리다이렉트
-                    window.location.href = '/auth-demo/app/dashboard';
+                    window.location.href = '/app/dashboard';
                 } else {
                     throw new Error(data.detail || '로그인에 실패했습니다.');
                 }
@@ -180,7 +180,7 @@
             const role = localStorage.getItem('user_role');
             
             if (token && role === 'ADMIN') {
-                window.location.href = '/auth-demo/app/dashboard';
+                window.location.href = '/app/dashboard';
             }
         });
     </script>

@@ -116,23 +116,23 @@ function CaregiverManagement() {
   };
 
   const viewPatientDocuments = (patientId) => {
-    window.location.href = `/auth-demo/app/documents?patient_id=${patientId}`;
+    window.location.href = `/app/documents?patient_id=${patientId}`;
   };
 
   // Louis수정(기능추가): 보호자가 연동 복약자 건강 프로필 편집 화면으로 바로 진입할 수 있게 추가
   const editPatientProfile = (linkId) => {
-    window.location.href = `/auth-demo/app/health-profile?link_id=${linkId}`;
+    window.location.href = `/app/health-profile?link_id=${linkId}`;
   };
 
   // Louis수정(기능추가): 보호자가 연동 복약자 기준 AI 상담으로 바로 이동할 수 있게 추가
   const openPatientAi = (patientId) => {
-    window.location.href = `/auth-demo/app/ai?patient_id=${patientId}&open_chat=1`;
+    window.location.href = `/app/ai?patient_id=${patientId}&open_chat=1`;
   };
 
   return (
     <div className="container py-5">
       <div className="d-flex align-items-center mb-4">
-        <a href="/auth-demo/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
+        <a href="/app" style={{ cursor: 'pointer', textDecoration: 'none' }}>
           <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이" style={{ width: '120px', height: 'auto', marginRight: '20px' }} />
         </a>
         <h2 className="mb-0">보호자 관리</h2>

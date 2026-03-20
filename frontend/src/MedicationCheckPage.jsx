@@ -1076,7 +1076,7 @@ const MedicationCheckPage = ({
       `${patientName ? `${patientName} ` : ""}복용 기록이 없어 확인이 필요합니다. 복용 여부를 확인해 주세요.`
     );
 
-    window.location.href = `/auth-demo/app/notifications?${params.toString()}`;
+    window.location.href = `/app/notifications?${params.toString()}`;
   };
 
   const formatSelectedDate = () => {

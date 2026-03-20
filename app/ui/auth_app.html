@@ -186,7 +186,7 @@
       async function callApi(path, method, body) {
         const ok = await ensureAccessToken();
         if (!ok && path !== "/api/v1/auth/token/refresh") {
-          window.location.href = "/auth-demo/login";
+          window.location.href = "/login";
           return;
         }
         setOut({ status: "loading", method, url: path, request: body ?? null });
@@ -218,7 +218,7 @@
         } finally {
           sessionStorage.removeItem("access_token");
           sessionStorage.removeItem("login_role");
-          window.location.href = "/auth-demo/login";
+          window.location.href = "/login";
         }
       }
 
@@ -284,7 +284,7 @@
       (async () => {
         const ok = await ensureAccessToken();
         if (!ok) {
-          window.location.href = "/auth-demo/login";
+          window.location.href = "/login";
         }
       })();
     </script>

@@ -52,13 +52,12 @@ auth_app_index = auth_app_dir / "index.html"
 auth_app_assets = auth_app_dir / "assets"
 
 if auth_app_assets.exists():
-    app.mount("/auth-demo/app/assets", StaticFiles(directory=auth_app_assets), name="auth-demo-assets")
+    app.mount("/app/assets", StaticFiles(directory=auth_app_assets), name="app-assets")
 
 
 @app.get("/", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/login", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/signup", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/login", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/signup", include_in_schema=False, response_class=HTMLResponse)
 async def auth_login_page() -> HTMLResponse:
     if auth_app_index.exists():
         return HTMLResponse(content=auth_app_index.read_text(encoding="utf-8"))
@@ -83,7 +82,7 @@ async def admin_signup_page() -> HTMLResponse:
     return HTMLResponse(content=admin_signup_file.read_text(encoding="utf-8"))
 
 
-@app.get("/auth-demo/app/mascot.png", include_in_schema=False)
+@app.get("/app/mascot.png", include_in_schema=False)
 async def mascot_image():
     from fastapi.responses import FileResponse
 
@@ -93,18 +92,18 @@ async def mascot_image():
     return HTMLResponse(content="not found", status_code=404)
 
 
-@app.get("/auth-demo/app", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/dashboard", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/health-profile", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/documents", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/caregiver", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/ai", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/drug-search", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/schedule", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/medication-check", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/settings", include_in_schema=False, response_class=HTMLResponse)
-@app.get("/auth-demo/app/profile", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/dashboard", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/health-profile", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/documents", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/caregiver", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/ai", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/drug-search", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/schedule", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/medication-check", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/settings", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/app/profile", include_in_schema=False, response_class=HTMLResponse)
 async def auth_app_page() -> HTMLResponse:
     if auth_app_index.exists():
         return HTMLResponse(content=auth_app_index.read_text(encoding="utf-8"))
