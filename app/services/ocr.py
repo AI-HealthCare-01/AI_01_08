@@ -449,7 +449,9 @@ class OcrService:
         return "\n".join(lines)
 
     # REQ-DOC-003 - 네이버 OCR API 호출
-    async def _request_naver_ocr(self, document: Document) -> tuple[str, list[dict[str, str | float]]]:
+    async def _request_naver_ocr(  # noqa: C901
+        self, document: Document
+    ) -> tuple[str, list[dict[str, str | float]]]:
         if not config.NAVER_OCR_API_URL or not config.NAVER_OCR_SECRET_KEY:
             raise RuntimeError("NAVER_OCR_CONFIG_MISSING")
 
@@ -487,22 +489,58 @@ class OcrService:
         }
 
         timeout = httpx.Timeout(config.NAVER_OCR_TIMEOUT_SECONDS)
+        max_retries = max(0, int(config.NAVER_OCR_MAX_RETRIES))
+        base_backoff_seconds = max(0.0, float(config.NAVER_OCR_RETRY_BACKOFF_SECONDS))
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(config.NAVER_OCR_API_URL, headers=headers, json=payload)
+            for attempt in range(max_retries + 1):
+                try:
+                    response = await client.post(config.NAVER_OCR_API_URL, headers=headers, json=payload)
+                except (httpx.TimeoutException, httpx.TransportError):
+                    if attempt >= max_retries:
+                        raise
+                    await asyncio.sleep(
+                        self._build_naver_ocr_retry_delay_seconds(
+                            attempt=attempt,
+                            base_backoff_seconds=base_backoff_seconds,
+                        )
+                    )
+                    continue
 
-        if response.status_code >= status.HTTP_400_BAD_REQUEST:
-            raise RuntimeError(f"NAVER_OCR_HTTP_{response.status_code}")
+                if response.status_code >= status.HTTP_400_BAD_REQUEST:
+                    runtime_error = RuntimeError(f"NAVER_OCR_HTTP_{response.status_code}")
+                    if attempt < max_retries and self._is_retryable_naver_ocr_http_status(response.status_code):
+                        await asyncio.sleep(
+                            self._build_naver_ocr_retry_delay_seconds(
+                                attempt=attempt,
+                                base_backoff_seconds=base_backoff_seconds,
+                            )
+                        )
+                        continue
+                    raise runtime_error
 
-        data = response.json()
-        ocr_fields = self._extract_ocr_fields(data=data)
-        raw_text = self._extract_raw_text(data=data)
-        if not raw_text and ocr_fields:
-            raw_text = "\n".join(
-                str(field["text"]).strip() for field in ocr_fields if str(field.get("text") or "").strip()
-            )
-        if not raw_text:
-            raise RuntimeError("OCR_EMPTY_RESULT")
-        return raw_text, ocr_fields
+                data = response.json()
+                ocr_fields = self._extract_ocr_fields(data=data)
+                raw_text = self._extract_raw_text(data=data)
+                if not raw_text and ocr_fields:
+                    raw_text = "\n".join(
+                        str(field["text"]).strip() for field in ocr_fields if str(field.get("text") or "").strip()
+                    )
+                if not raw_text:
+                    raise RuntimeError("OCR_EMPTY_RESULT")
+                return raw_text, ocr_fields
+
+        raise RuntimeError("OCR_RETRY_EXHAUSTED")
+
+    @staticmethod
+    def _is_retryable_naver_ocr_http_status(status_code: int) -> bool:
+        return status_code == status.HTTP_429_TOO_MANY_REQUESTS or status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    @staticmethod
+    def _build_naver_ocr_retry_delay_seconds(*, attempt: int, base_backoff_seconds: float) -> float:
+        if base_backoff_seconds <= 0:
+            return 0.0
+        safe_attempt = max(0, min(attempt, 6))
+        return base_backoff_seconds * (2**safe_attempt)
 
     # REQ-DOC-004 - OCR 원문 텍스트 추출
     @staticmethod
@@ -772,6 +810,12 @@ class OcrService:
             )
             if med_guide_meds:
                 self._merge_schedule_from_summary(parsed_meds=med_guide_meds, summary_schedule_map=summary_schedule_map)
+                if config.OCR_ENABLE_SUMMARY_AUGMENT_FOR_MED_GUIDE:
+                    return self._filter_parsed_meds_with_summary(
+                        parsed_meds=med_guide_meds,
+                        summary_med_names=summary_med_names,
+                        summary_schedule_map=summary_schedule_map,
+                    )
                 return med_guide_meds
 
         summary_meds = self._parse_extracted_meds_with_regex(lines=summary_lines)
@@ -2153,5 +2197,7 @@ class OcrService:
         if isinstance(exc, httpx.TimeoutException):
             return "OCR_TIMEOUT"
         if isinstance(exc, httpx.HTTPError):
+            return "OCR_HTTP_ERROR"
+        if str(exc).startswith("NAVER_OCR_HTTP_"):
             return "OCR_HTTP_ERROR"
         return "OCR_FAILED"

@@ -610,3 +610,60 @@ def test_pipeline_parses_med_blocks_and_normalizes_with_summary_dictionary():
     assert parsed_map["슈다페드정"]["dosage_text"] == "1정씩"
     assert parsed_map["슈다페드정"]["frequency_text"] == "2회"
     assert parsed_map["슈다페드정"]["duration_text"] == "5일분"
+
+
+def test_parse_extracted_meds_with_ocr_fields_appends_missing_summary_meds():
+    ocr_service = OcrService()
+    ocr_fields = [
+        {"text": "약품명", "x_min": 40.0, "x_max": 120.0, "y_min": 90.0, "y_max": 110.0, "cx": 80.0, "cy": 100.0},
+        {"text": "복약안내", "x_min": 280.0, "x_max": 360.0, "y_min": 90.0, "y_max": 110.0, "cx": 320.0, "cy": 100.0},
+        {
+            "text": "인데놀정40mg",
+            "x_min": 40.0,
+            "x_max": 190.0,
+            "y_min": 120.0,
+            "y_max": 140.0,
+            "cx": 115.0,
+            "cy": 130.0,
+        },
+        {
+            "text": "0.5정씩 3회 7일분",
+            "x_min": 280.0,
+            "x_max": 430.0,
+            "y_min": 120.0,
+            "y_max": 140.0,
+            "cx": 355.0,
+            "cy": 130.0,
+        },
+        {"text": "약품명", "x_min": 40.0, "x_max": 100.0, "y_min": 220.0, "y_max": 240.0, "cx": 70.0, "cy": 230.0},
+        {"text": "투약량", "x_min": 140.0, "x_max": 200.0, "y_min": 220.0, "y_max": 240.0, "cx": 170.0, "cy": 230.0},
+        {"text": "횟수", "x_min": 230.0, "x_max": 270.0, "y_min": 220.0, "y_max": 240.0, "cx": 250.0, "cy": 230.0},
+        {"text": "일수", "x_min": 300.0, "x_max": 340.0, "y_min": 220.0, "y_max": 240.0, "cx": 320.0, "cy": 230.0},
+        {"text": "인데놀정40mg", "x_min": 40.0, "x_max": 180.0, "y_min": 250.0, "y_max": 270.0, "cx": 110.0, "cy": 260.0},
+        {"text": "0.5", "x_min": 150.0, "x_max": 170.0, "y_min": 250.0, "y_max": 270.0, "cx": 160.0, "cy": 260.0},
+        {"text": "3", "x_min": 235.0, "x_max": 245.0, "y_min": 250.0, "y_max": 270.0, "cx": 240.0, "cy": 260.0},
+        {"text": "7", "x_min": 305.0, "x_max": 315.0, "y_min": 250.0, "y_max": 270.0, "cx": 310.0, "cy": 260.0},
+        {"text": "슈다페드정", "x_min": 40.0, "x_max": 130.0, "y_min": 280.0, "y_max": 300.0, "cx": 85.0, "cy": 290.0},
+        {"text": "1", "x_min": 150.0, "x_max": 160.0, "y_min": 280.0, "y_max": 300.0, "cx": 155.0, "cy": 290.0},
+        {"text": "2", "x_min": 235.0, "x_max": 245.0, "y_min": 280.0, "y_max": 300.0, "cx": 240.0, "cy": 290.0},
+        {"text": "5", "x_min": 305.0, "x_max": 315.0, "y_min": 280.0, "y_max": 300.0, "cx": 310.0, "cy": 290.0},
+    ]
+
+    parsed_meds = ocr_service._parse_extracted_meds(raw_text="", ocr_fields=ocr_fields)
+    parsed_map = {item["name"]: item for item in parsed_meds}
+
+    assert "인데놀정" in parsed_map
+    assert parsed_map["인데놀정"]["frequency_text"] == "3회"
+    assert parsed_map["인데놀정"]["duration_text"] == "7일분"
+
+    assert "슈다페드정" in parsed_map
+    assert parsed_map["슈다페드정"]["dosage_text"] == "1정씩"
+    assert parsed_map["슈다페드정"]["frequency_text"] == "2회"
+    assert parsed_map["슈다페드정"]["duration_text"] == "5일분"
+
+
+def test_is_retryable_naver_ocr_http_status():
+    assert OcrService._is_retryable_naver_ocr_http_status(429) is True
+    assert OcrService._is_retryable_naver_ocr_http_status(500) is True
+    assert OcrService._is_retryable_naver_ocr_http_status(503) is True
+    assert OcrService._is_retryable_naver_ocr_http_status(400) is False
