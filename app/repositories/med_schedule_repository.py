@@ -19,12 +19,16 @@ class MedScheduleRepository:
         특정 환자의 기간과 겹치는 active 복약 스케줄 조회
         - [date_from, date_to]와 스케줄 기간이 겹치는 것만 조회
         """
-        return await MedSchedule.filter(
-            Q(patient_id=patient_id)
-            & Q(status="active")
-            & (Q(start_date__isnull=True) | Q(start_date__lte=date_to))
-            & (Q(end_date__isnull=True) | Q(end_date__gte=date_from))
-        ).all()
+        return (
+            await MedSchedule.filter(
+                Q(patient_id=patient_id)
+                & Q(status="active")
+                & (Q(start_date__isnull=True) | Q(start_date__lte=date_to))
+                & (Q(end_date__isnull=True) | Q(end_date__gte=date_from))
+            )
+            .select_related("patient_med")
+            .all()
+        )
 
     async def list_times_by_schedule_ids(
         self,

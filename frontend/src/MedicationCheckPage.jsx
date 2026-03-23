@@ -71,18 +71,21 @@ const MedicationCheckPage = ({
         ]
       : [];
   }, [isCaregiver, linkedPatients, myPatient]);
-
   const [selectedPatientId, setSelectedPatientId] = useState(
     isCaregiver ? "all" : patients[0]?.id || ""
   );
   const [selectedDate, setSelectedDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
+  const selectedMonthKey = useMemo(() => {
+    const date = selectedDate ? new Date(`${selectedDate}T00:00:00`) : new Date();
+    if (Number.isNaN(date.getTime())) return "";
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  }, [selectedDate]);
 
   const [statusData, setStatusData] = useState([]);
   const [calendarStatusData, setCalendarStatusData] = useState([]);
   const [summaryMap, setSummaryMap] = useState({});
-  const [medicationNameMap, setMedicationNameMap] = useState({});
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [error, setError] = useState(null);
@@ -94,6 +97,7 @@ const MedicationCheckPage = ({
   const [notificationTargetApplied, setNotificationTargetApplied] = useState(false);
   const statusLoadVersionRef = useRef(0);
   const calendarLoadVersionRef = useRef(0);
+  const calendarCacheRef = useRef(new Map());
   const notificationTarget = useMemo(() => {
     if (typeof window === "undefined") return null;
 
@@ -284,6 +288,7 @@ const MedicationCheckPage = ({
         schedule_id: Number(item.schedule_id),
         schedule_time_id: Number(item.schedule_time_id),
         patient_med_id: Number(item.patient_med_id),
+        medication_name: item.medication_name || null,
         scheduled_at: item.scheduled_at,
         scheduled_date: item.scheduled_at ? String(item.scheduled_at).slice(0, 10) : day,
         scheduled_time: formatTime(item.scheduled_at),
@@ -352,31 +357,6 @@ const MedicationCheckPage = ({
     return [];
   };
 
-  const fetchPatientMedicationGuide = async (patientId) => {
-    const params = new URLSearchParams();
-    params.set("patient_id", String(patientId));
-    params.set("include_other_active", "true");
-
-    const res = await authFetch(`${API_PREFIX}/documents/medication-guide?${params.toString()}`);
-    const body = await safeJson(res);
-
-    if (!res.ok) {
-      throw new Error(getErrorMessage(body, res.status));
-    }
-
-    const data = body?.data || body || {};
-    const items = Array.isArray(data?.items) ? data.items : [];
-    const guideMap = {};
-
-    items.forEach((item) => {
-      const patientMedId = Number(item?.patient_med_id);
-      if (!patientMedId) return;
-      guideMap[patientMedId] = item?.display_name || `복약 항목 #${patientMedId}`;
-    });
-
-    return guideMap;
-  };
-
   const loadStatus = async () => {
     const requestVersion = statusLoadVersionRef.current + 1;
     statusLoadVersionRef.current = requestVersion;
@@ -390,38 +370,25 @@ const MedicationCheckPage = ({
         if (requestVersion !== statusLoadVersionRef.current) return;
         setStatusData([]);
         setSummaryMap({});
-        setMedicationNameMap({});
         return;
       }
 
-      const results = await Promise.all(
-        targets.map(async (patientId) => {
-          const [statusResult, guideMap] = await Promise.all([
-            fetchPatientStatus(patientId),
-            fetchPatientMedicationGuide(patientId),
-          ]);
-          return { ...statusResult, guideMap };
-        })
-      );
+      const results = await Promise.all(targets.map((patientId) => fetchPatientStatus(patientId)));
 
       const mergedItems = results.flatMap((result) => result.items);
       const nextSummaryMap = {};
-      const nextMedicationNameMap = {};
       results.forEach((result) => {
         nextSummaryMap[result.patientId] = result.summary;
-        Object.assign(nextMedicationNameMap, result.guideMap);
       });
 
       if (requestVersion !== statusLoadVersionRef.current) return;
       setStatusData(mergedItems);
       setSummaryMap(nextSummaryMap);
-      setMedicationNameMap(nextMedicationNameMap);
     } catch (err) {
       if (requestVersion !== statusLoadVersionRef.current) return;
       setError(err.message || "복약 현황을 불러오지 못했습니다.");
       setStatusData([]);
       setSummaryMap({});
-      setMedicationNameMap({});
     } finally {
       if (requestVersion !== statusLoadVersionRef.current) return;
       setLoading(false);
@@ -439,13 +406,22 @@ const MedicationCheckPage = ({
     }
 
     const { from, to } = getMonthRange(selectedDate);
+    const cacheKey = `${targets.join(",")}:${from}:${to}`;
+    const cachedRows = calendarCacheRef.current.get(cacheKey);
+    if (cachedRows) {
+      if (requestVersion !== calendarLoadVersionRef.current) return;
+      setCalendarStatusData(cachedRows);
+      return;
+    }
 
     try {
       const rows = await Promise.all(
         targets.map((patientId) => fetchPatientCalendarStatus(patientId, from, to))
       );
+      const flattenedRows = rows.flat();
+      calendarCacheRef.current.set(cacheKey, flattenedRows);
       if (requestVersion !== calendarLoadVersionRef.current) return;
-      setCalendarStatusData(rows.flat());
+      setCalendarStatusData(flattenedRows);
     } catch {
       if (requestVersion !== calendarLoadVersionRef.current) return;
       setCalendarStatusData([]);
@@ -478,7 +454,7 @@ const MedicationCheckPage = ({
     return () => {
       active = false;
     };
-  }, [selectedPatientId, selectedDate, isCaregiver, patients]);
+  }, [selectedPatientId, selectedMonthKey, isCaregiver, patients.length]);
 
   const filteredItems = useMemo(() => {
     if (!isCaregiver || selectedPatientId === "all") return statusData;
@@ -519,7 +495,7 @@ const MedicationCheckPage = ({
   }, [filteredItems, groupedByPatient]);
 
   const getMedicationLabel = (item) =>
-    medicationNameMap[item.patient_med_id] || `복약 항목 #${item.patient_med_id}`;
+    item.medication_name || `복약 항목 #${item.patient_med_id}`;
 
   const getMealStatusSummary = (items) => {
     const takenCount = items.filter((item) => item.status === "taken").length;

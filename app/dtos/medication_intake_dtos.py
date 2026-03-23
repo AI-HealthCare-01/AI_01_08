@@ -17,6 +17,7 @@ class IntakeItem(BaseModel):
     schedule_id: int
     schedule_time_id: int
     patient_med_id: int
+    medication_name: str | None = None
     scheduled_at: datetime
     status: IntakeStatus
     taken_at: datetime | None = None

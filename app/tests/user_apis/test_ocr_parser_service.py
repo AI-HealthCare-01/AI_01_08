@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 from app.services.documents import DocumentService
@@ -824,3 +825,19 @@ def test_is_retryable_naver_ocr_http_status():
     assert OcrService._is_retryable_naver_ocr_http_status(500) is True
     assert OcrService._is_retryable_naver_ocr_http_status(503) is True
     assert OcrService._is_retryable_naver_ocr_http_status(400) is False
+
+
+def test_extract_schedule_end_date_defaults_to_start_date_when_duration_missing():
+    start_date = date(2026, 3, 23)
+
+    assert DocumentService._extract_schedule_end_date(start_date=start_date, duration_text=None) == start_date
+    assert (
+        DocumentService._extract_schedule_end_date(start_date=start_date, duration_text="복용기간 미상") == start_date
+    )
+    assert DocumentService._extract_schedule_end_date(start_date=start_date, duration_text="0일") == start_date
+
+
+def test_extract_schedule_end_date_uses_duration_when_present():
+    start_date = date(2026, 3, 23)
+
+    assert DocumentService._extract_schedule_end_date(start_date=start_date, duration_text="3일분") == date(2026, 3, 25)
