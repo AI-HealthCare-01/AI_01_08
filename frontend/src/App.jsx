@@ -9,6 +9,7 @@ import SettingsPage from "./SettingsPage.jsx";
 import NotificationPage from "./NotificationPage.jsx";
 import DrugSearchPage from "./DrugSearchPage.jsx";
 import MedicationCheckPage from "./MedicationCheckPage.jsx";
+import LandingPage from "./LandingPage.jsx";
 import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
@@ -246,6 +247,9 @@ function App() {
   });
 
   const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
+  const isLandingPage = useMemo(() => {
+    return pathname === "/";
+  }, [pathname]);
   const isLoginPage = useMemo(() => {
     return pathname.startsWith("/login") || pathname.startsWith("/app/login");
   }, [pathname]);
@@ -1387,6 +1391,10 @@ function App() {
       setRemindState({ submitting: false, error: formatApiError(error?.message || error), success: null });
     }
   };
+
+  if (isLandingPage) {
+    return <LandingPage />;
+  }
 
   if (isSignupPage) {
     return (

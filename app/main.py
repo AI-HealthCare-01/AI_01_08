@@ -45,6 +45,7 @@ app.include_router(v1_routers)
 
 auth_login_file = Path(__file__).resolve().parent / "ui" / "auth_login.html"
 auth_app_file = Path(__file__).resolve().parent / "ui" / "auth_app.html"
+landing_file = Path(__file__).resolve().parent / "ui" / "landing.html"
 admin_login_file = Path(__file__).resolve().parent / "ui" / "admin_login.html"
 admin_signup_file = Path(__file__).resolve().parent / "ui" / "admin_signup.html"
 auth_app_dir = Path(__file__).resolve().parent / "ui" / "auth-demo"
@@ -55,7 +56,6 @@ if auth_app_assets.exists():
     app.mount("/app/assets", StaticFiles(directory=auth_app_assets), name="app-assets")
 
 
-@app.get("/", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/login", include_in_schema=False, response_class=HTMLResponse)
 @app.get("/signup", include_in_schema=False, response_class=HTMLResponse)
 async def auth_login_page() -> HTMLResponse:
@@ -64,6 +64,13 @@ async def auth_login_page() -> HTMLResponse:
     if not auth_login_file.exists():
         return HTMLResponse(content="auth login file not found", status_code=404)
     return HTMLResponse(content=auth_login_file.read_text(encoding="utf-8"))
+
+
+@app.get("/", include_in_schema=False, response_class=HTMLResponse)
+async def landing_page() -> HTMLResponse:
+    if not landing_file.exists():
+        return auth_login_page()
+    return HTMLResponse(content=landing_file.read_text(encoding="utf-8"))
 
 
 @app.get("/admin/login", include_in_schema=False, response_class=HTMLResponse)
