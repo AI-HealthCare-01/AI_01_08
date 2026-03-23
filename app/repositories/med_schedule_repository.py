@@ -24,7 +24,7 @@ class MedScheduleRepository:
             & Q(status="active")
             & (Q(start_date__isnull=True) | Q(start_date__lte=date_to))
             & (Q(end_date__isnull=True) | Q(end_date__gte=date_from))
-        ).all()
+        ).select_related("patient_med").all()
 
     async def list_times_by_schedule_ids(
         self,

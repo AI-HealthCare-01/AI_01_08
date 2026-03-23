@@ -1106,15 +1106,15 @@ class DocumentService:
     @staticmethod
     def _extract_schedule_end_date(*, start_date: date, duration_text: str | None) -> date | None:
         if not duration_text:
-            return None
+            return start_date
 
         match = re.search(r"(\d+)\s*(?:일분|일|days?)", duration_text, flags=re.IGNORECASE)
         if not match:
-            return None
+            return start_date
 
         duration_days = int(match.group(1))
         if duration_days <= 0:
-            return None
+            return start_date
 
         return start_date + timedelta(days=duration_days - 1)
 
