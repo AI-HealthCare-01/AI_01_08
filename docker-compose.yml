@@ -51,6 +51,7 @@ services:
     env_file: .env
     environment:
       REDIS_URL: redis://redis:6379/0
+      CHAT_WORKER_QUEUE: chat_tasks
     command: | 
       sh -c "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
@@ -81,6 +82,7 @@ services:
       DB_PORT: 3306
       REDIS_URL: redis://redis:6379/0
       AI_WORKER_QUEUE: ai_tasks
+      CHAT_WORKER_QUEUE: chat_tasks
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL}
       MFDS_SERVICE_KEY: ${MFDS_SERVICE_KEY}

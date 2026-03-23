@@ -12,6 +12,9 @@ const BASE_MENU = [
 ];
 const API_PREFIX = "/api/v1";
 const getChatStorageKey = (role, patientId) => `ai-chat-session:${role || "UNKNOWN"}:${patientId || "unknown"}`;
+const isPendingAssistantMessage = (message) =>
+  String(message?.role || "").toLowerCase() === "assistant" && ["queued", "processing"].includes(String(message?.status || ""));
+const hasPendingAssistantMessages = (messages) => Array.isArray(messages) && messages.some(isPendingAssistantMessage);
 
 const safeJson = async (res) => {
   try {
@@ -236,13 +239,16 @@ function AppLayout({
     }
   };
 
-  const loadChatMessages = async (sessionId) => {
+  const loadChatMessages = async (sessionId, options = {}) => {
+    const { silent = false } = options;
     if (!sessionId) {
       setChatState((prev) => ({ ...prev, loading: false, sessionId: null, messages: [] }));
       return;
     }
 
-    setChatState((prev) => ({ ...prev, loading: true, error: null }));
+    if (!silent) {
+      setChatState((prev) => ({ ...prev, loading: true, error: null }));
+    }
     try {
       const res = await authFetch(`${API_PREFIX}/chat/sessions/${sessionId}/messages`);
       if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
@@ -252,7 +258,7 @@ function AppLayout({
         loading: false,
         sessionId,
         messages: body?.data?.items || [],
-        error: null,
+        error: silent ? prev.error : null,
       }));
     } catch (error) {
       setChatState((prev) => ({
@@ -404,21 +410,15 @@ function AppLayout({
       id: `temp-user-${tempKey}`,
       role: "user",
       content,
+      status: "completed",
       created_at: new Date().toISOString(),
-    };
-    const pendingAssistantMessage = {
-      id: `temp-assistant-${tempKey}`,
-      role: "assistant",
-      content: "",
-      created_at: new Date().toISOString(),
-      pending: true,
     };
 
     setChatState((prev) => ({
       ...prev,
       sending: true,
       error: null,
-      messages: [...prev.messages, optimisticUserMessage, pendingAssistantMessage],
+      messages: [...prev.messages, optimisticUserMessage],
     }));
     try {
       const sessionId = await ensureChatSession(selectedChatPatientId);
@@ -439,21 +439,28 @@ function AppLayout({
           if (message.id === optimisticUserMessage.id) {
             return [userMessage || message];
           }
-          if (message.id === pendingAssistantMessage.id) {
-            return assistantMessage ? [assistantMessage] : [];
-          }
           return [message];
-        }),
+        }).concat(assistantMessage ? [assistantMessage] : []),
       }));
     } catch (error) {
       setChatState((prev) => ({
         ...prev,
         sending: false,
         error: error?.message || String(error),
-        messages: prev.messages.filter((message) => message.id !== pendingAssistantMessage.id),
+        messages: prev.messages,
       }));
     }
   };
+
+  useEffect(() => {
+    if (!chatOpen || !chatState.sessionId || !hasPendingAssistantMessages(chatState.messages)) return undefined;
+
+    const timer = window.setInterval(() => {
+      loadChatMessages(chatState.sessionId, { silent: true });
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [chatOpen, chatState.sessionId, chatState.messages]);
 
   useEffect(() => {
     if (!shouldRenderGlobalChat) {
@@ -746,9 +753,9 @@ function AppLayout({
                               fontSize: "0.94rem",
                             }}
                           >
-                            {message?.pending ? (
+                            {isPendingAssistantMessage(message) ? (
                               <div className="chat-typing-bubble" aria-live="polite" aria-label="AI가 응답을 준비하고 있습니다.">
-                                <span className="chat-typing-label">입력 중</span>
+                                <span className="chat-typing-label">답변 준비 중</span>
                                 <span className="chat-typing-dots" aria-hidden="true">
                                   <span />
                                   <span />
@@ -757,6 +764,11 @@ function AppLayout({
                               </div>
                             ) : (
                               message?.content || ""
+                            )}
+                            {message?.status === "failed" && (
+                              <div style={{ color: "#c0392b", marginTop: "8px", fontSize: "0.82rem" }}>
+                                {message?.error_message || "답변 생성 중 오류가 발생했습니다."}
+                              </div>
                             )}
                           </div>
                         );

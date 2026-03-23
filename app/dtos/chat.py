@@ -52,6 +52,8 @@ class ChatMessageItem(BaseModel):
     message_id: int = Field(ge=1)
     role: str
     content: str
+    status: str = "completed"
+    error_message: str | None = None
     is_emergency: bool = False
     emergency_message: str | None = None
     disclaimer: str | None = None

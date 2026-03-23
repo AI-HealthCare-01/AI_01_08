@@ -398,6 +398,9 @@ const renderChatContent = (content) => {
 const getGuideStatusMeta = (status) => statusColorMap[status] || { bg: "#f1f5f9", color: "#475569", label: status || "상태 미확인" };
 
 const getChatStorageKey = (role, patientId) => `ai-chat-session:${role || "UNKNOWN"}:${patientId || "unknown"}`;
+const isPendingAssistantMessage = (message) =>
+  String(message?.role || "").toLowerCase() === "assistant" && ["queued", "processing"].includes(String(message?.status || ""));
+const hasPendingAssistantMessages = (messages) => Array.isArray(messages) && messages.some(isPendingAssistantMessage);
 
 const resolveChatSetupHint = ({ isCaregiver, selectedPatientId, profileMissing, profileError }) => {
   if (isCaregiver && !selectedPatientId) {
@@ -746,14 +749,17 @@ function AiPage({
     }
   };
 
-  const loadChatMessages = async (sessionId) => {
+  const loadChatMessages = async (sessionId, options = {}) => {
+    const { silent = false } = options;
     if (!sessionId) {
       setChatFeedbackState({});
       setChatState((prev) => ({ ...prev, sessionId: null, messages: [] }));
       return;
     }
 
-    setChatState((prev) => ({ ...prev, loading: true, error: null }));
+    if (!silent) {
+      setChatState((prev) => ({ ...prev, loading: true, error: null }));
+    }
     try {
       const res = await authFetch(`${API_PREFIX}/chat/sessions/${sessionId}/messages`);
       if (!res.ok) throw new Error(formatApiError(await safeJson(res)));
@@ -762,10 +768,12 @@ function AiPage({
         ...prev,
         sessionId,
         loading: false,
-        error: null,
+        error: silent ? prev.error : null,
         messages: body?.data?.items || [],
       }));
-      setChatFeedbackState({});
+      if (!silent) {
+        setChatFeedbackState({});
+      }
     } catch (error) {
       setChatState((prev) => ({
         ...prev,
@@ -895,21 +903,15 @@ function AiPage({
       message_id: `temp-user-${tempKey}`,
       role: "user",
       content,
+      status: "completed",
       created_at: new Date().toISOString(),
-    };
-    const pendingAssistantMessage = {
-      message_id: `temp-assistant-${tempKey}`,
-      role: "assistant",
-      content: "",
-      created_at: new Date().toISOString(),
-      pending: true,
     };
 
     setChatState((prev) => ({
       ...prev,
       sending: true,
       error: null,
-      messages: [...prev.messages, optimisticUserMessage, pendingAssistantMessage],
+      messages: [...prev.messages, optimisticUserMessage],
     }));
     try {
       const sessionId = await ensureChatSession();
@@ -930,21 +932,28 @@ function AiPage({
           if (message.message_id === optimisticUserMessage.message_id) {
             return [userMessage || message];
           }
-          if (message.message_id === pendingAssistantMessage.message_id) {
-            return assistantMessage ? [assistantMessage] : [];
-          }
           return [message];
-        }),
+        }).concat(assistantMessage ? [assistantMessage] : []),
       }));
     } catch (error) {
       setChatState((prev) => ({
         ...prev,
         sending: false,
         error: error?.message || String(error),
-        messages: prev.messages.filter((message) => message.message_id !== pendingAssistantMessage.message_id),
+        messages: prev.messages,
       }));
     }
   };
+
+  useEffect(() => {
+    if (!chatState.open || !chatState.sessionId || !hasPendingAssistantMessages(chatState.messages)) return undefined;
+
+    const timer = window.setInterval(() => {
+      loadChatMessages(chatState.sessionId, { silent: true });
+    }, 2000);
+
+    return () => window.clearInterval(timer);
+  }, [chatState.open, chatState.sessionId, chatState.messages]);
 
   const updateFeedbackState = (messageId, updater) => {
     setChatFeedbackState((prev) => {
@@ -1867,9 +1876,9 @@ function AiPage({
                             fontSize: "0.98rem",
                           }}
                         >
-                          {message.pending ? (
+                          {isPendingAssistantMessage(message) ? (
                             <div className="chat-typing-bubble" aria-live="polite" aria-label="AI가 응답을 준비하고 있습니다.">
-                              <span className="chat-typing-label">입력 중</span>
+                              <span className="chat-typing-label">답변 준비 중</span>
                               <span className="chat-typing-dots" aria-hidden="true">
                                 <span />
                                 <span />
@@ -1878,6 +1887,11 @@ function AiPage({
                             </div>
                           ) : (
                             <div>{renderChatContent(message.content)}</div>
+                          )}
+                          {message.status === "failed" && (
+                            <div className="small mt-3" style={{ color: "#c0392b", lineHeight: 1.7 }}>
+                              {message.error_message || "답변 생성 중 오류가 발생했습니다."}
+                            </div>
                           )}
                           {message.emergency_message && (
                             <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "#c0392b", lineHeight: 1.7 }}>
