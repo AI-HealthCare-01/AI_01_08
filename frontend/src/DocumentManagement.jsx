@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import AppLayout from "./components/AppLayout.jsx";
 
 const API_PREFIX = "/api/v1";
@@ -31,6 +31,7 @@ const updateFrequencyWithSlot = (frequencyText = "", slot, checked) => {
   const nextSlots = checked
     ? Array.from(new Set([...selectedSlots, slot]))
     : selectedSlots.filter((item) => item !== slot);
+  const orderedNextSlots = TIME_SLOTS.filter((timeSlot) => nextSlots.includes(timeSlot));
 
   const baseText = TIME_SLOTS.reduce((text, timeSlot) => text.replaceAll(timeSlot, " "), currentText)
     .replaceAll("/", " ")
@@ -39,14 +40,14 @@ const updateFrequencyWithSlot = (frequencyText = "", slot, checked) => {
     .trim();
 
   if (!baseText) {
-    return nextSlots.join("/");
+    return orderedNextSlots.join("/");
   }
 
-  if (nextSlots.length === 0) {
+  if (orderedNextSlots.length === 0) {
     return baseText;
   }
 
-  return `${baseText} ${nextSlots.join("/")}`.trim();
+  return `${baseText} ${orderedNextSlots.join("/")}`.trim();
 };
 
 function DrugRow({ drug, index, onChange, onDelete }) {
@@ -160,6 +161,13 @@ function DocumentManagement({
   const [previewMimeType, setPreviewMimeType] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(null);
+  const uploadVideoRef = useRef(null);
+  const uploadCanvasRef = useRef(null);
+  const uploadStreamRef = useRef(null);
+  const [uploadCameraOpen, setUploadCameraOpen] = useState(false);
+  const [uploadCameraLoading, setUploadCameraLoading] = useState(false);
+  const [uploadCameraError, setUploadCameraError] = useState(null);
+  const [uploadCameraStatus, setUploadCameraStatus] = useState("카메라를 열어 처방전을 바로 촬영할 수 있습니다.");
 
   const loadDocuments = useCallback(async () => {
     if (!isCaregiver && !myPatient?.id) {
@@ -230,6 +238,72 @@ function DocumentManagement({
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  const stopUploadCamera = useCallback(() => {
+    if (uploadStreamRef.current) {
+      uploadStreamRef.current.getTracks().forEach((track) => track.stop());
+      uploadStreamRef.current = null;
+    }
+    if (uploadVideoRef.current) {
+      uploadVideoRef.current.srcObject = null;
+    }
+    setUploadCameraOpen(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopUploadCamera();
+    };
+  }, [stopUploadCamera]);
+
+  useEffect(() => {
+    if (view !== "list") {
+      stopUploadCamera();
+    }
+  }, [stopUploadCamera, view]);
+
+  useEffect(() => {
+    if (!uploadCameraOpen) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        stopUploadCamera();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [stopUploadCamera, uploadCameraOpen]);
+
+  const startUploadCamera = useCallback(async () => {
+    setUploadCameraLoading(true);
+    setUploadCameraError(null);
+    setUploadCameraStatus("카메라를 시작하는 중입니다...");
+    try {
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        throw new Error("이 브라우저는 카메라 촬영을 지원하지 않습니다.");
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      uploadStreamRef.current = stream;
+      setUploadCameraOpen(true);
+      if (uploadVideoRef.current) {
+        uploadVideoRef.current.srcObject = stream;
+        await uploadVideoRef.current.play();
+      }
+      setUploadCameraStatus("처방전을 화면 안에 맞춘 뒤 '촬영 후 파일 적용' 버튼을 눌러주세요.");
+    } catch (err) {
+      setUploadCameraError(err?.message || "카메라를 열 수 없습니다.");
+      setUploadCameraStatus("카메라를 열지 못했습니다.");
+      stopUploadCamera();
+    } finally {
+      setUploadCameraLoading(false);
+    }
+  }, [stopUploadCamera]);
 
   const uploadPatientOptions = useMemo(() => {
     const patientMap = new Map();
@@ -309,8 +383,50 @@ function DocumentManagement({
       return;
     }
     setError(null);
+    setUploadCameraError(null);
+    if (uploadCameraOpen) {
+      stopUploadCamera();
+    }
     setSelectedFile(file);
   };
+
+  const handleCaptureForUpload = useCallback(async () => {
+    if (!uploadCameraOpen || !uploadVideoRef.current || !uploadCanvasRef.current) return;
+    setUploadCameraError(null);
+    setUploadCameraStatus("촬영 중입니다...");
+    try {
+      const video = uploadVideoRef.current;
+      const canvas = uploadCanvasRef.current;
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("캔버스 초기화에 실패했습니다.");
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise((resolve) => {
+        canvas.toBlob((value) => resolve(value), "image/jpeg", 0.92);
+      });
+      if (!blob) throw new Error("이미지 촬영에 실패했습니다.");
+
+      const capturedFile = new File([blob], `ocr-camera-${Date.now()}.jpg`, {
+        type: "image/jpeg",
+        lastModified: Date.now(),
+      });
+      if (!validateUploadFile(capturedFile)) {
+        return;
+      }
+
+      const fileInput = document.getElementById("fileInput");
+      if (fileInput) fileInput.value = "";
+      setSelectedFile(capturedFile);
+      setError(null);
+      setUploadCameraStatus("촬영 파일이 선택되었습니다. 업로드 버튼을 눌러주세요.");
+      stopUploadCamera();
+    } catch (err) {
+      setUploadCameraError(err?.message || "카메라 촬영에 실패했습니다.");
+      setUploadCameraStatus("촬영에 실패했습니다. 다시 시도해주세요.");
+    }
+  }, [stopUploadCamera, uploadCameraOpen, validateUploadFile]);
 
   const fetchDocumentBlob = useCallback(async (documentId) => {
     const response = await authFetch(`${API_PREFIX}/documents/${documentId}/file`);
@@ -395,6 +511,8 @@ function DocumentManagement({
       setSelectedFile(null);
       setDocumentTitle("");
       setPatientId("");
+      setUploadCameraError(null);
+      setUploadCameraStatus("카메라를 열어 처방전을 바로 촬영할 수 있습니다.");
       if (document.getElementById("fileInput")) document.getElementById("fileInput").value = "";
       setUploadNotice("업로드가 완료되었습니다. 문서 인식은 백그라운드에서 진행됩니다.");
       loadDocuments();
@@ -734,6 +852,7 @@ function DocumentManagement({
   };
 
   const goBackToList = () => {
+    stopUploadCamera();
     setView("list");
     setCurrentDoc(null);
     setOcrStatus(null);
@@ -765,6 +884,87 @@ function DocumentManagement({
     const isSuccess = ocrStatus?.ocr_status === "success";
     const isConfirmedDoc = Boolean(ocrStatus?.has_confirmed_meds || currentDoc?.has_confirmed_meds);
     const confirmButtonLabel = isConfirmedDoc ? "수정하기" : "확정하기";
+    const canPreviewPdf = Boolean(previewUrl) && (previewMimeType.includes("pdf") || currentDoc?.file_type === "pdf");
+    const canPreviewImage = Boolean(previewUrl) && (
+      previewMimeType.startsWith("image/") || currentDoc?.file_type === "image"
+    );
+    const documentInfoCard = (
+      <div className="doc-info-card">
+        <div className="d-flex align-items-center gap-2 mb-3">
+          <span style={{ fontSize: "1.2rem" }}>📄</span>
+          <strong>문서 정보</strong>
+        </div>
+        <div className="doc-preview-box">
+          {previewLoading && (
+            <div className="text-center py-4 text-muted">
+              <div className="spinner-border spinner-border-sm text-primary mb-2" role="status" />
+              <div className="small">문서 미리보기를 불러오는 중입니다.</div>
+            </div>
+          )}
+          {!previewLoading && previewError && (
+            <div className="text-center py-4 text-muted">
+              <div style={{ fontSize: "1.5rem" }}>⚠️</div>
+              <div className="small">{previewError}</div>
+            </div>
+          )}
+          {!previewLoading && !previewError && canPreviewPdf && (
+            <iframe title="문서 미리보기" src={previewUrl} className="doc-preview-frame" />
+          )}
+          {!previewLoading && !previewError && canPreviewImage && (
+            <img src={previewUrl} alt="문서 미리보기" className="doc-preview-image" />
+          )}
+          {!previewLoading && !previewError && (!previewUrl || (!canPreviewPdf && !canPreviewImage)) && (
+            <div className="text-muted text-center py-4">
+              <div style={{ fontSize: "2rem" }}>📄</div>
+              <div className="small">원본 보기로 확인해주세요.</div>
+            </div>
+          )}
+        </div>
+        <div className="mt-3 small">
+          <div className="d-flex justify-content-between mb-1">
+            <span className="text-muted">파일명</span>
+            <span className="fw-semibold">{currentDoc.original_filename || "—"}</span>
+          </div>
+          <div className="d-flex justify-content-between mb-1">
+            <span className="text-muted">업로드 날짜</span>
+            <span className="fw-semibold">{currentDoc.created_at ? new Date(currentDoc.created_at).toLocaleString("ko-KR") : "—"}</span>
+          </div>
+          <div className="d-flex justify-content-between mb-1">
+            <span className="text-muted">업로드 주체</span>
+            <span className="fw-semibold">본인</span>
+          </div>
+          <div className="d-flex justify-content-between mb-1">
+            <span className="text-muted">대상 복약자</span>
+            <span className="fw-semibold">{getPatientDisplayLabel(currentDoc.patient_id)}</span>
+          </div>
+        </div>
+        <div className="d-flex gap-2 mt-3">
+          <button
+            className="btn btn-outline-primary btn-sm flex-fill"
+            onClick={() => handleOpenOriginalFile(currentDoc.document_id)}
+          >
+            원본 보기
+          </button>
+          <button className="btn btn-outline-secondary btn-sm flex-fill" onClick={() => {
+            document.getElementById("reuploadInput")?.click();
+          }}>다시 업로드</button>
+          <button
+            className="btn btn-outline-danger btn-sm flex-fill"
+            onClick={() => handleDeleteDocument(currentDoc.document_id, { afterDelete: "backToList" })}
+            disabled={deletingDocument}
+          >
+            {deletingDocument ? "삭제 중..." : "삭제"}
+          </button>
+          <input
+            type="file"
+            id="reuploadInput"
+            className="d-none"
+            accept="image/*,.pdf"
+            onChange={handleReupload}
+          />
+        </div>
+      </div>
+    );
 
     return (
       <AppLayout
@@ -811,13 +1011,18 @@ function DocumentManagement({
 
           {/* OCR 실패 */}
           {isFailed && (
-            <div className="alert alert-danger">
-              문서 인식에 실패했습니다. {ocrStatus.error_message || ""}
-              <button className="btn btn-warning btn-sm ms-3" onClick={() => {
-                authFetch(`${API_PREFIX}/documents/${currentDoc.document_id}/retry`, { method: "POST" })
-                  .then(() => pollOcrStatus(currentDoc.document_id));
-              }}>재시도</button>
-            </div>
+            <>
+              <div className="alert alert-danger">
+                문서 인식에 실패했습니다. {ocrStatus.error_message || ""}
+                <button className="btn btn-warning btn-sm ms-3" onClick={() => {
+                  authFetch(`${API_PREFIX}/documents/${currentDoc.document_id}/retry`, { method: "POST" })
+                    .then(() => pollOcrStatus(currentDoc.document_id));
+                }}>재시도</button>
+              </div>
+              <div className="doc-top-cards mt-3">
+                {documentInfoCard}
+              </div>
+            </>
           )}
 
           {/* OCR 성공 */}
@@ -834,81 +1039,7 @@ function DocumentManagement({
 
               {/* 상단 카드 영역 */}
               <div className="doc-top-cards">
-                <div className="doc-info-card">
-                  <div className="d-flex align-items-center gap-2 mb-3">
-                    <span style={{ fontSize: "1.2rem" }}>📄</span>
-                    <strong>문서 정보</strong>
-                  </div>
-                  <div className="doc-preview-box">
-                    {previewLoading && (
-                      <div className="text-center py-4 text-muted">
-                        <div className="spinner-border spinner-border-sm text-primary mb-2" role="status" />
-                        <div className="small">문서 미리보기를 불러오는 중입니다.</div>
-                      </div>
-                    )}
-                    {!previewLoading && previewError && (
-                      <div className="text-center py-4 text-muted">
-                        <div style={{ fontSize: "1.5rem" }}>⚠️</div>
-                        <div className="small">{previewError}</div>
-                      </div>
-                    )}
-                    {!previewLoading && !previewError && previewUrl && previewMimeType.includes("pdf") && (
-                      <iframe title="문서 미리보기" src={previewUrl} className="doc-preview-frame" />
-                    )}
-                    {!previewLoading && !previewError && previewUrl && previewMimeType.startsWith("image/") && (
-                      <img src={previewUrl} alt="문서 미리보기" className="doc-preview-image" />
-                    )}
-                    {!previewLoading && !previewError && (!previewUrl || (!previewMimeType.includes("pdf") && !previewMimeType.startsWith("image/"))) && (
-                      <div className="text-muted text-center py-4">
-                        <div style={{ fontSize: "2rem" }}>📄</div>
-                        <div className="small">원본 보기로 확인해주세요.</div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-3 small">
-                    <div className="d-flex justify-content-between mb-1">
-                      <span className="text-muted">파일명</span>
-                      <span className="fw-semibold">{currentDoc.original_filename || "—"}</span>
-                    </div>
-                    <div className="d-flex justify-content-between mb-1">
-                      <span className="text-muted">업로드 날짜</span>
-                      <span className="fw-semibold">{currentDoc.created_at ? new Date(currentDoc.created_at).toLocaleString("ko-KR") : "—"}</span>
-                    </div>
-                    <div className="d-flex justify-content-between mb-1">
-                      <span className="text-muted">업로드 주체</span>
-                      <span className="fw-semibold">본인</span>
-                    </div>
-                    <div className="d-flex justify-content-between mb-1">
-                      <span className="text-muted">대상 복약자</span>
-                      <span className="fw-semibold">{getPatientDisplayLabel(currentDoc.patient_id)}</span>
-                    </div>
-                  </div>
-                  <div className="d-flex gap-2 mt-3">
-                    <button
-                      className="btn btn-outline-primary btn-sm flex-fill"
-                      onClick={() => handleOpenOriginalFile(currentDoc.document_id)}
-                    >
-                      원본 보기
-                    </button>
-                    <button className="btn btn-outline-secondary btn-sm flex-fill" onClick={() => {
-                      document.getElementById("reuploadInput")?.click();
-                    }}>다시 업로드</button>
-                    <button
-                      className="btn btn-outline-danger btn-sm flex-fill"
-                      onClick={() => handleDeleteDocument(currentDoc.document_id, { afterDelete: "backToList" })}
-                      disabled={deletingDocument}
-                    >
-                      {deletingDocument ? "삭제 중..." : "삭제"}
-                    </button>
-                    <input
-                      type="file"
-                      id="reuploadInput"
-                      className="d-none"
-                      accept="image/*,.pdf"
-                      onChange={handleReupload}
-                    />
-                  </div>
-                </div>
+                {documentInfoCard}
 
                 <StatCard label="추출된 약 개수" value={drugs.length} unit="개" color="#2563eb" />
                 <StatCard label="복용 일정 감지" value={freqCount} unit="개" color="#7c3aed" />
@@ -1024,7 +1155,6 @@ function DocumentManagement({
                     className="form-control"
                     onChange={handleFileChange}
                     accept="image/*,.pdf"
-                    required
                   />
                 </div>
                 <div className="col-md-3">
@@ -1059,6 +1189,66 @@ function DocumentManagement({
                   <button type="submit" className="btn btn-primary w-100" disabled={uploading || !selectedFile}>
                     {uploading ? "업로드 중..." : "업로드"}
                   </button>
+                </div>
+              </div>
+              <div className="mt-3">
+                <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                  <div className="small fw-semibold">카메라 촬영 업로드</div>
+                  <div className="d-flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${uploadCameraOpen ? "btn-outline-danger" : "btn-outline-primary"}`}
+                      onClick={uploadCameraOpen ? stopUploadCamera : startUploadCamera}
+                      disabled={uploading || uploadCameraLoading}
+                    >
+                      {uploadCameraLoading ? "준비 중..." : uploadCameraOpen ? "카메라 닫기" : "카메라 열기"}
+                    </button>
+                  </div>
+                </div>
+                <canvas ref={uploadCanvasRef} className="d-none" />
+                <div className="small text-muted mt-2">{uploadCameraStatus}</div>
+                {selectedFile && (
+                  <div className="small mt-1">
+                    선택 파일: <strong>{selectedFile.name}</strong>
+                  </div>
+                )}
+                {uploadCameraError && <div className="alert alert-danger mt-2 mb-0 py-2">{uploadCameraError}</div>}
+                <div
+                  className={`upload-camera-overlay ${uploadCameraOpen ? "is-open" : ""}`}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="처방전 카메라 촬영"
+                  onClick={stopUploadCamera}
+                >
+                  <div className="upload-camera-panel" onClick={(event) => event.stopPropagation()}>
+                    <div className="d-flex justify-content-between align-items-center gap-2 mb-3">
+                      <h6 className="fw-bold mb-0">처방전 카메라 촬영</h6>
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={stopUploadCamera}
+                        disabled={uploading}
+                      >
+                        닫기
+                      </button>
+                    </div>
+                    <div className="upload-camera-video-wrap">
+                      <video ref={uploadVideoRef} className="upload-camera-video" playsInline muted />
+                    </div>
+                    <div className="small text-muted mt-2 mb-3">
+                      화면에 처방전 전체가 들어오도록 맞춘 뒤 촬영하세요.
+                    </div>
+                    <div className="d-flex flex-wrap justify-content-end gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleCaptureForUpload}
+                        disabled={!uploadCameraOpen || uploading}
+                      >
+                        촬영 후 파일 적용
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </form>

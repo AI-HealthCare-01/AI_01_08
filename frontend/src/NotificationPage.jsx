@@ -62,6 +62,26 @@ const NotificationPage = ({
     }));
   }, [patientsSource]);
 
+  const caregiverPatientIdSet = useMemo(
+    () =>
+      new Set(
+        normalizedPatients
+          .map((patient) => Number(patient.id))
+          .filter((id) => Number.isFinite(id) && id > 0)
+      ),
+    [normalizedPatients]
+  );
+
+  const selfPatientId = useMemo(() => {
+    const id = Number(selfPatient?.id);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }, [selfPatient?.id]);
+
+  const myPatientId = useMemo(() => {
+    const id = Number(myPatient?.id);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }, [myPatient?.id]);
+
   const [notifications, setNotifications] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -139,8 +159,29 @@ const NotificationPage = ({
     });
   };
 
+  const resolveNotificationPatientId = (item) => {
+    const payload = item?.payload || item?.payload_json || {};
+    const candidate = payload?.patient_id ?? item?.patient_id;
+    const id = Number(candidate);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  };
+
+  const isVisibleForCurrentMode = (item) => {
+    const patientId = resolveNotificationPatientId(item);
+
+    if (isCaregiver) {
+      if (!patientId) return false;
+      if (selfPatientId && patientId === selfPatientId) return false;
+      return caregiverPatientIdSet.has(patientId);
+    }
+
+    if (!myPatientId) return true;
+    if (!patientId) return false;
+    return patientId === myPatientId;
+  };
+
   const loadNotifications = async (cursor = null, append = false) => {
-    if (!isCaregiver && !myPatient?.id) {
+    if (!isCaregiver && !myPatientId) {
       setNotifications([]);
       setNextCursor(null);
       setError(null);
@@ -163,8 +204,8 @@ const NotificationPage = ({
       if (cursor) {
         params.set("cursor", String(cursor));
       }
-      if (!isCaregiver && myPatient?.id) {
-        params.set("patient_id", String(myPatient.id));
+      if (!isCaregiver && myPatientId) {
+        params.set("patient_id", String(myPatientId));
       }
       if (unreadOnly) {
         params.set("unread_only", "true");
@@ -179,13 +220,7 @@ const NotificationPage = ({
       const body = await safeJson(res);
       const data = body?.data || body || {};
       const items = data?.items || [];
-      const visibleItems =
-        isCaregiver && selfPatient?.id
-          ? items.filter((item) => {
-              const payloadPatientId = item?.payload?.patient_id ?? item?.payload_json?.patient_id ?? item?.patient_id;
-              return String(payloadPatientId || "") !== String(selfPatient.id);
-            })
-          : items;
+      const visibleItems = items.filter(isVisibleForCurrentMode);
       const cursorValue = data?.next_cursor ?? null;
 
       setNotifications((prev) => {
@@ -202,15 +237,19 @@ const NotificationPage = ({
   };
 
   const loadUnreadCount = async () => {
-    if (!isCaregiver && !myPatient?.id) {
+    if (!isCaregiver && !myPatientId) {
       setUnreadCount(0);
+      return;
+    }
+
+    if (isCaregiver) {
       return;
     }
 
     try {
       const params = new URLSearchParams();
-      if (!isCaregiver && myPatient?.id) {
-        params.set("patient_id", String(myPatient.id));
+      if (!isCaregiver && myPatientId) {
+        params.set("patient_id", String(myPatientId));
       }
       const res = await authFetch(
         `${API_PREFIX}/notifications/unread-count${params.toString() ? `?${params.toString()}` : ""}`
@@ -248,7 +287,12 @@ const NotificationPage = ({
 
   useEffect(() => {
     loadAll();
-  }, [isCaregiver, myPatient?.id, selfPatient?.id, unreadOnly]);
+  }, [isCaregiver, myPatientId, selfPatientId, unreadOnly]);
+
+  useEffect(() => {
+    if (!isCaregiver) return;
+    setUnreadCount(notifications.filter((item) => !item.read_at).length);
+  }, [isCaregiver, notifications]);
 
   useEffect(() => {
     if (!isCaregiver || typeof window === "undefined") return;
@@ -320,8 +364,9 @@ const NotificationPage = ({
       const title = item.title || "";
       const body = item.body || "";
       const type = item.type || "";
-      const payloadPatientId =
-        item?.payload?.patient_id ?? item?.payload_json?.patient_id ?? item?.patient_id;
+      const payloadPatientId = resolveNotificationPatientId(item);
+
+      if (!isVisibleForCurrentMode(item)) return false;
 
       if (typeFilter !== "all" && type !== typeFilter) return false;
 
@@ -335,7 +380,18 @@ const NotificationPage = ({
 
       return [patientLabel, title, body, type].join(" ").toLowerCase().includes(keyword);
     });
-  }, [notifications, search, typeFilter, patientFilter, unreadOnly, isCaregiver, myPatient, normalizedPatients]);
+  }, [
+    notifications,
+    search,
+    typeFilter,
+    patientFilter,
+    unreadOnly,
+    isCaregiver,
+    myPatient,
+    myPatientId,
+    selfPatientId,
+    normalizedPatients,
+  ]);
 
   const getTypeMeta = (type) => TYPE_META[type] || TYPE_META.default;
 
@@ -383,9 +439,20 @@ const NotificationPage = ({
   const markAllRead = async () => {
     setActionLoading(true);
     try {
+      if (isCaregiver) {
+        const unreadIds = notifications.filter((item) => !item.read_at).map((item) => item.id);
+        if (unreadIds.length > 0) {
+          const results = await Promise.all(unreadIds.map((id) => markRead(id, true)));
+          if (results.some((ok) => !ok)) {
+            throw new Error("일부 알림의 읽음 처리에 실패했습니다.");
+          }
+        }
+        return;
+      }
+
       const params = new URLSearchParams();
-      if (!isCaregiver && myPatient?.id) {
-        params.set("patient_id", String(myPatient.id));
+      if (!isCaregiver && myPatientId) {
+        params.set("patient_id", String(myPatientId));
       }
       const res = await authFetch(`${API_PREFIX}/notifications/read-all${params.toString() ? `?${params.toString()}` : ""}`, {
         method: "PATCH",

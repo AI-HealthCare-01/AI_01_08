@@ -211,7 +211,7 @@
             successMessage.classList.add('d-none');
             
             try {
-                const response = await fetch(`${API_PREFIX}/auth/signup`, {
+                const response = await fetch(`${API_PREFIX}/auth/admin/signup`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -222,7 +222,8 @@
                         email,
                         phone_number: phone,
                         birth_date: birthday, // birthday -> birth_date
-                        password
+                        password,
+                        role: "ADMIN"
                     }),
                     credentials: 'include'
                 });

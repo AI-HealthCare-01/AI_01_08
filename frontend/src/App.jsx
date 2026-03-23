@@ -11,8 +11,12 @@ import DrugSearchPage from "./DrugSearchPage.jsx";
 import MedicationCheckPage from "./MedicationCheckPage.jsx";
 import LandingPage from "./LandingPage.jsx";
 import AppLayout from "./components/AppLayout.jsx";
+import { applyDarkMode, getStoredDarkMode } from "./theme.js";
 
 const API_PREFIX = "/api/v1";
+const DEVICE_ID_STORAGE_KEY = "device_id";
+const HOME_MEAL_ORDER = ["아침", "점심", "저녁", "취침"];
+const HOME_MEDICATION_GROUP_LIMIT = 5;
 
 
 
@@ -35,6 +39,21 @@ const formatDateTime = (value) => {
   return new Intl.DateTimeFormat("ko-KR", {
     dateStyle: "medium",
     timeStyle: "short"
+  }).format(date);
+};
+
+const formatDateTimeKst = (value) => {
+  if (!value) {
+    return "—";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("ko-KR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Seoul"
   }).format(date);
 };
 
@@ -68,6 +87,26 @@ const intakeStatusLabel = (status) => {
   return "복용대기";
 };
 
+const inferHomeMealLabel = (scheduledAt) => {
+  const date = new Date(scheduledAt);
+  if (Number.isNaN(date.getTime())) return "기타";
+  const hour = date.getHours();
+  if (hour < 10) return "아침";
+  if (hour < 15) return "점심";
+  if (hour < 20) return "저녁";
+  return "취침";
+};
+
+const resolveGroupIntakeStatus = (statuses = []) => {
+  if (statuses.includes("missed")) return "missed";
+  if (statuses.includes("pending")) return "pending";
+  if (statuses.length > 0 && statuses.every((status) => status === "taken")) return "taken";
+  if (statuses.length > 0 && statuses.every((status) => status === "skipped")) return "skipped";
+  if (statuses.includes("taken")) return "taken";
+  if (statuses.includes("skipped")) return "skipped";
+  return "pending";
+};
+
 const toDateKey = (value) => {
   if (!value) return "";
   const date = value instanceof Date ? value : new Date(value);
@@ -86,6 +125,31 @@ const resolveNotificationPatientId = (item) => {
   }
   const fallbackId = Number(item?.patient_id);
   return Number.isFinite(fallbackId) && fallbackId > 0 ? fallbackId : null;
+};
+
+const resolveClientDeviceId = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const storedId = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+  if (storedId) {
+    return storedId;
+  }
+  const generatedId =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `web-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+  window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, generatedId);
+  return generatedId;
+};
+
+const resolveClientPlatform = () => {
+  if (typeof navigator === "undefined") {
+    return "web";
+  }
+  const uaPlatform = navigator.userAgentData?.platform;
+  const platform = uaPlatform || navigator.platform || "web";
+  return String(platform).slice(0, 30);
 };
 
 function App() {
@@ -183,6 +247,8 @@ function App() {
     error: null,
     success: false
   });
+  const [linkedDeviceCount, setLinkedDeviceCount] = useState(null);
+  const [lastLoginAt, setLastLoginAt] = useState(null);
 
   const [inviteState, setInviteState] = useState({
     submitting: false,
@@ -195,7 +261,7 @@ function App() {
     success: false
   });
   const [inviteCodeForm, setInviteCodeForm] = useState({
-    expires_in_minutes: 10080
+    expires_in_minutes: 5
   });
   const [linkForm, setLinkForm] = useState({
     code: ""
@@ -369,6 +435,38 @@ function App() {
   };
 
   useEffect(() => {
+    applyDarkMode(getStoredDarkMode());
+  }, []);
+
+  useEffect(() => {
+    if (!accessToken) {
+      setLinkedDeviceCount(null);
+      setLastLoginAt(null);
+      return;
+    }
+    let mounted = true;
+    const syncThemeFromSettings = async () => {
+      try {
+        const res = await authFetch(`${API_PREFIX}/settings`);
+        if (!res.ok) {
+          return;
+        }
+        const data = await res.json();
+        if (!mounted) {
+          return;
+        }
+        applyDarkMode(!!data.dark_mode);
+      } catch {
+        // ignore theme sync errors
+      }
+    };
+    syncThemeFromSettings();
+    return () => {
+      mounted = false;
+    };
+  }, [accessToken]);
+
+  useEffect(() => {
     if (!isSignupPage) {
       return;
     }
@@ -398,6 +496,8 @@ function App() {
 
   useEffect(() => {
     if (!accessToken) {
+      setLinkedDeviceCount(null);
+      setLastLoginAt(null);
       return;
     }
     const loadMe = async () => {
@@ -430,8 +530,35 @@ function App() {
       }
     };
 
+    const registerCurrentDevice = async () => {
+      const deviceId = resolveClientDeviceId();
+      if (!deviceId) {
+        return;
+      }
+
+      try {
+        const res = await authFetch(`${API_PREFIX}/users/me/devices/register`, {
+          method: "POST",
+          body: JSON.stringify({
+            device_id: deviceId,
+            platform: resolveClientPlatform()
+          })
+        });
+        if (!res.ok) {
+          return;
+        }
+        const data = await res.json();
+        const count = Number(data?.linked_device_count);
+        setLinkedDeviceCount(Number.isFinite(count) ? count : null);
+        setLastLoginAt(data?.last_login_at || null);
+      } catch {
+        // ignore device registration failures
+      }
+    };
+
     loadMe();
     loadLinks();
+    registerCurrentDevice();
     // 알림 기능은 DB 스키마 문제로 비활성화
     // loadNotifications();
     // loadUnreadCount();
@@ -687,12 +814,33 @@ function App() {
             params.set("from", todayKey);
             params.set("to", todayKey);
 
-            const res = await authFetch(`${API_PREFIX}/schedules/status?${params.toString()}`);
-            if (!res.ok) {
-              return { patientId, items: [], summary: null };
+            const guideParams = new URLSearchParams();
+            guideParams.set("patient_id", String(patientId));
+            guideParams.set("include_other_active", "true");
+
+            const [statusRes, guideRes] = await Promise.all([
+              authFetch(`${API_PREFIX}/schedules/status?${params.toString()}`),
+              authFetch(`${API_PREFIX}/documents/medication-guide?${guideParams.toString()}`)
+            ]);
+
+            const guideMap = {};
+            if (guideRes.ok) {
+              const guideBody = await safeJson(guideRes);
+              const guideData = guideBody?.data || guideBody || {};
+              const guideItems = Array.isArray(guideData.items) ? guideData.items : [];
+              guideItems.forEach((guideItem) => {
+                const medId = Number(guideItem?.patient_med_id);
+                const displayName = String(guideItem?.display_name || "").trim();
+                if (!medId || !displayName) return;
+                guideMap[medId] = displayName;
+              });
             }
 
-            const body = await safeJson(res);
+            if (!statusRes.ok) {
+              return { patientId, items: [], summary: null, guideMap };
+            }
+
+            const body = await safeJson(statusRes);
             const data = body?.data || body || {};
             const days = Array.isArray(data.days) ? data.days : [];
 
@@ -708,27 +856,41 @@ function App() {
                 scheduled_at: item.scheduled_at,
                 scheduled_date: day,
                 status: normalizeIntakeStatus(item.status),
-                taken_at: item.taken_at
+                taken_at: item.taken_at,
+                display_name: String(item.display_name || "").trim()
               }));
             });
 
             return {
               patientId,
               items,
-              summary: data.summary || null
+              summary: data.summary || null,
+              guideMap
             };
           })
         );
 
         const summaryByPatient = {};
+        const medNameMap = new Map();
         rows.forEach((row) => {
           if (row.summary) {
             summaryByPatient[row.patientId] = row.summary;
           }
+          Object.entries(row.guideMap || {}).forEach(([patientMedId, displayName]) => {
+            if (!displayName) return;
+            medNameMap.set(`${row.patientId}-${patientMedId}`, displayName);
+          });
         });
 
         const items = rows
           .flatMap((row) => row.items)
+          .map((item) => {
+            const mappedName = medNameMap.get(`${item.patient_id}-${item.patient_med_id}`) || "";
+            return {
+              ...item,
+              display_name: item.display_name || mappedName
+            };
+          })
           .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
 
         if (isMounted) {
@@ -766,7 +928,10 @@ function App() {
       setHomeNotificationsState({ loading: true, items: [], error: null });
       try {
         const params = new URLSearchParams();
-        params.set("limit", "5");
+        params.set("limit", isCaregiverRole ? "30" : "10");
+        if (!isCaregiverRole && myPatient?.id) {
+          params.set("patient_id", String(myPatient.id));
+        }
         const res = await authFetch(`${API_PREFIX}/notifications?${params.toString()}`);
         if (!res.ok) {
           const body = await safeJson(res);
@@ -790,7 +955,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [accessToken, isHomePage, normalizedLoginMode]);
+  }, [accessToken, isHomePage, isCaregiverRole, normalizedLoginMode, myPatient?.id]);
 
   const checkHealth = async () => {
     setHealthStatus({ loading: true, data: null, error: null });
@@ -1136,7 +1301,7 @@ function App() {
     setInviteState({ submitting: true, error: null, data: null });
     try {
       const payload = {
-        expires_in_minutes: Number(inviteCodeForm.expires_in_minutes) || 10080
+        expires_in_minutes: Number(inviteCodeForm.expires_in_minutes) || 5
       };
       const res = await authFetch(`${API_PREFIX}/users/invite-code`, {
         method: "POST",
@@ -2081,7 +2246,7 @@ function App() {
       >
         <div className="container my-3">
           <div className="row g-4">
-            <div className="col-lg-7">
+            <div className="col-lg-6">
               <div className="card border-0 shadow-sm">
                 <div className="card-body">
                   <h5 className="card-title">기본 정보</h5>
@@ -2205,15 +2370,15 @@ function App() {
                 </div>
               </div>
             </div>
-            <div className="col-lg-5">
-              <div className="card border-0 shadow-sm mb-4">
+            <div className="col-lg-6">
+              <div className="card border-0 shadow-sm h-100">
                 <div className="card-body">
                   <h5 className="card-title">보안 설정</h5>
                   <p className="text-muted">최근 로그인 활동과 보안 옵션을 관리하세요.</p>
                   <ul className="list-group list-group-flush">
                     <li className="list-group-item d-flex justify-content-between">
                       <span>최근 로그인</span>
-                      <span className="fw-semibold">오늘</span>
+                      <span className="fw-semibold">{lastLoginAt ? formatDateTimeKst(lastLoginAt) : "확인 중..."}</span>
                     </li>
                     <li className="list-group-item d-flex justify-content-between">
                       <span>2단계 인증</span>
@@ -2221,74 +2386,11 @@ function App() {
                     </li>
                     <li className="list-group-item d-flex justify-content-between">
                       <span>연동된 기기</span>
-                      <span className="fw-semibold">2대</span>
+                      <span className="fw-semibold">
+                        {linkedDeviceCount === null ? "확인 중..." : `${linkedDeviceCount}대`}
+                      </span>
                     </li>
                   </ul>
-                </div>
-              </div>
-              <div className="card border-0 shadow-sm">
-                <div className="card-body">
-                  <h5 className="card-title">알림 설정</h5>
-                  <p className="text-muted">중요 알림을 수신할 방법을 선택하세요.</p>
-                  <form onSubmit={submitSettingsUpdate}>
-                    <div className="form-check">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="intake_reminder"
-                        name="intake_reminder"
-                        checked={settingsState.data?.intake_reminder ?? false}
-                        onChange={handleSettingsChange}
-                      />
-                      <label className="form-check-label" htmlFor="intake_reminder">
-                        복약 리마인드
-                      </label>
-                    </div>
-                    <div className="form-check">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="missed_alert"
-                        name="missed_alert"
-                        checked={settingsState.data?.missed_alert ?? false}
-                        onChange={handleSettingsChange}
-                      />
-                      <label className="form-check-label" htmlFor="missed_alert">
-                        미복용 알림
-                      </label>
-                    </div>
-                    <div className="form-check">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="ocr_done"
-                        name="ocr_done"
-                        checked={settingsState.data?.ocr_done ?? false}
-                        onChange={handleSettingsChange}
-                      />
-                      <label className="form-check-label" htmlFor="ocr_done">
-                        OCR 결과 알림
-                      </label>
-                    </div>
-                    <div className="form-check">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        id="guide_ready"
-                        name="guide_ready"
-                        checked={settingsState.data?.guide_ready ?? false}
-                        onChange={handleSettingsChange}
-                      />
-                      <label className="form-check-label" htmlFor="guide_ready">
-                        가이드 준비 완료
-                      </label>
-                    </div>
-                    <button className="btn btn-outline-primary btn-sm mt-3" type="submit" disabled={settingsState.submitting}>
-                      {settingsState.submitting ? "저장 중..." : "알림 설정 저장"}
-                    </button>
-                    {settingsState.error && <div className="alert alert-danger mt-3">{settingsState.error}</div>}
-                    {settingsState.success && <div className="alert alert-success mt-3">설정 저장 완료</div>}
-                  </form>
                 </div>
               </div>
             </div>
@@ -2325,33 +2427,54 @@ function App() {
 
   const rawHomeNotificationItems = homeNotificationsState.items || [];
   const homeNotificationItems = (() => {
+    const selfPatientId = Number(ownedPatientProfile?.id);
+    const normalizedSelfPatientId = Number.isFinite(selfPatientId) && selfPatientId > 0 ? selfPatientId : null;
+    const caregiverPatientIdSet = new Set(
+      linkedPatients
+        .map((patient) => Number(patient?.id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    );
+    const myPatientId = Number(myPatient?.id);
+    const normalizedMyPatientId = Number.isFinite(myPatientId) && myPatientId > 0 ? myPatientId : null;
+
+    const isVisibleForMode = (item) => {
+      const patientId = resolveNotificationPatientId(item);
+      if (isCaregiverRole) {
+        if (!patientId) return false;
+        if (normalizedSelfPatientId && patientId === normalizedSelfPatientId) return false;
+        return caregiverPatientIdSet.has(patientId);
+      }
+      if (!normalizedMyPatientId) return true;
+      if (!patientId) return false;
+      return patientId === normalizedMyPatientId;
+    };
+
+    const modeFilteredItems = rawHomeNotificationItems.filter(isVisibleForMode);
+
     if (isCaregiverRole) {
       if (homePatientId === "all") {
-        return rawHomeNotificationItems.slice(0, 5);
+        return modeFilteredItems.slice(0, 5);
       }
       const targetPatientId = Number(selectedHomePatientIds[0]);
       if (!targetPatientId) {
-        return rawHomeNotificationItems.slice(0, 5);
+        return modeFilteredItems.slice(0, 5);
       }
-      return rawHomeNotificationItems
+      return modeFilteredItems
         .filter((item) => {
           const patientId = resolveNotificationPatientId(item);
-          if (!patientId) return true;
           return patientId === targetPatientId;
         })
         .slice(0, 5);
     }
 
-    const myPatientId = Number(myPatient?.id);
-    if (!myPatientId) {
-      return rawHomeNotificationItems.slice(0, 5);
+    if (!normalizedMyPatientId) {
+      return modeFilteredItems.slice(0, 5);
     }
 
-    return rawHomeNotificationItems
+    return modeFilteredItems
       .filter((item) => {
         const patientId = resolveNotificationPatientId(item);
-        if (!patientId) return true;
-        return patientId === myPatientId;
+        return patientId === normalizedMyPatientId;
       })
       .slice(0, 5);
   })();
@@ -2407,19 +2530,96 @@ function App() {
     null;
   const remainingMedicationCount = Math.max(0, medicationItems.length - takenMedicationCount);
 
+  const getPatientLabel = (patientId) => {
+    if (!patientId) return "복약자";
+    return homePatientNameMap.get(Number(patientId)) || `복약자 ${patientId}`;
+  };
+
   const caregiverNeedCheckItems = medicationItems.filter(
     (item) => item.status === "pending" || item.status === "missed"
   );
   const caregiverNeedCheckPatientCount = new Set(caregiverNeedCheckItems.map((item) => item.patient_id)).size;
   const caregiverMissedCount = medicationItems.filter((item) => item.status === "missed").length;
-  const medicationListItems = isCaregiverRole
-    ? (caregiverNeedCheckItems.length > 0 ? caregiverNeedCheckItems : medicationItems).slice(0, 5)
-    : medicationItems.slice(0, 5);
+  const medicationListSource = isCaregiverRole
+    ? (caregiverNeedCheckItems.length > 0 ? caregiverNeedCheckItems : medicationItems)
+    : medicationItems;
 
-  const getPatientLabel = (patientId) => {
-    if (!patientId) return "복약자";
-    return homePatientNameMap.get(Number(patientId)) || `복약자 ${patientId}`;
-  };
+  const medicationGroupMap = new Map();
+  medicationListSource.forEach((item) => {
+    const date = new Date(item.scheduled_at);
+    const sortTime = Number.isNaN(date.getTime()) ? Number.MAX_SAFE_INTEGER : date.getTime();
+    const timeKey = Number.isNaN(date.getTime()) ? String(item.schedule_time_id || item.id || "") : `${date.getHours()}:${date.getMinutes()}`;
+    const mealLabel = inferHomeMealLabel(item.scheduled_at);
+    const patientKey = isCaregiverRole ? String(item.patient_id || "0") : "self";
+    const groupKey = `${patientKey}-${mealLabel}-${timeKey}`;
+    const fallbackPatientMedId = Number(item.patient_med_id);
+    const medName =
+      String(item.display_name || "").trim() ||
+      (Number.isFinite(fallbackPatientMedId) && fallbackPatientMedId > 0
+        ? `복약 항목 ${fallbackPatientMedId}`
+        : "복약 항목");
+
+    const current = medicationGroupMap.get(groupKey) || {
+      id: groupKey,
+      patient_id: item.patient_id,
+      meal_label: mealLabel,
+      time_label: formatClockTime(item.scheduled_at),
+      sort_time: sortTime,
+      med_names: [],
+      statuses: [],
+    };
+
+    if (!current.med_names.includes(medName)) {
+      current.med_names.push(medName);
+    }
+    current.statuses.push(item.status);
+
+    if (sortTime < current.sort_time) {
+      current.sort_time = sortTime;
+      current.time_label = formatClockTime(item.scheduled_at);
+    }
+
+    medicationGroupMap.set(groupKey, current);
+  });
+
+  const groupedMedicationRows = Array.from(medicationGroupMap.values())
+    .map((row) => ({
+      ...row,
+      status: resolveGroupIntakeStatus(row.statuses),
+      main_label: isCaregiverRole
+        ? `${getPatientLabel(row.patient_id)} · ${row.med_names.join(", ")}`
+        : row.med_names.join(", ")
+    }))
+    .sort((a, b) => {
+      const aMealIndex = HOME_MEAL_ORDER.includes(a.meal_label) ? HOME_MEAL_ORDER.indexOf(a.meal_label) : 999;
+      const bMealIndex = HOME_MEAL_ORDER.includes(b.meal_label) ? HOME_MEAL_ORDER.indexOf(b.meal_label) : 999;
+      if (aMealIndex !== bMealIndex) return aMealIndex - bMealIndex;
+      if (a.sort_time !== b.sort_time) return a.sort_time - b.sort_time;
+      return String(a.main_label).localeCompare(String(b.main_label), "ko");
+    });
+
+  const groupedMedicationSections = [
+    ...HOME_MEAL_ORDER.map((mealLabel) => ({
+      meal_label: mealLabel,
+      rows: groupedMedicationRows.filter((row) => row.meal_label === mealLabel)
+    })).filter((section) => section.rows.length > 0),
+    ...(groupedMedicationRows.some((row) => !HOME_MEAL_ORDER.includes(row.meal_label))
+      ? [{
+          meal_label: "기타",
+          rows: groupedMedicationRows.filter((row) => !HOME_MEAL_ORDER.includes(row.meal_label))
+        }]
+      : [])
+  ];
+
+  const limitedMedicationSections = [];
+  let remainingGroupRows = HOME_MEDICATION_GROUP_LIMIT;
+  groupedMedicationSections.forEach((section) => {
+    if (remainingGroupRows <= 0) return;
+    const rows = section.rows.slice(0, remainingGroupRows);
+    if (rows.length === 0) return;
+    limitedMedicationSections.push({ ...section, rows });
+    remainingGroupRows -= rows.length;
+  });
 
   return (
     <AppLayout
@@ -2594,19 +2794,22 @@ function App() {
                   <div className="home-inline-empty">복약 상태를 불러오는 중...</div>
                 ) : homeMedicationState.error ? (
                   <div className="home-inline-empty">복약 상태를 불러오지 못했습니다.</div>
-                ) : medicationListItems.length === 0 ? (
+                ) : limitedMedicationSections.length === 0 ? (
                   <div className="home-inline-empty">오늘 복약 일정이 없습니다.</div>
                 ) : (
                   <div className="home-inline-stack">
-                    {medicationListItems.map((item) => (
-                      <div key={item.id} className="home-inline-row">
-                        <span className="home-inline-time">{formatClockTime(item.scheduled_at)}</span>
-                        <span className="home-inline-main">
-                          {isCaregiverRole
-                            ? `${getPatientLabel(item.patient_id)} · 약 #${item.patient_med_id}`
-                            : `약 #${item.patient_med_id}`}
-                        </span>
-                        <span className={`home-med-status status-${item.status}`}>{intakeStatusLabel(item.status)}</span>
+                    {limitedMedicationSections.map((section) => (
+                      <div key={section.meal_label} className="home-inline-meal-group">
+                        <div className="home-inline-meal-title">{section.meal_label}</div>
+                        <div className="home-inline-stack">
+                          {section.rows.map((row) => (
+                            <div key={row.id} className="home-inline-row">
+                              <span className="home-inline-time">{row.time_label}</span>
+                              <span className="home-inline-main home-inline-main-wrap">{row.main_label}</span>
+                              <span className={`home-med-status status-${row.status}`}>{intakeStatusLabel(row.status)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>

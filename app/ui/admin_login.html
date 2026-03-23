@@ -156,7 +156,9 @@
                 if (response.ok) {
                     // 토큰 저장
                     localStorage.setItem('access_token', data.access_token);
-                    localStorage.setItem('user_role', 'ADMIN');
+                    const loginRole = data.login_role || 'ADMIN';
+                    localStorage.setItem('login_role', loginRole);
+                    localStorage.setItem('user_role', loginRole);
                     
                     // 관리자 대시보드로 리다이렉트
                     window.location.href = '/app/dashboard';
@@ -177,7 +179,7 @@
         // 이미 로그인된 관리자인지 확인
         window.addEventListener('load', () => {
             const token = localStorage.getItem('access_token');
-            const role = localStorage.getItem('user_role');
+            const role = localStorage.getItem('login_role') || localStorage.getItem('user_role');
             
             if (token && role === 'ADMIN') {
                 window.location.href = '/app/dashboard';

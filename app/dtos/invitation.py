@@ -8,7 +8,7 @@ from app.dtos.base import BaseSerializerModel
 
 # 초대 코드 생성 및 응답 - REQ-USER-004
 class InviteCodeCreateRequest(BaseModel):
-    expires_in_minutes: Annotated[int, Field(default=60 * 24 * 7, ge=1, le=60 * 24 * 30)]
+    expires_in_minutes: Annotated[int, Field(default=5, ge=1, le=60 * 24 * 30)]
 
 
 class InviteCodeCreateResponse(BaseSerializerModel):
