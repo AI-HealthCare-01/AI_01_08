@@ -832,8 +832,7 @@ def test_extract_schedule_end_date_defaults_to_start_date_when_duration_missing(
 
     assert DocumentService._extract_schedule_end_date(start_date=start_date, duration_text=None) == start_date
     assert (
-        DocumentService._extract_schedule_end_date(start_date=start_date, duration_text="복용기간 미상")
-        == start_date
+        DocumentService._extract_schedule_end_date(start_date=start_date, duration_text="복용기간 미상") == start_date
     )
     assert DocumentService._extract_schedule_end_date(start_date=start_date, duration_text="0일") == start_date
 
