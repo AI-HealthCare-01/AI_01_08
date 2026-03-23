@@ -2454,9 +2454,7 @@ def _analyze_question(
     if (
         not reset_pending_clarification
         and _was_waiting_for_interaction_scope(recent_messages, session_memory)
-        and _contains_any(
-        normalized, ["현재 복용약끼리", "현재 약끼리", "복용약끼리", "현재 먹는 약끼리"]
-        )
+        and _contains_any(normalized, ["현재 복용약끼리", "현재 약끼리", "복용약끼리", "현재 먹는 약끼리"])
     ):
         return QuestionAnalysis(
             raw_message=normalized,
@@ -3902,16 +3900,35 @@ def _answer_symptom_cause_intent(
 
     has_gi_symptom = _contains_any(
         normalized,
-        ["복통", "배 아", "배아", "속쓰림", "속 쓰림", "속이 쓰", "속이 안 좋", "속이 안좋", "메스껍", "울렁", "구역", "구토"],
+        [
+            "복통",
+            "배 아",
+            "배아",
+            "속쓰림",
+            "속 쓰림",
+            "속이 쓰",
+            "속이 안 좋",
+            "속이 안좋",
+            "메스껍",
+            "울렁",
+            "구역",
+            "구토",
+        ],
     )
     if has_gi_symptom:
         points.append("물을 조금씩 자주 마시고, 자극적인 음식이나 과식은 잠시 피하는 것이 좋습니다.")
         points.append("언제부터 아픈지와 마지막 복용 약 시간이 언제였는지 같이 확인해 보세요.")
         if any("아세트아미노펜" in name for name in med_names):
-            points.append("현재 기록에 삼남아세트아미노펜이 있어도, 복통 때문에 임의로 진통제를 더 추가하기 전에는 성분 중복을 먼저 확인하는 것이 안전합니다.")
+            points.append(
+                "현재 기록에 삼남아세트아미노펜이 있어도, 복통 때문에 임의로 진통제를 더 추가하기 전에는 성분 중복을 먼저 확인하는 것이 안전합니다."
+            )
         elif med_names:
-            points.append("현재 복용 중인 약 외에 진통제나 감기약을 임의로 더 먹기 전에는 성분을 먼저 확인하는 것이 좋습니다.")
-        urgency_points.append("통증이 점점 심해지거나, 계속 토하거나, 피가 섞이거나, 열이 함께 나면 바로 진료를 받는 것이 안전합니다.")
+            points.append(
+                "현재 복용 중인 약 외에 진통제나 감기약을 임의로 더 먹기 전에는 성분을 먼저 확인하는 것이 좋습니다."
+            )
+        urgency_points.append(
+            "통증이 점점 심해지거나, 계속 토하거나, 피가 섞이거나, 열이 함께 나면 바로 진료를 받는 것이 안전합니다."
+        )
 
     if "어지러" in normalized:
         for med in meds:
@@ -5972,14 +5989,10 @@ class ChatService:
         )
         if composed_answer:
             deterministic_text = (
-                deterministic_text
-                + "\n- 현재 직접 답변 초안: "
-                + _extract_core_answer(composed_answer, requester_role)
+                deterministic_text + "\n- 현재 직접 답변 초안: " + _extract_core_answer(composed_answer, requester_role)
             )
         external_lookup = (
-            await _lookup_external_med_info(analysis.external_drug_name)
-            if analysis.external_drug_name
-            else None
+            await _lookup_external_med_info(analysis.external_drug_name) if analysis.external_drug_name else None
         )
         external_drug_text = _build_external_drug_text(
             drug_name=analysis.external_drug_name,
@@ -6349,7 +6362,11 @@ class ChatService:
             )
 
         assistant_status = str(getattr(assistant_msg, "status", "") or "")
-        if assistant_status == "completed" and assistant_msg.content and assistant_msg.content != "응답을 준비하고 있습니다.":
+        if (
+            assistant_status == "completed"
+            and assistant_msg.content
+            and assistant_msg.content != "응답을 준비하고 있습니다."
+        ):
             return
 
         assistant_msg.status = "processing"
@@ -6397,7 +6414,9 @@ class ChatService:
                     elapsed,
                 )
         except Exception as exc:
-            logger.exception("chat async reply failed session_id=%s assistant_message_id=%s", session_id, assistant_message_id)
+            logger.exception(
+                "chat async reply failed session_id=%s assistant_message_id=%s", session_id, assistant_message_id
+            )
             assistant_msg.content = "일시적인 오류로 답변을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요."
             assistant_msg.status = "failed"
             assistant_msg.error_message = str(exc)[:1000]

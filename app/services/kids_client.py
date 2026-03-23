@@ -103,7 +103,9 @@ class KIDSClient:
     def is_enabled(self) -> bool:
         return bool(self.api_key)
 
-    async def _get_json(self, url: str, params: dict[str, Any], timeout: float = _KIDS_TIMEOUT_SECONDS) -> dict[str, Any]:
+    async def _get_json(
+        self, url: str, params: dict[str, Any], timeout: float = _KIDS_TIMEOUT_SECONDS
+    ) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(url, params=params)
             response.raise_for_status()
