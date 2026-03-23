@@ -20,6 +20,7 @@ _KIDS_OLDMAN_CARE_URL = "https://api.odcloud.kr/api/15089521/v1/uddi:a6bb0e38-51
 _KIDS_EFFICACY_GROUP_OVERLAP_URL = (
     "https://api.odcloud.kr/api/15089542/v1/uddi:54330912-f350-4bfc-a7ca-e90f13f8cc50"  # 효능군중복주의
 )
+_KIDS_TIMEOUT_SECONDS = float((os.getenv("KIDS_TIMEOUT_SECONDS", "4.0") or "4.0").strip())
 
 
 def _clean_text(v: Any) -> str:
@@ -102,7 +103,7 @@ class KIDSClient:
     def is_enabled(self) -> bool:
         return bool(self.api_key)
 
-    async def _get_json(self, url: str, params: dict[str, Any], timeout: float = 12.0) -> dict[str, Any]:
+    async def _get_json(self, url: str, params: dict[str, Any], timeout: float = _KIDS_TIMEOUT_SECONDS) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(url, params=params)
             response.raise_for_status()

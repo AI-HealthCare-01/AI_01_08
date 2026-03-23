@@ -5,11 +5,13 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
 import httpx
+import redis.asyncio as redis
 
 from app.dtos.chat import (
     ChatFeedbackCreateData,
@@ -48,7 +50,24 @@ logger = logging.getLogger(__name__)
 CHAT_DISCLAIMER = "본 답변은 의료 자문이 아닌 참고용 정보입니다."
 CHAT_HISTORY_TURNS = int((os.getenv("CHAT_HISTORY_TURNS", "8") or "8").strip())
 CHAT_MAX_MESSAGE_CHARS = int((os.getenv("CHAT_MAX_MESSAGE_CHARS", "2000") or "2000").strip())
+REDIS_URL = (os.getenv("REDIS_URL", "redis://localhost:6379/0") or "").strip()
+CHAT_WORKER_QUEUE = (os.getenv("CHAT_WORKER_QUEUE", "chat_tasks") or "").strip()
+CHAT_SLOW_REPLY_SECONDS = float((os.getenv("CHAT_SLOW_REPLY_SECONDS", "3.0") or "3.0").strip())
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
+FAST_SYNC_INTENTS = {
+    "tonight_check",
+    "med_list",
+    "schedule",
+    "schedule_order",
+    "adherence_priority",
+    "hospital_schedule",
+    "profile_summary",
+    "profile_body",
+}
+EXTERNAL_EVIDENCE_INTENTS = {
+    "external_med",
+    "medication_caution",
+}
 
 _EMERGENCY_KEYWORDS = [
     "숨이 차",
@@ -230,7 +249,47 @@ _ADHERENCE_PRIORITY_KEYWORDS = [
     "최근 놓친",
 ]
 _SYMPTOM_CAUSE_KEYWORDS = ["약 때문", "부작용일 수도", "의심해야", "원인일 수도", "때문일 수도"]
-_SYMPTOM_WORDS = ["어지러", "식은땀", "멍", "출혈", "두드러기", "발진", "기침", "숨", "호흡", "복통", "속쓰림"]
+_SYMPTOM_WORDS = [
+    "어지러",
+    "식은땀",
+    "멍",
+    "출혈",
+    "두드러기",
+    "발진",
+    "기침",
+    "숨",
+    "호흡",
+    "복통",
+    "배 아",
+    "배아",
+    "속쓰림",
+    "속 쓰림",
+    "속이 쓰",
+    "속이 안 좋",
+    "속 안 좋",
+    "속이 안좋",
+    "속 안좋",
+    "메스껍",
+    "메슥",
+    "울렁",
+    "구역",
+    "구토",
+    "토할 것 같",
+]
+_SYMPTOM_GUIDANCE_KEYWORDS = [
+    "어떻게",
+    "어떡",
+    "해야",
+    "해?",
+    "해",
+    "대처",
+    "대처법",
+    "괜찮",
+    "확인",
+    "봐야",
+    "병원",
+]
+_CLARIFICATION_RESET_PREFIXES = ["그건 아니", "그건아니", "아니고", "아니", "말고", "그게 아니라", "그게아니라"]
 _OBSERVATION_CHECK_KEYWORDS = ["뭘 더 봐", "무엇을 더 봐", "뭘 봐야", "상태가 뭐", "상태", "확인해야 할 상태"]
 _FIRST_CHECK_KEYWORDS = ["먼저 뭘 확인", "먼저 무엇을 확인", "먼저 확인해야", "먼저 뭘 봐야"]
 _SCHOOL_OBSERVATION_KEYWORDS = ["학교", "선생님", "봐달라", "봐 달라", "어떤 증상", "등교"]
@@ -1988,7 +2047,12 @@ async def _build_rag_context(
 
 
 # 컨텍스트 구성
-async def _build_patient_chat_context(*, session_id: int, patient_id: int) -> PatientChatContext:
+async def _build_patient_chat_context(
+    *,
+    session_id: int,
+    patient_id: int,
+    include_kids_evidence: bool = True,
+) -> PatientChatContext:
     profile = await _get_profile(patient_id)
     latest_guide = await _get_latest_done_guide(patient_id)
     meds = await _get_active_meds(patient_id)
@@ -2002,7 +2066,7 @@ async def _build_patient_chat_context(*, session_id: int, patient_id: int) -> Pa
     )
     recent_messages = list(reversed(recent_messages))
 
-    kids_evidence = await _build_kids_evidence(meds=meds, profile=profile)
+    kids_evidence = await _build_kids_evidence(meds=meds, profile=profile) if include_kids_evidence else []
     rag_context: list[dict[str, Any]] = []
 
     return PatientChatContext(
@@ -2306,6 +2370,21 @@ def _is_hospital_followup_query(message: str, session_memory: ChatSessionMemory 
     return False
 
 
+def _should_reset_pending_clarification(message: str) -> bool:
+    normalized = _normalize_user_message(message)
+    if not normalized:
+        return False
+    if _contains_any(normalized, _CLARIFICATION_RESET_PREFIXES):
+        return True
+    if _contains_any(normalized, _SYMPTOM_WORDS) and not _contains_any(
+        normalized,
+        _MEDICATION_CAUTION_KEYWORDS
+        + ["같이 먹", "함께 먹", "추가로 먹", "먹어도 돼", "복용해도 돼", "상호작용", "조합"],
+    ):
+        return True
+    return False
+
+
 def _analyze_question(
     *,
     message: str,
@@ -2316,6 +2395,7 @@ def _analyze_question(
     session_memory: ChatSessionMemory | None,
 ) -> QuestionAnalysis:
     normalized = _normalize_user_message(message)
+    reset_pending_clarification = _should_reset_pending_clarification(normalized)
     profile_query = _is_profile_related_query(normalized)
     hospital_query = _contains_any(normalized, _HOSPITAL_SCHEDULE_KEYWORDS)
     hospital_followup_query = _is_hospital_followup_query(normalized, session_memory)
@@ -2371,8 +2451,12 @@ def _analyze_question(
     ):
         external_drug_name = None
     is_emergency, emergency_message = _detect_emergency(normalized)
-    if _was_waiting_for_interaction_scope(recent_messages, session_memory) and _contains_any(
+    if (
+        not reset_pending_clarification
+        and _was_waiting_for_interaction_scope(recent_messages, session_memory)
+        and _contains_any(
         normalized, ["현재 복용약끼리", "현재 약끼리", "복용약끼리", "현재 먹는 약끼리"]
+        )
     ):
         return QuestionAnalysis(
             raw_message=normalized,
@@ -2467,6 +2551,8 @@ def _analyze_question(
         raw_intents = ["cold_med_caution"]
     elif target_med and _contains_any(normalized, _OBSERVATION_CHECK_KEYWORDS + _SYMPTOM_WORDS):
         raw_intents = ["observation_check"]
+    elif _contains_any(normalized, _SYMPTOM_WORDS) and _contains_any(normalized, _SYMPTOM_GUIDANCE_KEYWORDS):
+        raw_intents = ["symptom_cause"]
     elif _contains_any(normalized, _SYMPTOM_WORDS) and _contains_any(
         normalized, _SYMPTOM_CAUSE_KEYWORDS + _FIRST_CHECK_KEYWORDS
     ):
@@ -3809,6 +3895,24 @@ def _answer_symptom_cause_intent(
 ) -> str:
     normalized = (message or "").strip()
     points: list[str] = []
+    urgency_points: list[str] = []
+    med_names = [
+        str(med.get("display_name") or "").strip() for med in meds if str(med.get("display_name") or "").strip()
+    ]
+
+    has_gi_symptom = _contains_any(
+        normalized,
+        ["복통", "배 아", "배아", "속쓰림", "속 쓰림", "속이 쓰", "속이 안 좋", "속이 안좋", "메스껍", "울렁", "구역", "구토"],
+    )
+    if has_gi_symptom:
+        points.append("물을 조금씩 자주 마시고, 자극적인 음식이나 과식은 잠시 피하는 것이 좋습니다.")
+        points.append("언제부터 아픈지와 마지막 복용 약 시간이 언제였는지 같이 확인해 보세요.")
+        if any("아세트아미노펜" in name for name in med_names):
+            points.append("현재 기록에 삼남아세트아미노펜이 있어도, 복통 때문에 임의로 진통제를 더 추가하기 전에는 성분 중복을 먼저 확인하는 것이 안전합니다.")
+        elif med_names:
+            points.append("현재 복용 중인 약 외에 진통제나 감기약을 임의로 더 먹기 전에는 성분을 먼저 확인하는 것이 좋습니다.")
+        urgency_points.append("통증이 점점 심해지거나, 계속 토하거나, 피가 섞이거나, 열이 함께 나면 바로 진료를 받는 것이 안전합니다.")
+
     if "어지러" in normalized:
         for med in meds:
             name = str(med.get("display_name") or "").strip()
@@ -3828,10 +3932,16 @@ def _answer_symptom_cause_intent(
     if not points:
         base = f"{target_label} 기준으로 증상과 약의 관련성을 단정할 수는 없지만, 복용 중인 약과 증상이 시작된 시점을 함께 확인하는 것이 좋습니다."
     else:
-        base = f"{target_label} 기준으로 현재 증상과 관련해 먼저 확인해 볼 약은 다음과 같습니다.\n" + "\n".join(
-            f"- {point}" for point in _dedupe_lines(points, limit=3)
+        heading = (
+            f"{target_label} 기준으로 현재 증상에서 먼저 확인할 점은 다음과 같습니다."
+            if has_gi_symptom
+            else f"{target_label} 기준으로 현재 증상과 관련해 먼저 확인해 볼 약은 다음과 같습니다."
         )
-        base += "\n증상이 심해지거나 새로 시작된 경우에는 복용 시점과 함께 의료진에게 알려 주세요."
+        base = heading + "\n" + "\n".join(f"- {point}" for point in _dedupe_lines(points, limit=4))
+        if urgency_points:
+            base += "\n" + "\n".join(f"- {item}" for item in _dedupe_lines(urgency_points, limit=2))
+        else:
+            base += "\n증상이 심해지거나 새로 시작된 경우에는 복용 시점과 함께 의료진에게 알려 주세요."
 
     return _to_caregiver_style(answer=base, audience=audience) if requester_role == RequesterRole.CAREGIVER else base
 
@@ -5720,6 +5830,284 @@ async def _build_deterministic_answer_parts(
 
 class ChatService:
     @staticmethod
+    def _to_chat_message_item(*, row: ChatMessage, previous: ChatMessage | None = None) -> ChatMessageItem:
+        is_emergency, emergency_message = _reconstruct_emergency_fields(
+            current=row,
+            previous=previous,
+        )
+        return ChatMessageItem(
+            message_id=int(row.id),
+            role=row.role,
+            content=row.content,
+            status=str(getattr(row, "status", "") or "completed"),
+            error_message=getattr(row, "error_message", None),
+            is_emergency=is_emergency,
+            emergency_message=emergency_message,
+            disclaimer=CHAT_DISCLAIMER if row.role == "assistant" else None,
+            created_at=row.created_at,
+        )
+
+    @staticmethod
+    async def _enqueue_chat_reply_task(*, session_id: int, user_message_id: int, assistant_message_id: int) -> None:
+        payload = {
+            "task": "generate_chat_reply",
+            "session_id": session_id,
+            "user_message_id": user_message_id,
+            "assistant_message_id": assistant_message_id,
+        }
+        client = redis.from_url(REDIS_URL, decode_responses=True)
+        try:
+            await client.lpush(CHAT_WORKER_QUEUE, json.dumps(payload, ensure_ascii=False))
+        finally:
+            await client.aclose()
+
+    @staticmethod
+    async def _generate_assistant_content(
+        *,
+        session_id: int,
+        patient_id: int,
+        requester: User,
+        stripped: str,
+    ) -> tuple[str, QuestionAnalysis, ChatPlan | None, PatientChatContext]:
+        requester_role = await _resolve_requester_role(int(requester.id))
+        target_label = "선택한 복약자" if requester_role == RequesterRole.CAREGIVER else "회원님 기록"
+
+        context = await _build_patient_chat_context(
+            session_id=session_id,
+            patient_id=patient_id,
+            include_kids_evidence=False,
+        )
+
+        audience = _resolve_audience(context.profile)
+        chat_plan = await _plan_chat_question(
+            message=stripped,
+            context=context,
+            requester_role=requester_role,
+            audience=audience,
+            target_label=target_label,
+        )
+        analysis = _analyze_question(
+            message=stripped,
+            meds=context.meds,
+            recent_messages=context.recent_messages,
+            requester_role=requester_role,
+            profile=context.profile,
+            session_memory=context.session_memory,
+        )
+        chat_plan = _harmonize_chat_plan(analysis=analysis, plan=chat_plan)
+        is_emergency = analysis.is_emergency
+        emergency_message = analysis.emergency_message
+        intent = analysis.primary_intent
+        llm_preferred = _should_prefer_llm(analysis=analysis)
+        record_context_available = _has_required_context_for_request(
+            analysis=analysis,
+            plan=chat_plan,
+            context=context,
+        )
+        personalized_request = _is_personalized_request(analysis=analysis, plan=chat_plan)
+
+        if analysis.primary_intent in EXTERNAL_EVIDENCE_INTENTS:
+            context.kids_evidence = await _build_kids_evidence(meds=context.meds, profile=context.profile)
+
+        context.rag_context = await _build_rag_context(
+            intent=intent,
+            latest_guide=context.latest_guide,
+            meds=context.meds,
+            schedules=context.schedules,
+            profile=context.profile,
+            kids_evidence=context.kids_evidence,
+        )
+
+        if is_emergency:
+            assistant_content = f"{emergency_message} 현재 질문은 즉시 전문 의료진 확인이 우선입니다."
+            return assistant_content, analysis, chat_plan, context
+
+        if personalized_request and not record_context_available:
+            assistant_content = _build_record_required_reply(
+                analysis=analysis,
+                target_label=target_label,
+                requester_role=requester_role,
+                audience=audience,
+            )
+            return assistant_content, analysis, chat_plan, context
+
+        planned_reply = await _render_planned_reply(
+            plan=chat_plan,
+            message=stripped,
+            context=context,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+        if planned_reply:
+            return planned_reply, analysis, chat_plan, context
+
+        deterministic_parts = await _build_deterministic_answer_parts(
+            analysis=analysis,
+            context=context,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+        composed_answer = _compose_answers(
+            answers=deterministic_parts,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+        meds_text = _build_meds_text(context.meds)
+        schedule_text = _build_schedule_text(context.schedules, context.meds)
+        hospital_schedule_text = _build_hospital_schedule_text(context.hospital_schedules)
+        profile_text = _build_profile_text(context.profile)
+        guide_text = _build_guide_text(context.latest_guide)
+        history_text = _build_history_text(context.recent_messages)
+        session_memory_text = _build_session_memory_text(context.session_memory)
+        kids_text = _build_kids_text(context.kids_evidence)
+        rag_text = _build_rag_text(context.rag_context)
+        deterministic_text = _build_fact_summary(
+            analysis=analysis,
+            context=context,
+            target_label=target_label,
+        )
+        if composed_answer:
+            deterministic_text = (
+                deterministic_text
+                + "\n- 현재 직접 답변 초안: "
+                + _extract_core_answer(composed_answer, requester_role)
+            )
+        external_lookup = (
+            await _lookup_external_med_info(analysis.external_drug_name)
+            if analysis.external_drug_name
+            else None
+        )
+        external_drug_text = _build_external_drug_text(
+            drug_name=analysis.external_drug_name,
+            lookup=external_lookup,
+        )
+        clarification_reply = _build_clarification_reply(
+            analysis=analysis,
+            context=context,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+
+        if clarification_reply:
+            return clarification_reply, analysis, chat_plan, context
+
+        if _should_finalize_with_rules(
+            analysis=analysis,
+            composed_answer=composed_answer,
+            clarification_reply=clarification_reply,
+        ):
+            assistant_content = composed_answer or _fallback_reply(
+                intent=intent,
+                latest_guide=context.latest_guide,
+                meds=context.meds,
+                profile=context.profile,
+                meds_text=meds_text,
+                schedule_text=schedule_text,
+                target_label=target_label,
+                requester_role=requester_role,
+                audience=audience,
+            )
+            return assistant_content, analysis, chat_plan, context
+
+        if llm_preferred:
+            try:
+                system_prompt = _read_prompt_template("chat_system_prompt.txt").format(
+                    requester_role=requester_role.value,
+                    target_label=target_label,
+                    answer_mode=analysis.answer_mode,
+                    audience_label=_audience_label(audience),
+                    extra_safety=_extra_safety_text(audience),
+                    kids_text=kids_text,
+                    rag_text=rag_text,
+                    external_drug_text=external_drug_text,
+                    deterministic_text=deterministic_text,
+                    disclaimer=CHAT_DISCLAIMER,
+                )
+                user_prompt = _read_prompt_template("chat_user_prompt.txt").format(
+                    guide_text=guide_text,
+                    meds_text=meds_text,
+                    schedule_text=schedule_text,
+                    hospital_schedule_text=hospital_schedule_text,
+                    profile_text=profile_text,
+                    external_drug_text=external_drug_text,
+                    deterministic_text=deterministic_text,
+                    history_text=history_text,
+                    session_memory_text=session_memory_text,
+                    user_message=stripped,
+                )
+                llm_result = await _call_chat_model(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                )
+                assistant_content = (llm_result.get("content") or "").strip()
+                if not assistant_content:
+                    raise ValueError("empty assistant content")
+                return assistant_content, analysis, chat_plan, context
+            except Exception:
+                logger.exception("chat fallback used session_id=%s", session_id)
+
+        assistant_content = composed_answer or _fallback_reply(
+            intent=intent,
+            latest_guide=context.latest_guide,
+            meds=context.meds,
+            profile=context.profile,
+            meds_text=meds_text,
+            schedule_text=schedule_text,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+        return assistant_content, analysis, chat_plan, context
+
+    @staticmethod
+    async def _generate_fast_assistant_content(
+        *,
+        session_id: int,
+        patient_id: int,
+        requester: User,
+        stripped: str,
+    ) -> tuple[str, QuestionAnalysis, PatientChatContext] | None:
+        requester_role = await _resolve_requester_role(int(requester.id))
+        context = await _build_patient_chat_context(
+            session_id=session_id,
+            patient_id=patient_id,
+            include_kids_evidence=False,
+        )
+        analysis = _analyze_question(
+            message=stripped,
+            meds=context.meds,
+            recent_messages=context.recent_messages,
+            requester_role=requester_role,
+            profile=context.profile,
+            session_memory=context.session_memory,
+        )
+        if analysis.primary_intent not in FAST_SYNC_INTENTS:
+            return None
+
+        target_label = "선택한 복약자" if requester_role == RequesterRole.CAREGIVER else "회원님 기록"
+        audience = _resolve_audience(context.profile)
+        answers = await _build_deterministic_answer_parts(
+            analysis=analysis,
+            context=context,
+            target_label=target_label,
+            requester_role=requester_role,
+            audience=audience,
+        )
+        assistant_content = _compose_answers(
+            answers=answers,
+            requester_role=requester_role,
+            audience=audience,
+        )
+        if not assistant_content:
+            return None
+        return assistant_content, analysis, context
+
+    @staticmethod
     async def create_session(
         *,
         requester: User,
@@ -5810,21 +6198,7 @@ class ChatService:
         items: list[ChatMessageItem] = []
         for idx, row in enumerate(rows):
             prev_row = rows[idx - 1] if idx > 0 else None
-            is_emergency, emergency_message = _reconstruct_emergency_fields(
-                current=row,
-                previous=prev_row,
-            )
-            items.append(
-                ChatMessageItem(
-                    message_id=int(row.id),
-                    role=row.role,
-                    content=row.content,
-                    is_emergency=is_emergency,
-                    emergency_message=emergency_message,
-                    disclaimer=CHAT_DISCLAIMER if row.role == "assistant" else None,
-                    created_at=row.created_at,
-                )
-            )
+            items.append(ChatService._to_chat_message_item(row=row, previous=prev_row))
 
         return ChatMessageListResponse(
             success=True,
@@ -5872,243 +6246,160 @@ class ChatService:
                 message="세션에 연결된 환자 정보가 없습니다.",
             )
 
-        requester_role = await _resolve_requester_role(int(requester.id))
-        target_label = "선택한 복약자" if requester_role == RequesterRole.CAREGIVER else "회원님 기록"
-
         user_msg = await ChatMessage.create(
             session_id=session_id,
             role="user",
             content=stripped,
+            status="completed",
+            completed_at=datetime.now(),
         )
 
-        context = await _build_patient_chat_context(
-            session_id=session_id,
+        fast_result = await ChatService._generate_fast_assistant_content(
+            session_id=int(session.id),
             patient_id=int(patient_id),
+            requester=requester,
+            stripped=stripped,
         )
-
-        audience = _resolve_audience(context.profile)
-        chat_plan = await _plan_chat_question(
-            message=stripped,
-            context=context,
-            requester_role=requester_role,
-            audience=audience,
-            target_label=target_label,
-        )
-        analysis = _analyze_question(
-            message=stripped,
-            meds=context.meds,
-            recent_messages=context.recent_messages,
-            requester_role=requester_role,
-            profile=context.profile,
-            session_memory=context.session_memory,
-        )
-        chat_plan = _harmonize_chat_plan(analysis=analysis, plan=chat_plan)
-        is_emergency = analysis.is_emergency
-        emergency_message = analysis.emergency_message
-        intent = analysis.primary_intent
-        llm_preferred = _should_prefer_llm(analysis=analysis)
-        record_context_available = _has_required_context_for_request(
-            analysis=analysis,
-            plan=chat_plan,
-            context=context,
-        )
-        personalized_request = _is_personalized_request(analysis=analysis, plan=chat_plan)
-
-        context.rag_context = await _build_rag_context(
-            intent=intent,
-            latest_guide=context.latest_guide,
-            meds=context.meds,
-            schedules=context.schedules,
-            profile=context.profile,
-            kids_evidence=context.kids_evidence,
-        )
-
-        if is_emergency:
-            assistant_content = f"{emergency_message} 현재 질문은 즉시 전문 의료진 확인이 우선입니다."
-        elif personalized_request and not record_context_available:
-            assistant_content = _build_record_required_reply(
+        if fast_result:
+            assistant_content, analysis, context = fast_result
+            assistant_msg = await ChatMessage.create(
+                session_id=session_id,
+                role="assistant",
+                content=assistant_content,
+                status="completed",
+                completed_at=datetime.now(),
+            )
+            await _update_session_memory(
+                session_id=int(session.id),
                 analysis=analysis,
-                target_label=target_label,
-                requester_role=requester_role,
-                audience=audience,
-            )
-        else:
-            planned_reply = await _render_planned_reply(
-                plan=chat_plan,
-                message=stripped,
+                plan=None,
+                assistant_content=assistant_content,
                 context=context,
-                target_label=target_label,
-                requester_role=requester_role,
-                audience=audience,
             )
-            if planned_reply:
-                assistant_content = planned_reply
-            else:
-                deterministic_parts = await _build_deterministic_answer_parts(
-                    analysis=analysis,
-                    context=context,
-                    target_label=target_label,
-                    requester_role=requester_role,
-                    audience=audience,
-                )
-
-                composed_answer = _compose_answers(
-                    answers=deterministic_parts,
-                    requester_role=requester_role,
-                    audience=audience,
-                )
-
-                meds_text = _build_meds_text(context.meds)
-                schedule_text = _build_schedule_text(context.schedules, context.meds)
-                hospital_schedule_text = _build_hospital_schedule_text(context.hospital_schedules)
-                profile_text = _build_profile_text(context.profile)
-                guide_text = _build_guide_text(context.latest_guide)
-                history_text = _build_history_text(context.recent_messages)
-                session_memory_text = _build_session_memory_text(context.session_memory)
-                kids_text = _build_kids_text(context.kids_evidence)
-                rag_text = _build_rag_text(context.rag_context)
-                deterministic_text = _build_fact_summary(
-                    analysis=analysis,
-                    context=context,
-                    target_label=target_label,
-                )
-                if composed_answer:
-                    deterministic_text = (
-                        deterministic_text
-                        + "\n- 현재 직접 답변 초안: "
-                        + _extract_core_answer(composed_answer, requester_role)
-                    )
-                external_lookup = (
-                    await _lookup_external_med_info(analysis.external_drug_name)
-                    if analysis.external_drug_name
-                    else None
-                )
-                external_drug_text = _build_external_drug_text(
-                    drug_name=analysis.external_drug_name,
-                    lookup=external_lookup,
-                )
-                clarification_reply = _build_clarification_reply(
-                    analysis=analysis,
-                    context=context,
-                    target_label=target_label,
-                    requester_role=requester_role,
-                    audience=audience,
-                )
-
-                if clarification_reply:
-                    assistant_content = clarification_reply
-                elif _should_finalize_with_rules(
-                    analysis=analysis,
-                    composed_answer=composed_answer,
-                    clarification_reply=clarification_reply,
-                ):
-                    assistant_content = composed_answer or _fallback_reply(
-                        intent=intent,
-                        latest_guide=context.latest_guide,
-                        meds=context.meds,
-                        profile=context.profile,
-                        meds_text=meds_text,
-                        schedule_text=schedule_text,
-                        target_label=target_label,
-                        requester_role=requester_role,
-                        audience=audience,
-                    )
-                elif llm_preferred:
-                    try:
-                        system_prompt = _read_prompt_template("chat_system_prompt.txt").format(
-                            requester_role=requester_role.value,
-                            target_label=target_label,
-                            answer_mode=analysis.answer_mode,
-                            audience_label=_audience_label(audience),
-                            extra_safety=_extra_safety_text(audience),
-                            kids_text=kids_text,
-                            rag_text=rag_text,
-                            external_drug_text=external_drug_text,
-                            deterministic_text=deterministic_text,
-                            disclaimer=CHAT_DISCLAIMER,
-                        )
-                        user_prompt = _read_prompt_template("chat_user_prompt.txt").format(
-                            guide_text=guide_text,
-                            meds_text=meds_text,
-                            schedule_text=schedule_text,
-                            hospital_schedule_text=hospital_schedule_text,
-                            profile_text=profile_text,
-                            external_drug_text=external_drug_text,
-                            deterministic_text=deterministic_text,
-                            history_text=history_text,
-                            session_memory_text=session_memory_text,
-                            user_message=stripped,
-                        )
-                        llm_result = await _call_chat_model(
-                            system_prompt=system_prompt,
-                            user_prompt=user_prompt,
-                        )
-                        assistant_content = (llm_result.get("content") or "").strip()
-                        if not assistant_content:
-                            raise ValueError("empty assistant content")
-                        is_emergency = bool(llm_result.get("is_emergency", False))
-                        emergency_message = llm_result.get("emergency_message")
-                    except Exception:
-                        logger.exception("chat fallback used session_id=%s", session_id)
-                        assistant_content = composed_answer or _fallback_reply(
-                            intent=intent,
-                            latest_guide=context.latest_guide,
-                            meds=context.meds,
-                            profile=context.profile,
-                            meds_text=meds_text,
-                            schedule_text=schedule_text,
-                            target_label=target_label,
-                            requester_role=requester_role,
-                            audience=audience,
-                        )
-                else:
-                    assistant_content = composed_answer or _fallback_reply(
-                        intent=intent,
-                        latest_guide=context.latest_guide,
-                        meds=context.meds,
-                        profile=context.profile,
-                        meds_text=meds_text,
-                        schedule_text=schedule_text,
-                        target_label=target_label,
-                        requester_role=requester_role,
-                        audience=audience,
-                    )
+            return ChatMessageCreateResponse(
+                success=True,
+                data=ChatMessageCreateData(
+                    session_id=int(session.id),
+                    user_message=ChatService._to_chat_message_item(row=user_msg),
+                    assistant_message=ChatService._to_chat_message_item(row=assistant_msg, previous=user_msg),
+                ),
+            )
 
         assistant_msg = await ChatMessage.create(
             session_id=session_id,
             role="assistant",
-            content=assistant_content,
+            content="응답을 준비하고 있습니다.",
+            status="queued",
         )
 
-        await _update_session_memory(
-            session_id=session_id,
-            analysis=analysis,
-            plan=chat_plan,
-            assistant_content=assistant_content,
-            context=context,
+        await ChatService._enqueue_chat_reply_task(
+            session_id=int(session.id),
+            user_message_id=int(user_msg.id),
+            assistant_message_id=int(assistant_msg.id),
         )
 
         return ChatMessageCreateResponse(
             success=True,
             data=ChatMessageCreateData(
                 session_id=int(session.id),
-                user_message=ChatMessageItem(
-                    message_id=int(user_msg.id),
-                    role="user",
-                    content=user_msg.content,
-                    is_emergency=False,
-                    emergency_message=None,
-                    disclaimer=None,
-                    created_at=user_msg.created_at,
-                ),
-                assistant_message=ChatMessageItem(
-                    message_id=int(assistant_msg.id),
-                    role="assistant",
-                    content=assistant_msg.content,
-                    is_emergency=is_emergency,
-                    emergency_message=emergency_message,
-                    disclaimer=CHAT_DISCLAIMER,
-                    created_at=assistant_msg.created_at,
-                ),
+                user_message=ChatService._to_chat_message_item(row=user_msg),
+                assistant_message=ChatService._to_chat_message_item(row=assistant_msg, previous=user_msg),
             ),
         )
+
+    @staticmethod
+    async def generate_assistant_reply(
+        *,
+        session_id: int,
+        user_message_id: int,
+        assistant_message_id: int,
+    ) -> None:
+        started_monotonic = datetime.now()
+        session = await ChatSession.get_or_none(id=session_id)
+        if not session:
+            raise ChatServiceError(
+                status_code=404,
+                code="CHAT_SESSION_NOT_FOUND",
+                message="채팅 세션을 찾을 수 없습니다.",
+            )
+
+        patient_id = getattr(session, "patient_id", None)
+        if patient_id is None:
+            raise ChatServiceError(
+                status_code=500,
+                code="CHAT_SESSION_PATIENT_MISSING",
+                message="세션에 연결된 환자 정보가 없습니다.",
+            )
+
+        user_msg = await ChatMessage.get_or_none(
+            id=user_message_id,
+            session_id=session_id,
+            role="user",
+        )
+        assistant_msg = await ChatMessage.get_or_none(
+            id=assistant_message_id,
+            session_id=session_id,
+            role="assistant",
+        )
+        if not user_msg or not assistant_msg:
+            raise ChatServiceError(
+                status_code=404,
+                code="CHAT_MESSAGE_NOT_FOUND",
+                message="채팅 메시지를 찾을 수 없습니다.",
+            )
+
+        assistant_status = str(getattr(assistant_msg, "status", "") or "")
+        if assistant_status == "completed" and assistant_msg.content and assistant_msg.content != "응답을 준비하고 있습니다.":
+            return
+
+        assistant_msg.status = "processing"
+        assistant_msg.error_message = None
+        assistant_msg.started_at = datetime.now()
+        await assistant_msg.save(update_fields=["status", "error_message", "started_at"])
+
+        try:
+            requester = await User.get(id=int(session.user_id))
+            assistant_content, analysis, chat_plan, context = await ChatService._generate_assistant_content(
+                session_id=session_id,
+                patient_id=int(patient_id),
+                requester=requester,
+                stripped=_normalize_user_message(user_msg.content),
+            )
+
+            assistant_msg.content = assistant_content
+            assistant_msg.status = "completed"
+            assistant_msg.error_message = None
+            assistant_msg.completed_at = datetime.now()
+            await assistant_msg.save(update_fields=["content", "status", "error_message", "completed_at"])
+
+            await _update_session_memory(
+                session_id=session_id,
+                analysis=analysis,
+                plan=chat_plan,
+                assistant_content=assistant_content,
+                context=context,
+            )
+            elapsed = (datetime.now() - started_monotonic).total_seconds()
+            if elapsed >= CHAT_SLOW_REPLY_SECONDS:
+                logger.warning(
+                    "chat slow reply session_id=%s assistant_message_id=%s intent=%s elapsed=%.2fs",
+                    session_id,
+                    assistant_message_id,
+                    analysis.primary_intent,
+                    elapsed,
+                )
+            else:
+                logger.info(
+                    "chat reply completed session_id=%s assistant_message_id=%s intent=%s elapsed=%.2fs",
+                    session_id,
+                    assistant_message_id,
+                    analysis.primary_intent,
+                    elapsed,
+                )
+        except Exception as exc:
+            logger.exception("chat async reply failed session_id=%s assistant_message_id=%s", session_id, assistant_message_id)
+            assistant_msg.content = "일시적인 오류로 답변을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요."
+            assistant_msg.status = "failed"
+            assistant_msg.error_message = str(exc)[:1000]
+            assistant_msg.completed_at = datetime.now()
+            await assistant_msg.save(update_fields=["content", "status", "error_message", "completed_at"])

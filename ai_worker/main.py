@@ -10,12 +10,14 @@ from tortoise import Tortoise
 from ai_worker.tasks.generate_guide import generate_guide
 from app.db.databases import TORTOISE_ORM
 from app.models.guides import Guide, GuideStatus
+from app.services.chat import ChatService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 REDIS_URL = (os.getenv("REDIS_URL", "redis://localhost:6379/0") or "").strip()
-QUEUE_NAME = (os.getenv("AI_WORKER_QUEUE", "ai_tasks") or "").strip()
+GUIDE_QUEUE_NAME = (os.getenv("AI_WORKER_QUEUE", "ai_tasks") or "").strip()
+CHAT_QUEUE_NAME = (os.getenv("CHAT_WORKER_QUEUE", "chat_tasks") or "").strip()
 
 GUIDE_GENERATING_TIMEOUT_MINUTES = int((os.getenv("GUIDE_GENERATING_TIMEOUT_MINUTES", "30") or "30").strip())
 STALE_GUIDE_CHECK_INTERVAL_SECONDS = int((os.getenv("STALE_GUIDE_CHECK_INTERVAL_SECONDS", "60") or "60").strip())
@@ -73,53 +75,71 @@ async def _stale_guide_watchdog() -> None:
         await asyncio.sleep(STALE_GUIDE_CHECK_INTERVAL_SECONDS)
 
 
-# worker 메인 루프
-async def worker_loop():
-    logger.info("worker: loop start")
-    logger.info("worker: REDIS_URL=%s", REDIS_URL)
-    logger.info("worker: QUEUE_NAME=%s", QUEUE_NAME)
+async def _handle_task(task: dict[str, object]) -> None:
+    task_type = task.get("task")
+    logger.info("worker: task_type=%s task=%s", task_type, task)
 
-    await _init_db()
+    if task_type == "generate_guide":
+        guide_id = int(task["guide_id"])
+        await generate_guide(guide_id)
+        logger.info("worker: generate_guide done")
+        return
 
-    r = redis.from_url(REDIS_URL, decode_responses=True)
-    logger.info("worker: redis client created")
+    if task_type == "generate_chat_reply":
+        await ChatService.generate_assistant_reply(
+            session_id=int(task["session_id"]),
+            user_message_id=int(task["user_message_id"]),
+            assistant_message_id=int(task["assistant_message_id"]),
+        )
+        logger.info("worker: generate_chat_reply done")
+        return
 
-    watchdog_task = asyncio.create_task(_stale_guide_watchdog())
+    logger.warning("worker: unknown task_type=%s", task_type)
 
+
+async def _consume_queue(queue_name: str) -> None:
+    logger.info("worker: consumer start queue=%s", queue_name)
+    client = redis.from_url(REDIS_URL, decode_responses=True)
     try:
         while True:
-            item = await r.brpop(QUEUE_NAME, timeout=5)
-
+            item = await client.brpop(queue_name, timeout=5)
             if not item:
                 await asyncio.sleep(0.2)
                 continue
 
-            logger.info("worker: raw item received = %s", item)
-
+            logger.info("worker: raw item received queue=%s item=%s", queue_name, item)
             _, raw = item
-
             try:
                 task = json.loads(raw)
             except Exception:
-                logger.exception("worker: invalid task json")
+                logger.exception("worker: invalid task json queue=%s", queue_name)
                 continue
 
-            task_type = task.get("task")
-            logger.info("worker: task_type=%s task=%s", task_type, task)
-
-            if task_type == "generate_guide":
-                try:
-                    guide_id = int(task["guide_id"])
-                    await generate_guide(guide_id)
-                    logger.info("worker: generate_guide done")
-                except Exception:
-                    logger.exception("worker: generate_guide failed")
-            else:
-                logger.warning("worker: unknown task_type=%s", task_type)
-
+            try:
+                await _handle_task(task)
+            except Exception:
+                logger.exception("worker: task failed queue=%s task=%s", queue_name, task)
     finally:
-        watchdog_task.cancel()
-        await r.aclose()
+        await client.aclose()
+
+
+async def worker_loop():
+    logger.info("worker: loop start")
+    logger.info("worker: REDIS_URL=%s", REDIS_URL)
+    logger.info("worker: GUIDE_QUEUE_NAME=%s", GUIDE_QUEUE_NAME)
+    logger.info("worker: CHAT_QUEUE_NAME=%s", CHAT_QUEUE_NAME)
+
+    await _init_db()
+
+    watchdog_task = asyncio.create_task(_stale_guide_watchdog())
+    guide_consumer = asyncio.create_task(_consume_queue(GUIDE_QUEUE_NAME))
+    chat_consumer = asyncio.create_task(_consume_queue(CHAT_QUEUE_NAME))
+
+    try:
+        await asyncio.gather(watchdog_task, guide_consumer, chat_consumer)
+    finally:
+        for task in (watchdog_task, guide_consumer, chat_consumer):
+            task.cancel()
         await _close_db()
 
 
