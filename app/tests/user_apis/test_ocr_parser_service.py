@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.services.documents import DocumentService
 from app.services.ocr import OcrService
 
@@ -58,6 +60,31 @@ type=CODE128, value=8801234567890
 """
     barcode_values = DocumentService._extract_barcode_values(raw_text=raw_text)
     assert barcode_values == ["https://example.com/qr/abc", "8801234567890"]
+
+
+def test_normalize_frequency_text_for_storage_orders_time_slots():
+    assert DocumentService._normalize_frequency_text_for_storage("3회 취침/점심") == "3회 점심/취침"
+    assert DocumentService._normalize_frequency_text_for_storage("취침 전/아침") == "아침/취침"
+    assert DocumentService._normalize_frequency_text_for_storage("하루 2회 저녁,아침") == "하루 2회 아침/저녁"
+
+
+def test_normalize_frequency_text_for_storage_keeps_non_slot_text():
+    assert DocumentService._normalize_frequency_text_for_storage("필요 시") == "필요 시"
+
+
+def test_normalize_duration_text_for_guide_appends_day_for_numeric_only():
+    assert DocumentService._normalize_duration_text_for_guide("3") == "3일"
+    assert DocumentService._normalize_duration_text_for_guide("14") == "14일"
+    assert DocumentService._normalize_duration_text_for_guide("7일분") == "7일분"
+    assert DocumentService._normalize_duration_text_for_guide("5일") == "5일"
+    assert DocumentService._normalize_duration_text_for_guide(None) is None
+
+
+def test_resolve_media_type_falls_back_to_extension_when_guess_type_missing(monkeypatch):
+    monkeypatch.setattr("app.services.documents.mimetypes.guess_type", lambda _filename: (None, None))
+    assert DocumentService._resolve_media_type(Path("camera.jpg")) == "image/jpeg"
+    assert DocumentService._resolve_media_type(Path("camera.png")) == "image/png"
+    assert DocumentService._resolve_media_type(Path("camera.pdf")) == "application/pdf"
 
 
 def test_parse_extracted_meds_uses_summary_schedule_map():
@@ -660,6 +687,128 @@ def test_parse_extracted_meds_with_ocr_fields_appends_missing_summary_meds():
     assert parsed_map["슈다페드정"]["dosage_text"] == "1정씩"
     assert parsed_map["슈다페드정"]["frequency_text"] == "2회"
     assert parsed_map["슈다페드정"]["duration_text"] == "5일분"
+
+
+def test_parse_extracted_meds_simple_parser_keeps_sparse_rows():
+    ocr_service = OcrService()
+    ocr_fields = [
+        {"text": "약품명", "x_min": 40.0, "x_max": 120.0, "y_min": 80.0, "y_max": 100.0, "cx": 80.0, "cy": 90.0},
+        {"text": "복약안내", "x_min": 280.0, "x_max": 360.0, "y_min": 80.0, "y_max": 100.0, "cx": 320.0, "cy": 90.0},
+        {
+            "text": "키목신캡슐500mg",
+            "x_min": 40.0,
+            "x_max": 210.0,
+            "y_min": 115.0,
+            "y_max": 135.0,
+            "cx": 125.0,
+            "cy": 125.0,
+        },
+        {
+            "text": "1캡슐씩 3회 3일분",
+            "x_min": 280.0,
+            "x_max": 430.0,
+            "y_min": 115.0,
+            "y_max": 135.0,
+            "cx": 355.0,
+            "cy": 125.0,
+        },
+        {
+            "text": "페나셋정",
+            "x_min": 40.0,
+            "x_max": 150.0,
+            "y_min": 150.0,
+            "y_max": 170.0,
+            "cx": 95.0,
+            "cy": 160.0,
+        },
+    ]
+
+    parsed_meds = ocr_service._parse_extracted_meds(raw_text="", ocr_fields=ocr_fields)
+    parsed_map = {item["name"]: item for item in parsed_meds}
+
+    assert "키목신캡슐" in parsed_map
+    assert parsed_map["키목신캡슐"]["dosage_text"] == "1캡슐씩"
+    assert parsed_map["키목신캡슐"]["frequency_text"] == "3회"
+    assert parsed_map["키목신캡슐"]["duration_text"] == "3일분"
+
+    assert "페나셋정" in parsed_map
+    assert parsed_map["페나셋정"]["dosage_text"] is None
+    assert parsed_map["페나셋정"]["frequency_text"] is None
+    assert parsed_map["페나셋정"]["duration_text"] is None
+
+
+def test_parse_extracted_meds_simple_parser_prefers_guide_dosage_over_strength():
+    ocr_service = OcrService()
+    ocr_fields = [
+        {"text": "약품명", "x_min": 40.0, "x_max": 120.0, "y_min": 90.0, "y_max": 110.0, "cx": 80.0, "cy": 100.0},
+        {"text": "복약안내", "x_min": 280.0, "x_max": 360.0, "y_min": 90.0, "y_max": 110.0, "cx": 320.0, "cy": 100.0},
+        {
+            "text": "브로니제장용정150mg",
+            "x_min": 40.0,
+            "x_max": 220.0,
+            "y_min": 125.0,
+            "y_max": 145.0,
+            "cx": 130.0,
+            "cy": 135.0,
+        },
+        {
+            "text": "1정씩 2회 3일분",
+            "x_min": 280.0,
+            "x_max": 420.0,
+            "y_min": 125.0,
+            "y_max": 145.0,
+            "cx": 350.0,
+            "cy": 135.0,
+        },
+    ]
+
+    parsed_meds = ocr_service._parse_extracted_meds(raw_text="", ocr_fields=ocr_fields)
+    parsed_map = {item["name"]: item for item in parsed_meds}
+
+    assert "브로니제장용정" in parsed_map
+    assert parsed_map["브로니제장용정"]["dosage_text"] == "1정씩"
+    assert parsed_map["브로니제장용정"]["frequency_text"] == "2회"
+    assert parsed_map["브로니제장용정"]["duration_text"] == "3일분"
+
+
+def test_parse_extracted_meds_falls_back_when_simple_parser_has_no_med_guide():
+    ocr_service = OcrService()
+    ocr_fields = [
+        {"text": "약품명", "x_min": 40.0, "x_max": 100.0, "y_min": 210.0, "y_max": 230.0, "cx": 70.0, "cy": 220.0},
+        {"text": "투약량", "x_min": 140.0, "x_max": 200.0, "y_min": 210.0, "y_max": 230.0, "cx": 170.0, "cy": 220.0},
+        {"text": "횟수", "x_min": 230.0, "x_max": 270.0, "y_min": 210.0, "y_max": 230.0, "cx": 250.0, "cy": 220.0},
+        {"text": "일수", "x_min": 300.0, "x_max": 340.0, "y_min": 210.0, "y_max": 230.0, "cx": 320.0, "cy": 220.0},
+        {
+            "text": "코푸시럽",
+            "x_min": 40.0,
+            "x_max": 120.0,
+            "y_min": 240.0,
+            "y_max": 260.0,
+            "cx": 80.0,
+            "cy": 250.0,
+        },
+        {"text": "1", "x_min": 150.0, "x_max": 160.0, "y_min": 240.0, "y_max": 260.0, "cx": 155.0, "cy": 250.0},
+        {"text": "3", "x_min": 235.0, "x_max": 245.0, "y_min": 240.0, "y_max": 260.0, "cx": 240.0, "cy": 250.0},
+        {"text": "5", "x_min": 305.0, "x_max": 315.0, "y_min": 240.0, "y_max": 260.0, "cx": 310.0, "cy": 250.0},
+    ]
+
+    parsed_meds = ocr_service._parse_extracted_meds(raw_text="", ocr_fields=ocr_fields)
+    parsed_map = {item["name"]: item for item in parsed_meds}
+
+    assert "코푸시럽" in parsed_map
+    assert parsed_map["코푸시럽"]["dosage_text"] == "1포씩"
+    assert parsed_map["코푸시럽"]["frequency_text"] == "3회"
+    assert parsed_map["코푸시럽"]["duration_text"] == "5일분"
+
+
+def test_extract_simple_schedule_from_text_normalizes_day_format():
+    ocr_service = OcrService()
+    schedule = ocr_service._extract_simple_schedule_from_text("1정 2회 7일")
+
+    assert schedule is not None
+    assert schedule["dosage_text"] == "1정씩"
+    assert schedule["frequency_text"] == "2회"
+    assert schedule["duration_text"] == "7일분"
 
 
 def test_is_retryable_naver_ocr_http_status():

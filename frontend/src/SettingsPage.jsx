@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import AppLayout from "./components/AppLayout.jsx";
+import { applyDarkMode, getStoredDarkMode } from "./theme.js";
 
 const API_PREFIX = "/api/v1";
 
@@ -21,6 +22,25 @@ const formatApiError = (value) => {
     return JSON.stringify(value);
   }
   return String(value);
+};
+
+const getInviteRemainingMs = (expiresAt) => {
+  if (!expiresAt) return null;
+  const expiresAtMs = new Date(expiresAt).getTime();
+  if (Number.isNaN(expiresAtMs)) return null;
+  return Math.max(0, expiresAtMs - Date.now());
+};
+
+const formatInviteRemainingTime = (remainingMs) => {
+  if (remainingMs === null || remainingMs === undefined) return "—";
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
 const readCookie = (name) => {
@@ -56,7 +76,7 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange,
   });
 
   const [settings, setSettings] = useState({
-    dark_mode: false,
+    dark_mode: getStoredDarkMode(),
     language: "ko",
     push_notifications: true,
   });
@@ -65,7 +85,7 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange,
   const [settingsError, setSettingsError] = useState(null);
   const [settingsNotice, setSettingsNotice] = useState(null);
 
-  const [inviteForm, setInviteForm] = useState({ expires_in_minutes: 10080 });
+  const [inviteForm, setInviteForm] = useState({ expires_in_minutes: 5 });
   const [inviteState, setInviteState] = useState({
     loading: false,
     submitting: false,
@@ -74,6 +94,7 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange,
     data: null,
     success: null,
   });
+  const [inviteRemainingMs, setInviteRemainingMs] = useState(null);
 
   const [linkForm, setLinkForm] = useState({ code: "" });
   const [linkAction, setLinkAction] = useState({
@@ -208,7 +229,7 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange,
   const createInviteCode = async () => {
     setInviteState((prev) => ({ ...prev, submitting: true, error: null, success: null }));
     try {
-      const payload = { expires_in_minutes: Number(inviteForm.expires_in_minutes) || 10080 };
+      const payload = { expires_in_minutes: Number(inviteForm.expires_in_minutes) || 5 };
       const res = await authFetch(`${API_PREFIX}/users/invite-code`, {
         method: "POST",
         body: JSON.stringify(payload),
@@ -326,6 +347,10 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange,
   };
 
   useEffect(() => {
+    applyDarkMode(settings.dark_mode);
+  }, [settings.dark_mode]);
+
+  useEffect(() => {
     const persistedRole =
       typeof window !== "undefined" ? window.localStorage.getItem("login_role") || "PATIENT" : "PATIENT";
     setLoginRole(normalizeMode(currentMode || persistedRole));
@@ -337,6 +362,22 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange,
       setInviteState((prev) => ({ ...prev, loading: false, error: null, success: null, data: null }));
     }
   }, [currentMode]);
+
+  useEffect(() => {
+    const expiresAt = inviteState.data?.expires_at;
+    if (!expiresAt) {
+      setInviteRemainingMs(null);
+      return;
+    }
+
+    const updateRemaining = () => {
+      setInviteRemainingMs(getInviteRemainingMs(expiresAt));
+    };
+
+    updateRemaining();
+    const timerId = setInterval(updateRemaining, 1000);
+    return () => clearInterval(timerId);
+  }, [inviteState.data?.expires_at]);
 
   return (
     <AppLayout
@@ -528,6 +569,12 @@ const SettingsPage = ({ modeOptions = [], currentMode = "PATIENT", onModeChange,
                       코드: <strong>{inviteState.data.code}</strong>
                       <br />
                       만료: {inviteState.data.expires_at ? new Date(inviteState.data.expires_at).toLocaleString("ko-KR") : "—"}
+                      <br />
+                      남은 시간:{" "}
+                      <strong className={inviteRemainingMs === 0 ? "text-danger" : ""}>
+                        {formatInviteRemainingTime(inviteRemainingMs)}
+                      </strong>
+                      {inviteRemainingMs === 0 && <span className="text-danger ms-2">만료됨</span>}
                     </div>
                   )}
                   {inviteState.error && <div className="alert alert-danger mt-3 mb-0">{inviteState.error}</div>}

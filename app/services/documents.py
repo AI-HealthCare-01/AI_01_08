@@ -494,7 +494,7 @@ class DocumentService:
                         .update(
                             name=item.name.strip(),
                             dosage_text=self._nullable_str(item.dosage_text),
-                            frequency_text=self._nullable_str(item.frequency_text),
+                            frequency_text=self._normalize_frequency_text_for_storage(item.frequency_text),
                             duration_text=self._nullable_str(item.duration_text),
                             confidence=item.confidence,
                         )
@@ -587,7 +587,7 @@ class DocumentService:
                     patient_med=patient_med,
                     extracted_med_fallback_map=extracted_med_fallback_map,
                 )
-            drug_info_cache = patient_med.drug_info_cache
+            drug_info_cache = await self._ensure_patient_med_drug_cache_for_guide(patient_med=patient_med)
             data_source = "ocr_mfds" if drug_info_cache else "ocr_only"
             source_document = (
                 source_document_map.get(patient_med.source_document_id) if patient_med.source_document_id else None
@@ -665,6 +665,21 @@ class DocumentService:
             patient_med_query = patient_med_query.filter(source_document_id=document_id)
 
         return await patient_med_query.select_related("drug_info_cache").order_by("-confirmed_at", "-updated_at")
+
+    # 복약안내 조회 시 미매칭 patient_med의 drug_info_cache를 1회 보정
+    async def _ensure_patient_med_drug_cache_for_guide(self, patient_med: PatientMed) -> DrugInfoCache | None:
+        if patient_med.drug_info_cache:
+            return patient_med.drug_info_cache
+
+        cache_resolution = await self._resolve_drug_cache(name=patient_med.display_name, fetch_missing=True)
+        matched_cache = cache_resolution.cache
+        if not matched_cache:
+            return None
+
+        await PatientMed.filter(id=patient_med.id).update(drug_info_cache_id=matched_cache.id)
+        patient_med.drug_info_cache_id = matched_cache.id
+        patient_med.drug_info_cache = matched_cache
+        return matched_cache
 
     # 복약안내용 ExtractedMed 맵 구성 - REQ-DOC-007
     @staticmethod
@@ -803,7 +818,17 @@ class DocumentService:
     @staticmethod
     def _resolve_media_type(file_path: Path) -> str:
         media_type = mimetypes.guess_type(file_path.name)[0]
-        return media_type or "application/octet-stream"
+        if media_type:
+            return media_type
+
+        suffix = file_path.suffix.lower()
+        if suffix in {".jpg", ".jpeg"}:
+            return "image/jpeg"
+        if suffix == ".png":
+            return "image/png"
+        if suffix == ".pdf":
+            return "application/pdf"
+        return "application/octet-stream"
 
     @staticmethod
     def _resolve_download_name(original_filename: str | None, file_path: Path) -> str:
@@ -957,7 +982,7 @@ class DocumentService:
             patient_id=patient_id,
             name=item.name.strip(),
             dosage_text=self._nullable_str(item.dosage_text),
-            frequency_text=self._nullable_str(item.frequency_text),
+            frequency_text=self._normalize_frequency_text_for_storage(item.frequency_text),
             duration_text=self._nullable_str(item.duration_text),
             confidence=item.confidence,
             using_db=using_db,
@@ -1386,20 +1411,49 @@ class DocumentService:
     # 복약안내 복용횟수 추출(추출약 우선) - REQ-DOC-007
     def _coalesce_frequency_text(self, patient_med: PatientMed, extracted_med: ExtractedMed | None) -> str | None:
         if extracted_med and extracted_med.frequency_text:
-            return self._nullable_str(extracted_med.frequency_text)
+            return self._normalize_frequency_text_for_storage(extracted_med.frequency_text)
 
         if not patient_med.notes:
             return None
         match = re.search(r"횟수:([^/]+)", patient_med.notes)
         if match:
-            return self._nullable_str(match.group(1))
+            return self._normalize_frequency_text_for_storage(match.group(1))
         return None
+
+    # 복용시간 슬롯 문자열 정규화(아침/점심/저녁/취침 순서 고정) - REQ-DOC-007
+    @staticmethod
+    def _normalize_frequency_text_for_storage(frequency_text: str | None) -> str | None:
+        normalized_text = DocumentService._nullable_str(frequency_text)
+        if not normalized_text:
+            return None
+
+        normalized_text = normalized_text.replace("취침 전", "취침").replace("취침전", "취침")
+        detected_slots: list[str] = []
+        for keyword, _ in DOCUMENT_MED_TIME_SLOTS:
+            if keyword in normalized_text and keyword not in detected_slots:
+                detected_slots.append(keyword)
+
+        if not detected_slots:
+            return normalized_text
+
+        base_text = normalized_text
+        for keyword, _ in DOCUMENT_MED_TIME_SLOTS:
+            base_text = base_text.replace(keyword, " ")
+        base_text = base_text.replace("/", " ").replace(",", " ")
+        base_text = re.sub(r"\s+", " ", base_text).strip()
+
+        ordered_slot_text = "/".join(detected_slots)
+        if not base_text:
+            return ordered_slot_text
+        return f"{base_text} {ordered_slot_text}".strip()
 
     # 복약안내 효능 요약 계산 - REQ-DRUG-002
     def _build_efficacy_summary(self, display_name: str, drug_info_cache: DrugInfoCache | None) -> str | None:
-        if drug_info_cache and drug_info_cache.efficacy:
-            bullets = self._split_guide_text_to_bullets(text=drug_info_cache.efficacy, fallback_text=None)
-            return bullets[0] if bullets else drug_info_cache.efficacy[:120]
+        if drug_info_cache:
+            if drug_info_cache.efficacy:
+                bullets = self._split_guide_text_to_bullets(text=drug_info_cache.efficacy, fallback_text=None)
+                return bullets[0] if bullets else drug_info_cache.efficacy[:120]
+            return f"{display_name} 처방약 (식약처 품목 매칭, 상세 효능 정보 없음)"
         return f"{display_name} 처방약 (식약처 상세정보 미매칭)"
 
     # 복약안내 보관방법 계산 - REQ-DRUG-002
@@ -1417,7 +1471,9 @@ class DocumentService:
         if extracted_med and extracted_med.frequency_text:
             parts.append(f"{extracted_med.frequency_text} 복용")
         if extracted_med and extracted_med.duration_text:
-            parts.append(f"{extracted_med.duration_text} 동안 복용")
+            normalized_duration_text = self._normalize_duration_text_for_guide(extracted_med.duration_text)
+            if normalized_duration_text:
+                parts.append(f"{normalized_duration_text} 동안 복용")
         if not parts and patient_med.notes:
             parts.append(patient_med.notes)
         return "\n".join(parts)
@@ -1430,8 +1486,20 @@ class DocumentService:
         if extracted_med.frequency_text and "필요" in extracted_med.frequency_text:
             parts.append("필요 시 복용 약으로 과다 복용을 피하세요.")
         if extracted_med.duration_text:
-            parts.append(f"처방된 기간({extracted_med.duration_text})을 우선 지켜 복용하세요.")
+            normalized_duration_text = self._normalize_duration_text_for_guide(extracted_med.duration_text)
+            if normalized_duration_text:
+                parts.append(f"처방된 기간({normalized_duration_text})을 우선 지켜 복용하세요.")
         return "\n".join(parts)
+
+    # 복약 안내 문구용 기간 텍스트 정규화(숫자-only -> N일) - REQ-DOC-007
+    @staticmethod
+    def _normalize_duration_text_for_guide(duration_text: str | None) -> str | None:
+        normalized_text = DocumentService._nullable_str(duration_text)
+        if not normalized_text:
+            return None
+        if re.fullmatch(r"\d+", normalized_text):
+            return f"{normalized_text}일"
+        return normalized_text
 
     # MFDS 미매칭 시 기본 안전 수칙 - REQ-DOC-007
     @staticmethod

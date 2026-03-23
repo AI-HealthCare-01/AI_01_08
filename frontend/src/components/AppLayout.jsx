@@ -534,7 +534,7 @@ function AppLayout({
             <a className="app-profile-button" href="/app/profile" title="프로필">
               {profileInitial}
             </a>
-            <button className="btn btn-outline-secondary btn-sm" type="button" onClick={handleLogout}>
+            <button className="btn btn-outline-secondary btn-sm app-logout-button" type="button" onClick={handleLogout}>
               로그아웃
             </button>
           </div>
