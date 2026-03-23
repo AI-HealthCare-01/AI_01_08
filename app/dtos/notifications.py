@@ -35,6 +35,7 @@ class NotificationItem(BaseModel):
     type: str
     title: str | None = None
     body: str | None = None
+    patient_id: int | None = None
 
     # DB에는 payload_json(TEXT)이지만, API로는 dict로 통일
     payload: dict[str, Any] = Field(default_factory=dict)

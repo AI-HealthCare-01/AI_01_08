@@ -100,6 +100,7 @@ async def list_notifications(
             type=r.type,
             title=r.title,
             body=r.body,
+            patient_id=r.patient_id,
             payload=normalize_payload(r.payload_json),
             read_at=r.read_at,
             created_at=r.created_at,
