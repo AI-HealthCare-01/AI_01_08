@@ -108,7 +108,9 @@ class DashboardService:
     ) -> tuple[float, float]:
         try:
             today_ocr_jobs = await OcrJob.filter(created_at__gte=today_start, created_at__lte=today_end)
-            today_ocr_jobs = [job for job in today_ocr_jobs if job.status in [*OCR_SUCCESS_STATUSES, *OCR_FAILURE_STATUSES]]
+            today_ocr_jobs = [
+                job for job in today_ocr_jobs if job.status in [*OCR_SUCCESS_STATUSES, *OCR_FAILURE_STATUSES]
+            ]
             today_ocr_total = len(today_ocr_jobs)
             today_success_ocr = len([job for job in today_ocr_jobs if job.status in OCR_SUCCESS_STATUSES])
             ocr_success_rate = (today_success_ocr / today_ocr_total * 100) if today_ocr_total > 0 else 0

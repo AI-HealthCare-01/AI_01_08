@@ -947,7 +947,9 @@ class OcrService:
         body_lines = row_lines[header_idx + 1 :]
 
         for idx, row_fields in enumerate(body_rows):
-            row_text = body_lines[idx] if idx < len(body_lines) else self._normalize_line(self._build_row_text(row_fields))
+            row_text = (
+                body_lines[idx] if idx < len(body_lines) else self._normalize_line(self._build_row_text(row_fields))
+            )
             if not row_text:
                 continue
             if self._is_summary_header_row_text(current_line=row_text, next_lines=body_lines[idx + 1 : idx + 6]):
