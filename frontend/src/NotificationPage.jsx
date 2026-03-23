@@ -62,6 +62,13 @@ const NotificationPage = ({
     }));
   }, [patientsSource]);
 
+  const caregiverPatientIdsKey = useMemo(() => {
+    return normalizedPatients
+      .map((patient) => String(patient.id))
+      .sort()
+      .join(",");
+  }, [normalizedPatients]);
+
   const caregiverPatientIdSet = useMemo(
     () =>
       new Set(
@@ -287,7 +294,7 @@ const NotificationPage = ({
 
   useEffect(() => {
     loadAll();
-  }, [isCaregiver, myPatientId, selfPatientId, unreadOnly]);
+  }, [isCaregiver, myPatientId, selfPatientId, unreadOnly, caregiverPatientIdsKey]);
 
   useEffect(() => {
     if (!isCaregiver) return;
