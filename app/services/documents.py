@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import logging
 import mimetypes
 import re
 import uuid
@@ -58,6 +59,7 @@ DOCUMENT_MED_TIME_SLOTS: tuple[tuple[str, time], ...] = (
     ("저녁", time(hour=19, minute=0)),
     ("취침", time(hour=22, minute=0)),
 )
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -418,6 +420,14 @@ class DocumentService:
             if backfilled_count > 0:
                 extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_success_job.id).order_by("id")
 
+        if not extracted_meds:
+            restored_count = await self._restore_extracted_meds_from_confirmed_patient_meds(
+                document=document,
+                ocr_job=latest_success_job,
+            )
+            if restored_count > 0:
+                extracted_meds = await ExtractedMed.filter(ocr_job_id=latest_success_job.id).order_by("id")
+
         response_items = await self._build_extracted_drug_items(
             extracted_meds=extracted_meds, fetch_missing=include_mfds
         )
@@ -720,6 +730,46 @@ class DocumentService:
             return None
         fallback_key = (patient_med.source_ocr_job_id, normalized_name)
         return extracted_med_fallback_map.get(fallback_key)
+
+    async def _restore_extracted_meds_from_confirmed_patient_meds(self, *, document: Document, ocr_job: OcrJob) -> int:
+        confirmed_patient_meds = await PatientMed.filter(
+            patient_id=document.patient_id,
+            source_document_id=document.id,
+            is_active=True,
+        ).order_by("-confirmed_at", "-updated_at", "id")
+        if not confirmed_patient_meds:
+            return 0
+
+        created_count = 0
+        for patient_med in confirmed_patient_meds:
+            med_name = self._nullable_str(patient_med.display_name)
+            if not med_name:
+                continue
+
+            notes_text = str(patient_med.notes or "")
+            dosage_from_notes = self._extract_confirmed_med_note_value(notes=notes_text, key="용량")
+            frequency_from_notes = self._extract_confirmed_med_note_value(notes=notes_text, key="횟수")
+            duration_from_notes = self._extract_confirmed_med_note_value(notes=notes_text, key="기간")
+
+            await ExtractedMed.create(
+                ocr_job_id=ocr_job.id,
+                patient_id=document.patient_id,
+                name=med_name,
+                dosage_text=self._nullable_str(patient_med.dosage) or dosage_from_notes,
+                frequency_text=self._normalize_frequency_text_for_storage(frequency_from_notes),
+                duration_text=duration_from_notes,
+                confidence=None,
+            )
+            created_count += 1
+
+        if created_count > 0:
+            logger.info(
+                "Restored extracted meds from confirmed patient meds (document_id=%s, ocr_job_id=%s, count=%s)",
+                document.id,
+                ocr_job.id,
+                created_count,
+            )
+        return created_count
 
     # 복약안내용 source document 맵 구성 - REQ-DOC-007
     @staticmethod
@@ -1407,6 +1457,15 @@ class DocumentService:
         if not parts:
             return "처방전 인식 기반 확정"
         return " / ".join(parts)
+
+    @staticmethod
+    def _extract_confirmed_med_note_value(*, notes: str, key: str) -> str | None:
+        if not notes:
+            return None
+        matched = re.search(rf"{re.escape(key)}:([^/]+)", notes)
+        if not matched:
+            return None
+        return DocumentService._nullable_str(matched.group(1))
 
     # 복약안내 복용횟수 추출(추출약 우선) - REQ-DOC-007
     def _coalesce_frequency_text(self, patient_med: PatientMed, extracted_med: ExtractedMed | None) -> str | None:

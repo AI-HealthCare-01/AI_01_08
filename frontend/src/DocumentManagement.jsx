@@ -50,7 +50,7 @@ const updateFrequencyWithSlot = (frequencyText = "", slot, checked) => {
   return `${baseText} ${orderedNextSlots.join("/")}`.trim();
 };
 
-function DrugRow({ drug, index, onChange, onDelete }) {
+function DrugRow({ drug, index, onChange, onDelete, isDurationMissing = false }) {
   const freq = drug.frequency_text || "";
 
   return (
@@ -100,7 +100,7 @@ function DrugRow({ drug, index, onChange, onDelete }) {
       </td>
       <td>
         <input
-          className="form-control form-control-sm"
+          className={`form-control form-control-sm ${isDurationMissing ? "is-invalid" : ""}`}
           value={drug.duration_text || ""}
           onChange={(e) => onChange(index, "duration_text", e.target.value)}
           placeholder=""
@@ -155,6 +155,7 @@ function DocumentManagement({
   const [bulkDeletingDocuments, setBulkDeletingDocuments] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
   const [saveMsg, setSaveMsg] = useState(null);
+  const [durationValidationIndices, setDurationValidationIndices] = useState([]);
   const [pollingId, setPollingId] = useState(null);
   const [showReviewOnly, setShowReviewOnly] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -631,6 +632,12 @@ function DocumentManagement({
 
   const handleDrugChange = (idx, field, value) => {
     setDrugs((prev) => prev.map((d, i) => i === idx ? { ...d, [field]: value } : d));
+    if (field === "duration_text") {
+      const hasDuration = String(value || "").trim().length > 0;
+      if (hasDuration) {
+        setDurationValidationIndices((prev) => prev.filter((item) => item !== idx));
+      }
+    }
   };
 
   const handleDrugDelete = (idx) => {
@@ -647,6 +654,7 @@ function DocumentManagement({
   // 임시저장
   const handleTempSave = async () => {
     if (!currentDoc) return;
+    setDurationValidationIndices([]);
     setSaving(true);
     setSaveMsg(null);
     try {
@@ -680,6 +688,18 @@ function DocumentManagement({
   // 확정하기
   const handleConfirm = async () => {
     if (!currentDoc) return;
+    const missingDurationRows = drugs
+      .map((drug, index) => ({ drug, index }))
+      .filter(({ drug }) => String(drug.name || "").trim() && !String(drug.duration_text || "").trim())
+      .map(({ index }) => index);
+    if (missingDurationRows.length > 0) {
+      const displayRows = missingDurationRows.map((index) => index + 1).join(", ");
+      setDurationValidationIndices(missingDurationRows);
+      setSaveMsg({ type: "danger", text: `기간(일)을 채워주세요. (누락 행: ${displayRows})` });
+      return;
+    }
+
+    setDurationValidationIndices([]);
     const wasConfirmedDoc = Boolean(ocrStatus?.has_confirmed_meds || currentDoc?.has_confirmed_meds);
     setSaving(true);
     setSaveMsg(null);
@@ -1084,7 +1104,16 @@ function DocumentManagement({
                       <tbody>
                         {displayDrugs.map((drug, idx) => {
                           const realIdx = showReviewOnly ? drugs.indexOf(drug) : idx;
-                          return <DrugRow key={realIdx} drug={drug} index={realIdx} onChange={handleDrugChange} onDelete={handleDrugDelete} />;
+                          return (
+                            <DrugRow
+                              key={realIdx}
+                              drug={drug}
+                              index={realIdx}
+                              onChange={handleDrugChange}
+                              onDelete={handleDrugDelete}
+                              isDurationMissing={durationValidationIndices.includes(realIdx)}
+                            />
+                          );
                         })}
                         {displayDrugs.length === 0 && (
                           <tr><td colSpan={7} className="text-center text-muted py-3">추출된 약이 없습니다.</td></tr>
