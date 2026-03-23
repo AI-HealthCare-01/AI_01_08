@@ -20,11 +20,15 @@ class ChatMessage(models.Model):
     session = fields.ForeignKeyField("models.ChatSession", related_name="messages", on_delete=fields.CASCADE)
     role = fields.CharField(max_length=20)
     content = fields.TextField()
+    status = fields.CharField(max_length=20, default="completed")
+    error_message = fields.TextField(null=True)
+    started_at = fields.DatetimeField(null=True)
+    completed_at = fields.DatetimeField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
         table = "chat_messages"
-        indexes = (("session_id", "created_at"),)
+        indexes = (("session_id", "created_at"), ("session_id", "status", "created_at"))
 
 
 class ChatSessionMemory(models.Model):
