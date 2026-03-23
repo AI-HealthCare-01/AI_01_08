@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date
 
 from app.models.schedules import MedSchedule, MedScheduleTime
+from tortoise.expressions import Q
 
 
 class MedScheduleRepository:
@@ -18,10 +19,10 @@ class MedScheduleRepository:
         - [date_from, date_to]와 스케줄 기간이 겹치는 것만 조회
         """
         return await MedSchedule.filter(
-            patient_id=patient_id,
-            status="active",
-            start_date__lte=date_to,
-            end_date__gte=date_from,
+            Q(patient_id=patient_id)
+            & Q(status="active")
+            & (Q(start_date__isnull=True) | Q(start_date__lte=date_to))
+            & (Q(end_date__isnull=True) | Q(end_date__gte=date_from))
         ).all()
 
     async def list_times_by_schedule_ids(
