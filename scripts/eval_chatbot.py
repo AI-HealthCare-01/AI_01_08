@@ -8,6 +8,37 @@ from pathlib import Path
 
 import httpx
 
+EVAL_PRESETS: dict[str, list[str]] = {
+    # Cheapest loop for day-to-day regression checks.
+    "focused_patient_rich": [
+        "daily_001",
+        "interaction_002",
+        "interaction_004",
+        "schedule_001",
+        "schedule_002",
+        "schedule_003",
+    ],
+    "focused_caregiver_rich": [
+        "daily_001",
+        "caregiver_002",
+        "caregiver_003",
+        "caregiver_004",
+    ],
+    "focused_empty_patient": [
+        "daily_001",
+        "empty_001",
+        "empty_002",
+    ],
+    "focused_smoke": [
+        "daily_001",
+        "hospital_001",
+        "profile_001",
+        "med_current_001",
+        "interaction_001",
+        "external_drug_001",
+    ],
+}
+
 
 def _env_list(name: str) -> list[str]:
     raw = str(os.getenv(name) or "").strip()
@@ -21,6 +52,13 @@ def _load_cases() -> list[dict[str, object]]:
     return json.loads(cases_path.read_text(encoding="utf-8"))
 
 
+def _resolve_ids_from_preset() -> set[str]:
+    preset = str(os.getenv("CHAT_EVAL_PRESET") or "").strip().lower()
+    if not preset:
+        return set()
+    return set(EVAL_PRESETS.get(preset, []))
+
+
 def _filter_cases(cases: list[dict[str, object]]) -> list[dict[str, object]]:
     stage = str(os.getenv("CHAT_EVAL_STAGE") or "core").strip().lower()
     allowed_stages = {
@@ -30,7 +68,7 @@ def _filter_cases(cases: list[dict[str, object]]) -> list[dict[str, object]]:
     }.get(stage, {"smoke", "core"})
 
     categories = set(_env_list("CHAT_EVAL_CATEGORIES"))
-    ids = set(_env_list("CHAT_EVAL_IDS"))
+    ids = _resolve_ids_from_preset() | set(_env_list("CHAT_EVAL_IDS"))
     data_state = str(os.getenv("CHAT_EVAL_DATA_STATE") or "").strip().lower()
     persona = str(os.getenv("CHAT_EVAL_PERSONA") or "").strip().lower()
     limit = int(os.getenv("CHAT_EVAL_LIMIT") or "0")
@@ -174,6 +212,14 @@ def main() -> int:
         print("No evaluation cases selected")
         return 1
 
+    print(
+        f"[eval] start total_cases={len(cases)} stage={os.getenv('CHAT_EVAL_STAGE') or 'core'} "
+        f"persona={os.getenv('CHAT_EVAL_PERSONA') or 'any'} data_state={os.getenv('CHAT_EVAL_DATA_STATE') or 'any'} "
+        f"preset={os.getenv('CHAT_EVAL_PRESET') or '-'} repeat_count={repeat_count}",
+        file=sys.stderr,
+        flush=True,
+    )
+
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
@@ -181,7 +227,12 @@ def main() -> int:
 
     results: list[dict[str, object]] = []
     with httpx.Client(timeout=30.0, headers=headers) as client:
-        for case in cases:
+        for index, case in enumerate(cases, start=1):
+            print(
+                f"[eval] case {index}/{len(cases)} id={case['id']} category={case['category']}",
+                file=sys.stderr,
+                flush=True,
+            )
             response = client.post(
                 f"{api_base}/chat/sessions/{session_id}/messages",
                 json={"content": case["message"]},
@@ -190,6 +241,11 @@ def main() -> int:
             answer = _extract_answer(body)
             scored = _score_case(case, answer, response.status_code)
             results.append(scored)
+            print(
+                f"[eval] case_done id={case['id']} status={response.status_code} passed={scored['passed']}",
+                file=sys.stderr,
+                flush=True,
+            )
             if stop_on_fail and not scored["passed"]:
                 break
 
@@ -223,6 +279,12 @@ def main() -> int:
         "failures": failures,
         "results": results,
     }
+    print(
+        f"[eval] done passed={passed_count}/{total_count} pass_rate="
+        f"{round((passed_count / total_count) * 100, 1) if total_count else 0.0}",
+        file=sys.stderr,
+        flush=True,
+    )
     print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0 if passed_count == total_count else 2
 
