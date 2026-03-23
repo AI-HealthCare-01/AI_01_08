@@ -86,3 +86,32 @@ async def test_search_easy_drug_info_falls_back_to_item_name(monkeypatch: pytest
     assert response.total == 1
     assert response.items[0].item_seq == "201900002"
     assert response.items[0].item_name == "폴백약"
+
+
+@pytest.mark.asyncio
+async def test_search_easy_drug_info_falls_back_to_dur_item_info(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(config, "MFDS_SERVICE_KEY", "dummy-key")
+    service = MfdsService()
+    calls: list[tuple[str, str, str]] = []
+
+    async def fake_request_easy(self, query: str, num_of_rows: int, query_field: str = "itemName"):  # noqa: ARG001
+        calls.append(("easy", query_field, query))
+        return []
+
+    async def fake_request_dur(self, query: str, num_of_rows: int, query_field: str = "itemName"):  # noqa: ARG001
+        calls.append(("dur", query_field, query))
+        return [{"ITEM_SEQ": "202106092", "ITEM_NAME": "타이레놀"}]
+
+    async def fake_sync(self, items: list[dict]):  # noqa: ARG001
+        return None
+
+    monkeypatch.setattr(MfdsService, "_request_easy_drug_info", fake_request_easy)
+    monkeypatch.setattr(MfdsService, "_request_dur_item_info", fake_request_dur)
+    monkeypatch.setattr(MfdsService, "_sync_drug_info_cache", fake_sync)
+
+    response = await service.search_easy_drug_info("타이레놀", num_of_rows=5)
+
+    assert calls == [("easy", "itemName", "타이레놀"), ("dur", "itemName", "타이레놀")]
+    assert response.total == 1
+    assert response.items[0].item_seq == "202106092"
+    assert response.items[0].item_name == "타이레놀"

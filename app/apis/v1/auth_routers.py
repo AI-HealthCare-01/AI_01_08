@@ -92,14 +92,10 @@ async def admin_login(
     request: LoginRequest,
     auth_service: Annotated[AuthService, Depends(AuthService)],
 ) -> Response:
-    """관리자 전용 로그인 (임시로 모든 사용자 허용)"""
+    """관리자 전용 로그인"""
     user = await auth_service.authenticate(request)
-
-    # 임시로 모든 사용자를 관리자로 인정 (role 컴럼이 없어서)
-    # 추후 role 컴럼 추가 후 제한 가능
-
-    tokens = await auth_service.login(user, role=LoginRole.PATIENT)
-    return _build_login_response(tokens, login_role=LoginRole.PATIENT)
+    tokens = await auth_service.login(user, role=LoginRole.ADMIN)
+    return _build_login_response(tokens, login_role=LoginRole.ADMIN)
 
 
 @auth_router.post("/admin/signup", status_code=status.HTTP_201_CREATED)
@@ -108,7 +104,8 @@ async def admin_signup(
     auth_service: Annotated[AuthService, Depends(AuthService)],
 ) -> Response:
     """관리자 회원가입"""
-    await auth_service.signup(request)
+    admin_request = request.model_copy(update={"role": LoginRole.ADMIN.value})
+    await auth_service.signup(admin_request)
     return Response(content={"detail": "관리자 계정이 성공적으로 생성되었습니다."}, status_code=status.HTTP_201_CREATED)
 
 

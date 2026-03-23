@@ -48,3 +48,13 @@ class UserInfoResponse(BaseSerializerModel):
     gender: Gender
     created_at: datetime
     patient_id: int | None = None
+
+
+class UserDeviceRegisterRequest(BaseModel):
+    device_id: Annotated[str, Field(min_length=8, max_length=500)]
+    platform: Annotated[str | None, Field(default=None, max_length=30)]
+
+
+class UserDeviceCountResponse(BaseSerializerModel):
+    linked_device_count: int
+    last_login_at: datetime | None = None

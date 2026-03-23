@@ -7,7 +7,7 @@ from tortoise.contrib.test import TestCase
 from app.main import app
 from app.models.documents import Document, ExtractedMed, OcrJob
 from app.models.healthcare import Role, UserRole
-from app.models.medications import PatientMed
+from app.models.medications import DrugInfoCache, PatientMed
 from app.models.patients import Patient
 from app.models.schedules import MedSchedule, MedScheduleTime
 from app.models.users import User
@@ -157,6 +157,70 @@ class TestDocumentDrugsApis(TestCase):
                 is_active=True,
             )
             assert len(active_patient_meds) == 2
+
+    async def test_medication_guide_resolves_missing_drug_cache_from_display_name(self):
+        signup_data = {
+            "email": "patient.docs5@gmail.com",
+            "password": "Password123!",
+            "name": "문서환자5",
+            "gender": "FEMALE",
+            "birth_date": "1991-07-07",
+            "phone_number": "01070005555",
+        }
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            await client.post("/api/v1/auth/signup", json=signup_data)
+
+            user = await User.get(email=signup_data["email"])
+            patient_role, _ = await Role.get_or_create(code="PATIENT", defaults={"name": "PATIENT"})
+            await UserRole.get_or_create(user_id=user.id, role_id=patient_role.id)
+            patient, _ = await Patient.get_or_create(
+                user_id=user.id,
+                defaults={"owner_user_id": user.id, "display_name": "문서환자5"},
+            )
+
+            login_response = await client.post(
+                "/api/v1/auth/login",
+                json={"email": signup_data["email"], "password": signup_data["password"]},
+            )
+            access_token = login_response.json()["access_token"]
+            headers = {"Authorization": f"Bearer {access_token}"}
+
+            cache = await DrugInfoCache.create(
+                mfds_item_seq="202106092",
+                drug_name_display="페나셋정",
+                efficacy="해열 및 진통에 사용합니다.",
+                dosage_info="1회 1정, 1일 3회 복용",
+                precautions="과량 복용을 피하세요.",
+            )
+            patient_med = await PatientMed.create(
+                patient_id=patient.id,
+                source_document_id=None,
+                source_ocr_job_id=None,
+                source_extracted_med_id=None,
+                drug_info_cache_id=None,
+                display_name="페나셋정",
+                dosage="1정씩",
+                route=None,
+                notes="횟수:3회 / 기간:3일분",
+                is_active=True,
+            )
+
+            response = await client.get(
+                f"/api/v1/documents/medication-guide?patient_id={patient.id}",
+                headers=headers,
+            )
+            assert response.status_code == status.HTTP_200_OK
+
+            body = response.json()
+            assert body["total"] == 1
+            item = body["items"][0]
+            assert item["display_name"] == "페나셋정"
+            assert item["data_source"] == "ocr_mfds"
+            assert "미매칭" not in item["efficacy_summary"]
+
+            await patient_med.refresh_from_db()
+            assert patient_med.drug_info_cache_id == cache.id
 
     async def test_soft_delete_document_deactivates_related_meds_and_schedules(self):
         signup_data = {

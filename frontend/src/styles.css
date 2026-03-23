@@ -1,6 +1,15 @@
 :root {
   color: #0b1b2d;
   background-color: #f4f6fb;
+  --app-text-color: #0b1b2d;
+  --app-text-strong: #1f2937;
+  --app-text-muted: #6b7280;
+  --app-body-bg: #f4f6fb;
+  --app-border-strong: #e5e7eb;
+  --app-brand-color: #2563eb;
+  --app-sidebar-link: #374151;
+  --app-sidebar-hover-bg: #f0f4ff;
+  --app-sidebar-hover-text: #2563eb;
   --app-surface-bg: #ffffff;
   --app-surface-subtle: #f8fbff;
   --app-surface-border: #e4ebf7;
@@ -8,9 +17,27 @@
   --app-surface-shadow: 0 9px 22px rgba(15, 23, 42, 0.045);
 }
 
+[data-bs-theme="dark"] {
+  color-scheme: dark;
+  --app-text-color: #d8e2f1;
+  --app-text-strong: #e8eef8;
+  --app-text-muted: #9fb0c9;
+  --app-body-bg: #0f172a;
+  --app-border-strong: #243447;
+  --app-brand-color: #7ab0ff;
+  --app-sidebar-link: #b8c5db;
+  --app-sidebar-hover-bg: #1e2d44;
+  --app-sidebar-hover-text: #9fc5ff;
+  --app-surface-bg: #132033;
+  --app-surface-subtle: #1a2b44;
+  --app-surface-border: #263a57;
+  --app-surface-shadow: 0 10px 28px rgba(2, 6, 23, 0.45);
+}
+
 body {
   font-family: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
-  background-color: #f4f6fb;
+  color: var(--app-text-color);
+  background-color: var(--app-body-bg);
 }
 
 .card {
@@ -75,7 +102,7 @@ body {
 
 .login-page {
   min-height: 100vh;
-  background: linear-gradient(145deg, #f9fbff 0%, #e4eef7 100%);
+  background: linear-gradient(145deg, var(--app-surface-subtle) 0%, var(--app-body-bg) 100%);
   display: flex;
   align-items: center;
   padding: 4rem 0;
@@ -110,8 +137,8 @@ body {
   max-height: 360px;
   overflow: auto;
   white-space: pre-wrap;
-  background: #ffffff;
-  border: 1px solid #dfe7f1;
+  background: var(--app-surface-bg);
+  border: 1px solid var(--app-surface-border);
   border-radius: 0.75rem;
   padding: 1rem;
   font-size: 0.9rem;
@@ -166,14 +193,14 @@ body {
 .doc-layout {
   display: flex;
   min-height: 100vh;
-  background: #f4f6fb;
+  background: var(--app-body-bg);
 }
 
 .doc-sidebar {
   width: 238px;
   height: 100vh;
-  background: #fff;
-  border-right: 1px solid #e5e7eb;
+  background: var(--app-surface-bg);
+  border-right: 1px solid var(--app-border-strong);
   display: flex;
   flex-direction: column;
   position: sticky;
@@ -187,12 +214,12 @@ body {
 }
 
 .doc-sidebar-top {
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--app-border-strong);
 }
 
 .doc-sidebar-brand {
   padding: 1.25rem 1.25rem 1.1rem;
-  color: #2563eb;
+  color: var(--app-brand-color);
   font-size: 1rem;
 }
 
@@ -214,7 +241,7 @@ body {
 .doc-sidebar-link {
   display: block;
   padding: 0.6rem 1.25rem;
-  color: #374151;
+  color: var(--app-sidebar-link);
   text-decoration: none;
   font-size: 0.9rem;
   border-left: 3px solid transparent;
@@ -222,8 +249,8 @@ body {
 }
 
 .doc-sidebar-link:hover {
-  background: #f0f4ff;
-  color: #2563eb;
+  background: var(--app-sidebar-hover-bg);
+  color: var(--app-sidebar-hover-text);
 }
 
 .doc-sidebar-link.active {
@@ -236,8 +263,8 @@ body {
 
 .doc-sidebar-bottom {
   margin-top: auto;
-  background: #fff;
-  border-top: 1px solid #e5e7eb;
+  background: var(--app-surface-bg);
+  border-top: 1px solid var(--app-border-strong);
 }
 
 .doc-sidebar-footer {
@@ -273,18 +300,18 @@ body {
   margin: 0;
   font-size: 1.45rem;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--app-text-strong);
 }
 
 .app-page-description {
   margin: 0.35rem 0 0;
-  color: #6b7280;
+  color: var(--app-text-muted);
   font-size: 0.92rem;
 }
 
 .app-page-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.75rem;
 }
 
@@ -360,6 +387,12 @@ body {
   color: #1f2937;
   text-decoration: none;
   background: #fff;
+}
+
+.app-logout-button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .app-profile-button:hover {
@@ -481,6 +514,54 @@ body {
   max-height: 170px;
   object-fit: cover;
   display: block;
+}
+
+.upload-camera-overlay {
+  position: fixed;
+  inset: 0;
+  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.72);
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.upload-camera-overlay.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.upload-camera-panel {
+  width: min(1100px, 96vw);
+  max-height: 94vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 1rem;
+  border: 1px solid #dbe3ef;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.25);
+}
+
+.upload-camera-video-wrap {
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0f172a;
+  border: 1px solid #d7e1ef;
+}
+
+.upload-camera-video {
+  width: 100%;
+  height: min(72vh, 760px);
+  display: block;
+  object-fit: contain;
+  background: #000000;
 }
 
 .drug-search-result-card {
@@ -895,6 +976,18 @@ body {
   gap: 0.35rem;
 }
 
+.home-inline-meal-group {
+  display: grid;
+  gap: 0.26rem;
+}
+
+.home-inline-meal-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #4a5f7f;
+  padding-left: 0.18rem;
+}
+
 .home-inline-row {
   display: flex;
   align-items: center;
@@ -921,6 +1014,15 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.home-inline-main.home-inline-main-wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .home-med-status {
@@ -1125,6 +1227,18 @@ body {
   .drug-scan-video {
     min-height: 150px;
     max-height: 220px;
+  }
+  .upload-camera-overlay {
+    padding: 0.75rem;
+  }
+  .upload-camera-panel {
+    width: 100%;
+    max-height: 96vh;
+    border-radius: 14px;
+    padding: 0.85rem;
+  }
+  .upload-camera-video {
+    height: min(66vh, 560px);
   }
   .drug-search-item-image {
     max-width: 240px;

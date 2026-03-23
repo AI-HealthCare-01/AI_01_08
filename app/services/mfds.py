@@ -39,6 +39,17 @@ class MfdsService:
             if items:
                 break
 
+        # e약은요 미매칭 시 DUR 품목정보 fallback 조회
+        if not items:
+            for query_field, query_value in search_candidates:
+                items = await self._request_dur_item_info(
+                    query=query_value,
+                    num_of_rows=num_of_rows,
+                    query_field=query_field,
+                )
+                if items:
+                    break
+
         await self._sync_drug_info_cache(items=items)
 
         response_items = [
@@ -61,6 +72,37 @@ class MfdsService:
     # 식약처 e약은요 API 호출 - REQ-DRUG-001, REQ-DRUG-002
     async def _request_easy_drug_info(self, query: str, num_of_rows: int, query_field: str = "itemName") -> list[dict]:
         url = f"{config.MFDS_BASE_URL}/DrbEasyDrugInfoService/getDrbEasyDrugList"
+        if query_field not in {"itemName", "itemSeq"}:
+            query_field = "itemName"
+
+        params = {
+            "serviceKey": config.MFDS_SERVICE_KEY,
+            "type": "json",
+            "pageNo": 1,
+            "numOfRows": num_of_rows,
+        }
+        params[query_field] = query
+
+        timeout = httpx.Timeout(config.MFDS_TIMEOUT_SECONDS)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(url, params=params)
+
+        if response.status_code >= status.HTTP_400_BAD_REQUEST:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="SERVICE_UNAVAILABLE")
+
+        payload = response.json()
+        body = payload.get("body") or {}
+        items = body.get("items") or []
+
+        if isinstance(items, dict):
+            return [items]
+        if isinstance(items, list):
+            return items
+        return []
+
+    # 식약처 DUR 품목정보 API 호출(e약은요 fallback) - REQ-DRUG-001, REQ-DRUG-005
+    async def _request_dur_item_info(self, query: str, num_of_rows: int, query_field: str = "itemName") -> list[dict]:
+        url = f"{config.MFDS_BASE_URL}/DURPrdlstInfoService03/getDurPrdlstInfoList03"
         if query_field not in {"itemName", "itemSeq"}:
             query_field = "itemName"
 
@@ -206,7 +248,14 @@ class MfdsService:
 
             existing_cache = await DrugInfoCache.get_or_none(mfds_item_seq=item_seq)
             if existing_cache:
-                await DrugInfoCache.filter(id=existing_cache.id).update(**defaults)
+                # 부분 데이터(DUR fallback) 동기화 시 기존 상세 텍스트를 None으로 덮어쓰지 않는다.
+                update_payload: dict[str, object | None] = {"expires_at": defaults["expires_at"]}
+                for field_name, field_value in defaults.items():
+                    if field_name == "expires_at":
+                        continue
+                    if field_value is not None:
+                        update_payload[field_name] = field_value
+                await DrugInfoCache.filter(id=existing_cache.id).update(**update_payload)
                 continue
             await DrugInfoCache.create(mfds_item_seq=item_seq, **defaults)
 

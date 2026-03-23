@@ -89,3 +89,55 @@ class TestLoginAPI(TestCase):
             response = await client.post("/api/v1/auth/login", json=login_data)
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    async def test_admin_login_success(self):
+        signup_data = {
+            "email": "admin_login_test@gmail.com",
+            "password": "Password123!",
+            "name": "관리자로그인테스터",
+            "gender": "MALE",
+            "birth_date": "1991-01-01",
+            "phone_number": "01055556666",
+            "role": "ADMIN",
+        }
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            signup_response = await client.post("/api/v1/auth/signup", json=signup_data)
+            assert signup_response.status_code == status.HTTP_201_CREATED
+
+            response = await client.post(
+                "/api/v1/auth/admin/login",
+                json={
+                    "email": signup_data["email"],
+                    "password": signup_data["password"],
+                },
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["login_role"] == "ADMIN"
+        verified = JwtService().verify_jwt(response.json()["access_token"], token_type="access")
+        assert verified.payload["login_role"] == "ADMIN"
+
+    async def test_admin_login_forbidden_for_non_admin(self):
+        signup_data = {
+            "email": "non_admin_login_test@gmail.com",
+            "password": "Password123!",
+            "name": "일반사용자",
+            "gender": "FEMALE",
+            "birth_date": "1991-02-02",
+            "phone_number": "01066667777",
+        }
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            signup_response = await client.post("/api/v1/auth/signup", json=signup_data)
+            assert signup_response.status_code == status.HTTP_201_CREATED
+
+            response = await client.post(
+                "/api/v1/auth/admin/login",
+                json={
+                    "email": signup_data["email"],
+                    "password": signup_data["password"],
+                },
+            )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

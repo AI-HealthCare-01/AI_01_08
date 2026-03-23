@@ -1,11 +1,14 @@
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import ORJSONResponse as Response
 
+from app.core import config
 from app.dependencies.security import get_request_user
-from app.dtos.users import UserInfoResponse, UserUpdateRequest
+from app.dtos.users import UserDeviceCountResponse, UserDeviceRegisterRequest, UserInfoResponse, UserUpdateRequest
 from app.models.healthcare import AuthAccount, UserRole
+from app.models.notifications import UserDevice
 from app.models.patients import Patient
 from app.models.users import User
 from app.services.users import UserManageService
@@ -67,3 +70,42 @@ async def withdraw_user(
     resp = Response(content={"detail": "회원 탈퇴가 완료되었습니다."}, status_code=status.HTTP_200_OK)
     resp.delete_cookie(key="refresh_token", path="/")
     return resp
+
+
+@user_router.post("/me/devices/register", response_model=UserDeviceCountResponse, status_code=status.HTTP_200_OK)
+async def register_user_device(
+    payload: UserDeviceRegisterRequest,
+    user: Annotated[User, Depends(get_request_user)],
+) -> Response:
+    device_id = payload.device_id.strip()
+    if not device_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_INPUT")
+
+    platform = payload.platform.strip() if payload.platform else None
+    if platform == "":
+        platform = None
+    now = datetime.now(config.TIMEZONE)
+
+    existing_device = await UserDevice.get_or_none(user_id=user.id, push_token=device_id)
+    if existing_device:
+        await UserDevice.filter(id=existing_device.id).update(
+            platform=platform,
+            is_active=True,
+            created_at=now,
+        )
+    else:
+        await UserDevice.create(
+            user_id=user.id,
+            platform=platform,
+            push_token=device_id,
+            is_active=True,
+            created_at=now,
+        )
+
+    linked_device_count = await UserDevice.filter(user_id=user.id, is_active=True).count()
+    last_login_device = await UserDevice.filter(user_id=user.id, is_active=True).order_by("-created_at").first()
+    response_data = UserDeviceCountResponse(
+        linked_device_count=linked_device_count,
+        last_login_at=last_login_device.created_at if last_login_device else None,
+    )
+    return Response(response_data.model_dump(), status_code=status.HTTP_200_OK)

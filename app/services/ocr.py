@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import logging
 import re
 import uuid
 from datetime import UTC, datetime
@@ -49,6 +50,9 @@ PACKED_NUMERIC_ROW_PATTERN = re.compile(
     r"(?P<duration_days>\d+)\s*(?:일분|일)?$",
     re.IGNORECASE,
 )
+SIMPLE_DOSAGE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(정|캡슐|알|포|ml|mL)\s*씩?", re.IGNORECASE)
+SIMPLE_FREQUENCY_PATTERN = re.compile(r"(\d+)\s*회")
+SIMPLE_DURATION_PATTERN = re.compile(r"(\d+)\s*(일분|일)")
 NOISE_KEYWORDS = {
     "[barcode_detections]",
     "type=",
@@ -151,6 +155,8 @@ MED_NAME_OCR_CORRECTIONS = {
     "메디락디에스장용캅슐": "메디락디에스장용캡슐",
     "텔미누보정40/5m": "텔미누보정40/5mg",
 }
+
+logger = logging.getLogger(__name__)
 
 
 class OcrService:
@@ -639,10 +645,19 @@ class OcrService:
         lines = [line for line in lines if line]
 
         if ocr_fields:
+            logger.info("OCR meds parse: trying simple field parser (fields=%d)", len(ocr_fields))
+            simple_field_meds = self._parse_extracted_meds_simple_from_ocr_fields(ocr_fields=ocr_fields)
+            if simple_field_meds:
+                logger.info("OCR meds parse: simple field parser selected (count=%d)", len(simple_field_meds))
+                return simple_field_meds
+
+            logger.info("OCR meds parse: simple parser empty, fallback to legacy field parser")
             field_based_meds = self._parse_extracted_meds_from_ocr_fields(ocr_fields=ocr_fields)
             if field_based_meds:
+                logger.info("OCR meds parse: legacy field parser selected (count=%d)", len(field_based_meds))
                 return field_based_meds
 
+            logger.info("OCR meds parse: legacy field parser empty, fallback to regex parser")
         return self._parse_extracted_meds_with_regex(lines=lines)
 
     # REQ-DOC-005 - 정규식 기반 OCR fallback 파싱
@@ -773,6 +788,267 @@ class OcrService:
 
         self._apply_packed_schedule_fallback(parsed_meds=parsed_meds, lines=lines)
         return parsed_meds
+
+    # REQ-DOC-005 - 단순 bbox row 기반 OCR field parser(약 개수 보존 우선)
+    def _parse_extracted_meds_simple_from_ocr_fields(  # noqa: C901
+        self, ocr_fields: list[dict[str, str | float]]
+    ) -> list[dict[str, str | float | None]]:
+        if not ocr_fields:
+            return []
+
+        logger.info("OCR simple parser: start (fields=%d)", len(ocr_fields))
+        layout = self._segment_layout_regions(ocr_fields=ocr_fields)
+        med_guide_fields = layout.get("med_guide_fields") or []
+        summary_fields = layout.get("summary_fields") or []
+
+        summary_lines = self._fields_to_lines(fields=summary_fields)
+        if not summary_lines:
+            summary_lines = self._fields_to_lines(fields=ocr_fields)
+        summary_med_names = self._extract_summary_med_names(lines=summary_lines)
+        summary_schedule_map = self._extract_summary_schedule_map(
+            lines=summary_lines,
+            summary_med_names=summary_med_names,
+        )
+        if not med_guide_fields:
+            logger.info("OCR simple parser: med_guide_fields not found")
+            return []
+
+        med_guide_threshold = self._estimate_row_y_threshold(
+            fields=med_guide_fields,
+            factor=0.32,
+            min_value=3.5,
+            max_value=8.0,
+        )
+        med_guide_rows = self._group_fields_into_rows(fields=med_guide_fields, y_threshold=med_guide_threshold)
+        logger.info("OCR simple parser: grouped rows=%d", len(med_guide_rows))
+
+        blocks = self._build_simple_medication_blocks(rows=med_guide_rows)
+        logger.info("OCR simple parser: medication blocks=%d", len(blocks))
+        if not blocks:
+            return []
+
+        parsed_meds: list[dict[str, str | float | None]] = []
+        for block_idx, block in enumerate(blocks):
+            med_name_candidate: tuple[str, str | None] | None = None
+            med_rows = block.get("med_rows") or []
+            row_texts = block.get("row_texts") or []
+            guide_rows = block.get("guide_rows") or []
+
+            for candidate_text in [*med_rows, *row_texts]:
+                med_name_candidate = self._extract_simple_med_name_from_text(text=str(candidate_text))
+                if med_name_candidate:
+                    break
+
+            if not med_name_candidate:
+                logger.debug("OCR simple parser block[%d]: skipped (no med name candidate)", block_idx)
+                continue
+
+            med_name, strength_text = med_name_candidate
+            dosage_text: str | None = None
+            frequency_text: str | None = None
+            duration_text: str | None = None
+
+            for schedule_source in [*guide_rows, *row_texts]:
+                schedule = self._extract_simple_schedule_from_text(text=str(schedule_source))
+                if not schedule:
+                    continue
+                if not dosage_text and schedule.get("dosage_text"):
+                    dosage_text = schedule["dosage_text"]
+                if not frequency_text and schedule.get("frequency_text"):
+                    frequency_text = schedule["frequency_text"]
+                if not duration_text and schedule.get("duration_text"):
+                    duration_text = schedule["duration_text"]
+                if dosage_text and frequency_text and duration_text:
+                    break
+
+            # 가이드에서 1정씩/1캡슐씩을 우선 적용하고, 없으면 약명 strength(mg)를 보조로 사용
+            if not dosage_text and strength_text:
+                dosage_text = self._normalize_line(strength_text)
+
+            confidence = 0.88 if (frequency_text and duration_text) else 0.80
+            if not any([dosage_text, frequency_text, duration_text]):
+                confidence = 0.74
+
+            parsed_meds.append(
+                {
+                    "name": med_name,
+                    "dosage_text": dosage_text,
+                    "frequency_text": frequency_text,
+                    "duration_text": duration_text,
+                    "confidence": confidence,
+                }
+            )
+            logger.debug(
+                "OCR simple parser block[%d]: name=%s dosage=%s frequency=%s duration=%s",
+                block_idx,
+                med_name,
+                dosage_text,
+                frequency_text,
+                duration_text,
+            )
+
+        deduped_meds: list[dict[str, str | float | None]] = []
+        seen_names: set[str] = set()
+        for parsed_med in parsed_meds:
+            med_name = str(parsed_med.get("name") or "")
+            compare_key = self._normalize_name_for_compare(name=med_name)
+            if not compare_key:
+                continue
+            if compare_key in seen_names:
+                continue
+            seen_names.add(compare_key)
+            deduped_meds.append(parsed_med)
+
+        logger.info(
+            "OCR simple parser: extracted=%d deduped=%d",
+            len(parsed_meds),
+            len(deduped_meds),
+        )
+        if deduped_meds:
+            self._merge_schedule_from_summary(
+                parsed_meds=deduped_meds,
+                summary_schedule_map=summary_schedule_map,
+            )
+        if config.OCR_ENABLE_SUMMARY_AUGMENT_FOR_MED_GUIDE and summary_med_names:
+            deduped_meds = self._filter_parsed_meds_with_summary(
+                parsed_meds=deduped_meds,
+                summary_med_names=summary_med_names,
+                summary_schedule_map=summary_schedule_map,
+            )
+            logger.info("OCR simple parser: summary-augmented count=%d", len(deduped_meds))
+        return deduped_meds
+
+    # REQ-DOC-005 - 단순 parser용 medication block 구성
+    def _build_simple_medication_blocks(  # noqa: C901
+        self,
+        *,
+        rows: list[list[dict[str, str | float]]],
+    ) -> list[dict[str, list[str]]]:
+        if not rows:
+            return []
+
+        row_lines = [self._normalize_line(self._build_row_text(row_fields=row_fields)) for row_fields in rows]
+        header_idx: int | None = None
+        split_x: float | None = None
+        for idx, row_fields in enumerate(rows):
+            med_header = next((field for field in row_fields if "약품명" in str(field.get("text", ""))), None)
+            guide_header = next((field for field in row_fields if "복약안내" in str(field.get("text", ""))), None)
+            if med_header and guide_header:
+                header_idx = idx
+                split_x = (float(med_header.get("cx", 0.0)) + float(guide_header.get("cx", 0.0))) / 2
+                break
+
+        if header_idx is None or split_x is None:
+            return []
+
+        blocks: list[dict[str, list[str]]] = []
+        current_block: dict[str, list[str]] | None = None
+        body_rows = rows[header_idx + 1 :]
+        body_lines = row_lines[header_idx + 1 :]
+
+        for idx, row_fields in enumerate(body_rows):
+            row_text = (
+                body_lines[idx] if idx < len(body_lines) else self._normalize_line(self._build_row_text(row_fields))
+            )
+            if not row_text:
+                continue
+            if self._is_summary_header_row_text(current_line=row_text, next_lines=body_lines[idx + 1 : idx + 6]):
+                break
+
+            med_text = self._normalize_line(
+                " ".join(
+                    str(field.get("text", "")).strip()
+                    for field in row_fields
+                    if float(field.get("cx", 0.0)) <= split_x and str(field.get("text", "")).strip()
+                )
+            )
+            guide_text = self._normalize_line(
+                " ".join(
+                    str(field.get("text", "")).strip()
+                    for field in row_fields
+                    if float(field.get("cx", 0.0)) > split_x and str(field.get("text", "")).strip()
+                )
+            )
+
+            candidate_source = med_text or row_text
+            has_new_med = bool(self._extract_simple_med_name_from_text(text=candidate_source))
+            if has_new_med:
+                current_block = {
+                    "med_rows": [candidate_source],
+                    "guide_rows": [guide_text] if guide_text else [],
+                    "row_texts": [row_text],
+                }
+                blocks.append(current_block)
+                continue
+
+            if current_block is None:
+                continue
+
+            current_block["row_texts"].append(row_text)
+            if med_text:
+                current_block["med_rows"].append(med_text)
+            if guide_text:
+                current_block["guide_rows"].append(guide_text)
+
+        return blocks
+
+    # REQ-DOC-005 - 단순 parser용 약명 추출(제형 suffix + optional strength)
+    def _extract_simple_med_name_from_text(self, text: str) -> tuple[str, str | None] | None:
+        normalized_text = self._normalize_line(text)
+        if not normalized_text:
+            return None
+
+        med_match = re.search(
+            rf"(?P<name>[A-Za-z가-힣0-9+\-/]{{2,}}(?:{MED_NAME_SUFFIX_PATTERN}))\s*"
+            rf"(?P<strength>\d+(?:\.\d+)?(?:/\d+(?:\.\d+)?)?\s*(?:mg|g|mcg|ml|mL))?",
+            normalized_text,
+            flags=re.IGNORECASE,
+        )
+        if not med_match:
+            return None
+
+        med_name = self._sanitize_extracted_med_name(name=med_match.group("name"))
+        if not med_name:
+            return None
+
+        compact_name = re.sub(r"\s+", "", med_name)
+        if self._contains_non_med_keyword(compact_name=compact_name):
+            return None
+        if self._is_suspicious_generic_med_name(name=compact_name):
+            return None
+        if not re.search(r"[A-Za-z가-힣]", compact_name):
+            return None
+
+        strength_text = self._normalize_line(med_match.group("strength")) if med_match.group("strength") else None
+        return med_name, strength_text
+
+    # REQ-DOC-005 - 단순 parser용 복약안내 추출(~씩 / ~회 / ~일분)
+    def _extract_simple_schedule_from_text(self, text: str) -> dict[str, str | None] | None:
+        normalized_text = self._normalize_line(text)
+        if not normalized_text:
+            return None
+
+        dosage_match = SIMPLE_DOSAGE_PATTERN.search(normalized_text)
+        frequency_match = SIMPLE_FREQUENCY_PATTERN.search(normalized_text)
+        duration_match = SIMPLE_DURATION_PATTERN.search(normalized_text)
+        if not any([dosage_match, frequency_match, duration_match]):
+            return None
+
+        dosage_text: str | None = None
+        if dosage_match:
+            dose_count = dosage_match.group(1).strip()
+            dose_unit = dosage_match.group(2).strip()
+            if dose_unit.lower() == "ml":
+                dose_unit = "ml"
+            dosage_text = f"{dose_count}{dose_unit}씩"
+
+        frequency_text = f"{frequency_match.group(1).strip()}회" if frequency_match else None
+        duration_text = f"{duration_match.group(1).strip()}일분" if duration_match else None
+        return {
+            "dosage_text": dosage_text,
+            "frequency_text": frequency_text,
+            "duration_text": duration_text,
+        }
 
     # REQ-DOC-005 - bbox 기반 OCR field 파싱 파이프라인
     def _parse_extracted_meds_from_ocr_fields(
@@ -1140,7 +1416,10 @@ class OcrService:
             normalized_name = self._normalize_name_with_dictionary(name=med_name, dictionary_names=dictionary_names)
             normalized_name = self._sanitize_extracted_med_name(name=normalized_name)
             if not self._is_valid_med_name(name=normalized_name):
-                continue
+                simple_candidate = self._extract_simple_med_name_from_text(text=normalized_name)
+                if not simple_candidate:
+                    continue
+                normalized_name = simple_candidate[0]
             med_key = self._normalize_name_for_compare(name=normalized_name)
             if not med_key or med_key in seen_keys:
                 continue
@@ -1490,10 +1769,9 @@ class OcrService:
             "배출되도록",
         }
         matched_count = sum(1 for keyword in strong_descriptor_keywords if keyword in normalized_line)
-        if matched_count >= 2:
-            return True
-
         has_med_suffix = bool(re.search(r"(정|캡슐|시럽|세립|과립|현탁액|주사|액|패치|패취)", normalized_line))
+        if matched_count >= 2 and not has_med_suffix:
+            return True
         if matched_count >= 1 and len(normalized_line) >= 18 and not has_med_suffix:
             return True
 
@@ -1802,12 +2080,18 @@ class OcrService:
             # summary 표에 없는 약명도 유지한다.
             # OCR이 일부 약명을 누락해도 복약표 영역에서 잡힌 약은 결과에 남겨야 한다.
 
-        existing_keys = {self._normalize_name_for_compare(name=str(med.get("name") or "")) for med in filtered_meds}
+        existing_keys = {
+            existing_key
+            for existing_key in (
+                self._normalize_name_for_compare(name=str(med.get("name") or "")) for med in filtered_meds
+            )
+            if existing_key
+        }
         for summary_name in summary_med_names:
             summary_key = self._normalize_name_for_compare(name=summary_name)
             if not summary_key:
                 continue
-            if any(self._is_same_med_key(summary_key, existing_key) for existing_key in existing_keys if existing_key):
+            if summary_key in existing_keys:
                 continue
             schedule = summary_schedule_map.get(summary_key)
             filtered_meds.append(
@@ -1986,9 +2270,9 @@ class OcrService:
             return True
 
         compact_name = re.sub(r"\s+", "", med_name)
-        if len(compact_name) >= 5:
+        if len(compact_name) >= 4:
             return True
-        if compact_name.endswith(("캡슐", "시럽", "현탁액", "주사", "패치", "패취")):
+        if compact_name.endswith(("정", "캡슐", "시럽", "세립", "과립", "현탁액", "주사", "패치", "패취")):
             return True
         return False
 
