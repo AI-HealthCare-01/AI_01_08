@@ -243,7 +243,7 @@ function AppLayout({
     const { silent = false } = options;
     if (!sessionId) {
       setChatState((prev) => ({ ...prev, loading: false, sessionId: null, messages: [] }));
-      return;
+      return false;
     }
 
     if (!silent) {
@@ -260,6 +260,7 @@ function AppLayout({
         messages: body?.data?.items || [],
         error: silent ? prev.error : null,
       }));
+      return true;
     } catch (error) {
       setChatState((prev) => ({
         ...prev,
@@ -268,6 +269,7 @@ function AppLayout({
         messages: [],
         error: error?.message || String(error),
       }));
+      return false;
     }
   };
 
@@ -334,12 +336,11 @@ function AppLayout({
     const storageKey = getChatStorageKey(effectiveCurrentMode, resolvedPatientId);
     const savedSessionId = localStorage.getItem(storageKey);
     if (savedSessionId) {
-      try {
-        await loadChatMessages(savedSessionId);
+      const loaded = await loadChatMessages(savedSessionId);
+      if (loaded) {
         return savedSessionId;
-      } catch {
-        localStorage.removeItem(storageKey);
       }
+      localStorage.removeItem(storageKey);
     }
 
     const res = await authFetch(`${API_PREFIX}/chat/sessions`, {
