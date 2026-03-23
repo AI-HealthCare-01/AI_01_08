@@ -5,27 +5,27 @@ const API_PREFIX = "/api/v1";
 
 const pageStyle = {
   minHeight: "100vh",
-  background: "linear-gradient(145deg, #f4f6fb 0%, #ecf3fc 100%)",
+  background: "var(--app-body-bg)",
 };
 
 const mainCardStyle = {
   borderRadius: "18px",
-  background: "#ffffff",
-  border: "1px solid #e4ebf7",
-  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.06)",
+  background: "var(--app-surface-bg)",
+  border: "1px solid var(--app-surface-border)",
+  boxShadow: "var(--app-surface-shadow)",
 };
 
 const blockCardStyle = {
   borderRadius: "16px",
-  background: "#ffffff",
-  border: "1px solid #e4ebf7",
-  boxShadow: "0 9px 22px rgba(15, 23, 42, 0.045)",
+  background: "var(--app-surface-bg)",
+  border: "1px solid var(--app-surface-border)",
+  boxShadow: "var(--app-surface-shadow)",
 };
 
 const metricCardStyle = {
   borderRadius: "14px",
-  background: "linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%)",
-  border: "1px solid #e2eaf8",
+  background: "var(--app-surface-subtle)",
+  border: "1px solid var(--app-surface-border)",
   padding: "20px",
   height: "100%",
 };
@@ -35,9 +35,9 @@ const chipStyle = {
   alignItems: "center",
   borderRadius: "999px",
   padding: "6px 12px",
-  border: "1px solid #cfe0fb",
-  background: "#eaf2ff",
-  color: "#1d4ed8",
+  border: "1px solid var(--app-surface-border)",
+  background: "rgba(37, 99, 235, 0.16)",
+  color: "var(--app-brand-color)",
   fontSize: "0.88rem",
   fontWeight: 600,
 };
@@ -73,9 +73,9 @@ const chatFeedbackReasons = [
 
 const feedbackBaseButtonStyle = {
   borderRadius: "999px",
-  border: "1px solid #d9e4f2",
-  background: "#f8fbff",
-  color: "#48627d",
+  border: "1px solid var(--app-surface-border)",
+  background: "var(--app-surface-subtle)",
+  color: "var(--app-text-color)",
   fontSize: "0.8rem",
   fontWeight: 600,
   padding: "7px 12px",
@@ -1477,9 +1477,9 @@ function AiPage({
                       <div
                         style={{
                           borderRadius: "18px",
-                          border: "1px solid #e5edf5",
+                          border: "1px solid var(--app-surface-border)",
                           padding: "18px",
-                          background: "#f8fbfd",
+                          background: "var(--app-surface-subtle)",
                           marginBottom: "18px",
                         }}
                       >
@@ -1575,16 +1575,16 @@ function AiPage({
                   style={{
                     ...blockCardStyle,
                     padding: "26px",
-                    background: "linear-gradient(180deg, #ffffff 0%, #f5f9ff 100%)",
-                    border: "1px solid #d8e4f5",
+                    background: "var(--app-surface-bg)",
+                    border: "1px solid var(--app-surface-border)",
                     height: "100%",
                   }}
                 >
                   <div className="mb-4">
                     <div>
                       <div className="small text-muted">AI 상담</div>
-                      <h4 className="mb-2" style={{ fontWeight: 800, color: "#163b82" }}>약속이와 대화하기</h4>
-                      <div style={{ color: "#5a6f8f", lineHeight: 1.75, maxWidth: "620px" }}>
+                      <h4 className="mb-2" style={{ fontWeight: 800, color: "var(--app-text-strong)" }}>약속이와 대화하기</h4>
+                      <div style={{ color: "var(--app-text-muted)", lineHeight: 1.75, maxWidth: "620px" }}>
                         선택한 환자 기록을 바탕으로 가이드와 복약 정보를 함께 보며 상담할 수 있습니다.
                       </div>
                     </div>
@@ -1595,8 +1595,8 @@ function AiPage({
                       <div
                         style={{
                           borderRadius: "20px",
-                          background: "#ffffff",
-                          border: "1px solid #d8e4f5",
+                          background: "var(--app-surface-bg)",
+                          border: "1px solid var(--app-surface-border)",
                           padding: "18px",
                           height: "100%",
                           display: "flex",
@@ -1639,8 +1639,8 @@ function AiPage({
                         style={{
                           width: "100%",
                           height: "100%",
-                          border: "1px solid #d8e4f5",
-                          background: "linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%)",
+                          border: "1px solid var(--app-surface-border)",
+                          background: "var(--app-surface-subtle)",
                           borderRadius: "20px",
                           cursor: "pointer",
                           textAlign: "center",
@@ -1653,7 +1653,7 @@ function AiPage({
                         }}
                       >
                         <img src={`${import.meta.env.BASE_URL}mascot.png`} alt="약속이 챗봇 열기" style={{ width: "84px", height: "auto" }} />
-                        <div className="fw-semibold" style={{ color: "#1d4ed8" }}>약속이 AI 상담</div>
+                        <div className="fw-semibold" style={{ color: "var(--app-brand-color)" }}>약속이 AI 상담</div>
                         <div className="small text-muted text-center">가이드 내용을 이어서 질문하고 답변을 확인하세요.</div>
                       </button>
                     </div>
@@ -1696,8 +1696,8 @@ function AiPage({
           width: "78px",
           height: "78px",
           borderRadius: "999px",
-          border: "1px solid #cfe0fb",
-          background: "linear-gradient(135deg, #ffffff 0%, #eaf2ff 100%)",
+          border: "1px solid var(--app-surface-border)",
+          background: "var(--app-surface-subtle)",
           boxShadow: "0 16px 30px rgba(37, 99, 235, 0.18)",
           cursor: "pointer",
           zIndex: 1050,
@@ -1724,7 +1724,7 @@ function AiPage({
               right: 0,
               width: "min(620px, 100vw)",
               height: "100vh",
-              background: "#ffffff",
+              background: "var(--app-surface-bg)",
               boxShadow: "-16px 0 40px rgba(37, 99, 235, 0.18)",
               display: "flex",
               flexDirection: "column",
@@ -1733,8 +1733,8 @@ function AiPage({
             <div
               style={{
                 padding: "22px 22px 18px 22px",
-                borderBottom: "1px solid #e6edf4",
-                background: "linear-gradient(135deg, #f8fbff 0%, #edf4ff 100%)",
+                borderBottom: "1px solid var(--app-surface-border)",
+                background: "var(--app-surface-subtle)",
               }}
             >
               <div className="d-flex justify-content-between align-items-start gap-3">
@@ -1757,8 +1757,8 @@ function AiPage({
                   className="mt-3"
                   style={{
                     borderRadius: "16px",
-                    border: "1px solid #d8e5f6",
-                    background: "#ffffff",
+                    border: "1px solid var(--app-surface-border)",
+                    background: "var(--app-surface-bg)",
                     padding: "12px 14px",
                   }}
                 >
@@ -1789,7 +1789,7 @@ function AiPage({
                 flex: 1,
                 overflowY: "auto",
                 padding: "24px",
-                background: "#f7fafc",
+                background: "var(--app-body-bg)",
               }}
             >
               {chatState.messages.length === 0 ? (
@@ -1801,7 +1801,7 @@ function AiPage({
                     alignItems: "center",
                     justifyContent: "center",
                     textAlign: "center",
-                    color: "#708090",
+                    color: "var(--app-text-muted)",
                     gap: "12px",
                   }}
                 >
@@ -1858,9 +1858,9 @@ function AiPage({
                             maxWidth: "90%",
                             borderRadius: "20px",
                             padding: "16px 18px",
-                            background: message.role === "user" ? "#1f6fb2" : "#ffffff",
-                            color: message.role === "user" ? "#ffffff" : "#243648",
-                            border: message.role === "user" ? "none" : "1px solid #dfe7ef",
+                            background: message.role === "user" ? "#1f6fb2" : "var(--app-surface-bg)",
+                            color: message.role === "user" ? "#ffffff" : "var(--app-text-color)",
+                            border: message.role === "user" ? "none" : "1px solid var(--app-surface-border)",
                             boxShadow: "0 8px 18px rgba(15, 23, 42, 0.06)",
                             whiteSpace: "pre-wrap",
                             lineHeight: 1.8,
@@ -1885,7 +1885,7 @@ function AiPage({
                             </div>
                           )}
                           {message.disclaimer && (
-                            <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "#718096", lineHeight: 1.7 }}>
+                            <div className="small mt-3" style={{ color: message.role === "user" ? "#dfeeff" : "var(--app-text-muted)", lineHeight: 1.7 }}>
                               {message.disclaimer}
                             </div>
                           )}
@@ -1893,7 +1893,7 @@ function AiPage({
                             <div
                               className="mt-3"
                               style={{
-                                borderTop: "1px solid #edf2f7",
+                                borderTop: "1px solid var(--app-surface-border)",
                                 paddingTop: "12px",
                               }}
                             >
@@ -1901,7 +1901,7 @@ function AiPage({
                                 className="d-flex flex-wrap align-items-center gap-2"
                                 style={{ marginBottom: feedback.expanded || feedback.success || feedback.error ? "10px" : 0 }}
                               >
-                                <span className="small" style={{ color: "#7a8798", fontWeight: 600, marginRight: "2px" }}>
+                                <span className="small" style={{ color: "var(--app-text-muted)", fontWeight: 600, marginRight: "2px" }}>
                                   답변이 어떠셨나요?
                                 </span>
                                 <button
@@ -1950,12 +1950,12 @@ function AiPage({
                                 <div
                                   style={{
                                     borderRadius: "16px",
-                                    background: "linear-gradient(180deg, #fbfdff 0%, #f6f9fe 100%)",
-                                    border: "1px solid #e4ebf7",
+                                    background: "var(--app-surface-subtle)",
+                                    border: "1px solid var(--app-surface-border)",
                                     padding: "14px",
                                   }}
                                 >
-                                  <div className="small mb-2" style={{ color: "#6a7a8d", fontWeight: 600 }}>
+                                  <div className="small mb-2" style={{ color: "var(--app-text-muted)", fontWeight: 600 }}>
                                     어떤 점이 아쉬웠나요?
                                   </div>
                                   <div className="d-flex flex-wrap gap-2 mb-3">
@@ -1995,8 +1995,8 @@ function AiPage({
                                     style={{
                                       resize: "none",
                                       borderRadius: "12px",
-                                      borderColor: "#dbe5f2",
-                                      background: "#ffffff",
+                                      borderColor: "var(--app-surface-border)",
+                                      background: "var(--app-surface-bg)",
                                     }}
                                   />
                                   {feedback.error && (
@@ -2040,7 +2040,13 @@ function AiPage({
               )}
             </div>
 
-            <div style={{ padding: "18px 20px 20px 20px", borderTop: "1px solid #e6edf4", background: "#ffffff" }}>
+            <div
+              style={{
+                padding: "18px 20px 20px 20px",
+                borderTop: "1px solid var(--app-surface-border)",
+                background: "var(--app-surface-bg)",
+              }}
+            >
               {chatState.error && <div className="alert alert-danger py-2 mb-3">{chatState.error}</div>}
               <div className="d-flex gap-2">
                 <textarea

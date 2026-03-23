@@ -54,6 +54,144 @@ body {
   box-shadow: var(--app-surface-shadow) !important;
 }
 
+.card.shadow-lg {
+  box-shadow: var(--app-surface-shadow) !important;
+}
+
+[data-bs-theme="dark"] .text-muted {
+  color: #b1c2d8 !important;
+}
+
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select,
+[data-bs-theme="dark"] .input-group-text {
+  background-color: #16263c;
+  border-color: #324c6c;
+  color: #e4ecf9;
+}
+
+[data-bs-theme="dark"] .form-control::placeholder {
+  color: #8ea4c3;
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
+  background-color: #1a2b43;
+  border-color: #5d8fd8;
+  color: #eaf1fc;
+  box-shadow: 0 0 0 0.2rem rgba(93, 143, 216, 0.2);
+}
+
+[data-bs-theme="dark"] .table {
+  color: #dbe7f8;
+}
+
+[data-bs-theme="dark"] .table > :not(caption) > * > * {
+  border-bottom-color: #2d4564;
+}
+
+[data-bs-theme="dark"] .list-group-item {
+  background-color: #17283f;
+  border-color: #2d4564;
+  color: #d9e6f8;
+}
+
+[data-bs-theme="dark"] .btn-outline-secondary {
+  color: #c5d4ea;
+  border-color: #4f6888;
+}
+
+[data-bs-theme="dark"] .btn-outline-secondary:hover,
+[data-bs-theme="dark"] .btn-outline-secondary:focus {
+  color: #eaf1fc;
+  background-color: #243852;
+  border-color: #6f88a8;
+}
+
+[data-bs-theme="dark"] .app-menu-toggle,
+[data-bs-theme="dark"] .app-selector-readonly,
+[data-bs-theme="dark"] .app-profile-button {
+  background: #16263c;
+  border-color: #324c6c;
+  color: #d9e5f7;
+}
+
+[data-bs-theme="dark"] .app-profile-button:hover {
+  background: #1f324b;
+  color: #edf3fd;
+}
+
+[data-bs-theme="dark"] .doc-info-card,
+[data-bs-theme="dark"] .doc-stat-card,
+[data-bs-theme="dark"] .doc-drugs-section,
+[data-bs-theme="dark"] .upload-camera-panel,
+[data-bs-theme="dark"] .drug-search-result-card,
+[data-bs-theme="dark"] .home-summary-card,
+[data-bs-theme="dark"] .home-kpi-item,
+[data-bs-theme="dark"] .home-inline-row,
+[data-bs-theme="dark"] .home-status-chip,
+[data-bs-theme="dark"] .home-guide-item,
+[data-bs-theme="dark"] .home-notification-item,
+[data-bs-theme="dark"] .home-mini-calendar,
+[data-bs-theme="dark"] .home-mini-calendar-cell {
+  background: #17283f;
+  border-color: #2d4564;
+  color: #dde8f8;
+}
+
+[data-bs-theme="dark"] .doc-preview-box,
+[data-bs-theme="dark"] .drug-search-item-image,
+[data-bs-theme="dark"] .drug-search-scroll-text,
+[data-bs-theme="dark"] .home-mini-calendar-event {
+  background: #152337;
+  border-color: #2a405c;
+  color: #d6e3f7;
+}
+
+[data-bs-theme="dark"] .doc-drug-table th,
+[data-bs-theme="dark"] .home-summary-title,
+[data-bs-theme="dark"] .home-summary-value,
+[data-bs-theme="dark"] .home-summary-note,
+[data-bs-theme="dark"] .home-kpi-label,
+[data-bs-theme="dark"] .home-kpi-value,
+[data-bs-theme="dark"] .home-inline-title,
+[data-bs-theme="dark"] .home-inline-empty,
+[data-bs-theme="dark"] .home-inline-main,
+[data-bs-theme="dark"] .home-inline-time,
+[data-bs-theme="dark"] .home-inline-meal-title,
+[data-bs-theme="dark"] .home-status-title,
+[data-bs-theme="dark"] .home-status-desc,
+[data-bs-theme="dark"] .home-notification-head strong,
+[data-bs-theme="dark"] .home-notification-body,
+[data-bs-theme="dark"] .home-notification-time,
+[data-bs-theme="dark"] .home-mini-calendar-head,
+[data-bs-theme="dark"] .home-mini-calendar-weekdays span,
+[data-bs-theme="dark"] .home-mini-calendar-date,
+[data-bs-theme="dark"] .home-mini-calendar-more {
+  color: #d6e3f7;
+}
+
+[data-bs-theme="dark"] .home-mini-calendar-cell.is-today {
+  background: #1c3150;
+  border-color: #4d75b0;
+}
+
+[data-bs-theme="dark"] .home-mini-calendar-cell.has-event {
+  background: #1a2c45;
+  border-color: #436694;
+}
+
+[data-bs-theme="dark"] .home-mini-calendar-cell.is-selected {
+  background: #213657;
+  border-color: #6c95d2;
+  box-shadow: 0 0 0 1px rgba(108, 149, 210, 0.28);
+}
+
+[data-bs-theme="dark"] .home-notification-item.unread {
+  border-color: #5c83bb;
+  box-shadow: 0 0 0 1px rgba(92, 131, 187, 0.32);
+}
+
 .app-shell {
   min-height: 100vh;
 }

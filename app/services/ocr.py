@@ -241,8 +241,8 @@ class OcrService:
 
         raw_text_row = await OcrRawText.get_or_none(ocr_job_id=ocr_job_id)
         if not raw_text_row or not raw_text_row.raw_text.strip():
-            await ExtractedMed.filter(ocr_job_id=ocr_job_id).delete()
-            return 0
+            logger.info("OCR backfill skipped: no raw_text (ocr_job_id=%s)", ocr_job_id)
+            return await ExtractedMed.filter(ocr_job_id=ocr_job_id).count()
 
         await self._save_extracted_meds(
             ocr_job_id=ocr_job_id,

@@ -158,6 +158,63 @@ class TestDocumentDrugsApis(TestCase):
             )
             assert len(active_patient_meds) == 2
 
+    async def test_get_document_drugs_keeps_existing_rows_when_backfill_has_no_raw_text(self):
+        signup_data = {
+            "email": "patient.docs.backfill1@gmail.com",
+            "password": "Password123!",
+            "name": "문서환자백필1",
+            "gender": "FEMALE",
+            "birth_date": "1990-08-08",
+            "phone_number": "01070009991",
+        }
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            await client.post("/api/v1/auth/signup", json=signup_data)
+
+            user = await User.get(email=signup_data["email"])
+            patient_role, _ = await Role.get_or_create(code="PATIENT", defaults={"name": "PATIENT"})
+            await UserRole.get_or_create(user_id=user.id, role_id=patient_role.id)
+            patient, _ = await Patient.get_or_create(
+                user_id=user.id,
+                defaults={"owner_user_id": user.id, "display_name": "문서환자백필1"},
+            )
+
+            login_response = await client.post(
+                "/api/v1/auth/login",
+                json={"email": signup_data["email"], "password": signup_data["password"]},
+            )
+            access_token = login_response.json()["access_token"]
+            headers = {"Authorization": f"Bearer {access_token}"}
+
+            document = await Document.create(
+                patient_id=patient.id,
+                uploaded_by_user_id=user.id,
+                file_url="uploads/documents/backfill-no-raw-text.jpg",
+                original_filename="backfill-no-raw-text.jpg",
+                file_type="image",
+                status="uploaded",
+            )
+            ocr_job = await OcrJob.create(document_id=document.id, patient_id=patient.id, status="success")
+            await ExtractedMed.create(
+                ocr_job_id=ocr_job.id,
+                patient_id=patient.id,
+                name="백필테스트정",
+                dosage_text=None,
+                frequency_text=None,
+                duration_text=None,
+                confidence=0.71,
+            )
+
+            response = await client.get(f"/api/v1/documents/{document.id}/drugs", headers=headers)
+            assert response.status_code == status.HTTP_200_OK
+
+            payload = response.json()
+            assert payload["total"] == 1
+            assert payload["items"][0]["name"] == "백필테스트정"
+
+            persisted_count = await ExtractedMed.filter(ocr_job_id=ocr_job.id).count()
+            assert persisted_count == 1
+
     async def test_medication_guide_resolves_missing_drug_cache_from_display_name(self):
         signup_data = {
             "email": "patient.docs5@gmail.com",
