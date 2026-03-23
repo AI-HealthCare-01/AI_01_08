@@ -754,7 +754,7 @@ function AiPage({
     if (!sessionId) {
       setChatFeedbackState({});
       setChatState((prev) => ({ ...prev, sessionId: null, messages: [] }));
-      return;
+      return false;
     }
 
     if (!silent) {
@@ -774,6 +774,7 @@ function AiPage({
       if (!silent) {
         setChatFeedbackState({});
       }
+      return true;
     } catch (error) {
       setChatState((prev) => ({
         ...prev,
@@ -782,6 +783,7 @@ function AiPage({
         messages: [],
         sessionId: null,
       }));
+      return false;
     }
   };
 
@@ -843,13 +845,12 @@ function AiPage({
     const storageKey = getChatStorageKey(effectiveMode, resolvedPatientId);
     const savedSessionId = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
     if (savedSessionId) {
-      try {
-        await loadChatMessages(savedSessionId);
+      const loaded = await loadChatMessages(savedSessionId);
+      if (loaded) {
         return savedSessionId;
-      } catch {
-        if (typeof window !== "undefined") {
-          window.localStorage.removeItem(storageKey);
-        }
+      }
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(storageKey);
       }
     }
 
