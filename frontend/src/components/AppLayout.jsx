@@ -104,6 +104,7 @@ function AppLayout({
   const isCaregiverMode = effectiveCurrentMode === "CAREGIVER";
 
   const [chatOpen, setChatOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatTargetsState, setChatTargetsState] = useState({ loading: false, items: [], error: null });
   const [selectedChatPatientId, setSelectedChatPatientId] = useState("");
@@ -466,6 +467,26 @@ function AppLayout({
     chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
   }, [chatOpen, chatState.messages, chatState.sending]);
 
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleResize = () => {
+      if (window.innerWidth > 992) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [mobileMenuOpen]);
+
   const menuItems = useMemo(() => {
     if (effectiveCurrentMode === "ADMIN") {
       return [
@@ -478,7 +499,12 @@ function AppLayout({
 
   return (
     <div className="doc-layout">
-      <aside className="doc-sidebar">
+      <div
+        className={`doc-sidebar-backdrop ${mobileMenuOpen ? "is-open" : ""}`}
+        onClick={() => setMobileMenuOpen(false)}
+        aria-hidden={!mobileMenuOpen}
+      />
+      <aside className={`doc-sidebar ${mobileMenuOpen ? "is-open" : ""}`}>
         <div className="doc-sidebar-top">
           <div className="doc-sidebar-brand">
             <strong>복약관리시스템</strong>
@@ -493,6 +519,7 @@ function AppLayout({
                 key={item.key}
                 className={`doc-sidebar-link ${item.key === activeKey ? "active" : ""}`}
                 href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
               >
                 {item.label}
               </a>
@@ -502,7 +529,11 @@ function AppLayout({
 
         <div className="doc-sidebar-bottom">
           <div className="doc-sidebar-footer">
-            <a className={`doc-sidebar-link ${activeKey === "settings" ? "active" : ""}`} href="/app/settings">
+            <a
+              className={`doc-sidebar-link ${activeKey === "settings" ? "active" : ""}`}
+              href="/app/settings"
+              onClick={() => setMobileMenuOpen(false)}
+            >
               설정
             </a>
           </div>
@@ -511,7 +542,18 @@ function AppLayout({
 
       <main className="doc-main">
         <header className={`app-page-header ${headerCompact ? "app-page-header-compact" : ""}`}>
-          <div>
+          <div className="app-page-heading">
+            <button
+              className="app-menu-toggle"
+              type="button"
+              onClick={() => setMobileMenuOpen((prev) => !prev)}
+              aria-label={mobileMenuOpen ? "메뉴 닫기" : "메뉴 열기"}
+              aria-expanded={mobileMenuOpen}
+            >
+              <span />
+              <span />
+              <span />
+            </button>
             <h2 className="app-page-title">{title}</h2>
             {description && <p className="app-page-description">{description}</p>}
           </div>
