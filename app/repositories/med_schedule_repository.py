@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.models.schedules import MedSchedule, MedScheduleTime
 from tortoise.expressions import Q
+
+from app.models.schedules import MedSchedule, MedScheduleTime
 
 
 class MedScheduleRepository:
