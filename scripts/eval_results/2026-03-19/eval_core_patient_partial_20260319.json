@@ -1,0 +1,176 @@
+{
+  "selected_case_count": 6,
+  "passed": 6,
+  "total": 6,
+  "pass_rate": 100.0,
+  "category_summary": [
+    {
+      "category": "daily_chat",
+      "passed": 3,
+      "total": 3,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "external_drug",
+      "passed": 3,
+      "total": 3,
+      "pass_rate": 100.0
+    }
+  ],
+  "stage_summary": [
+    {
+      "stage": "core",
+      "passed": 3,
+      "total": 3,
+      "pass_rate": 100.0
+    },
+    {
+      "stage": "smoke",
+      "passed": 3,
+      "total": 3,
+      "pass_rate": 100.0
+    }
+  ],
+  "data_state_summary": [
+    {
+      "data_state": "any",
+      "passed": 6,
+      "total": 6,
+      "pass_rate": 100.0
+    }
+  ],
+  "persona_summary": [
+    {
+      "persona": "any",
+      "passed": 6,
+      "total": 6,
+      "pass_rate": 100.0
+    }
+  ],
+  "consistency_summary": {
+    "repeat_count": 1,
+    "checked_cases": 0,
+    "consistent_cases": 0,
+    "results": []
+  },
+  "failures": [],
+  "results": [
+    {
+      "id": "daily_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "daily_chat",
+      "data_state": "any",
+      "persona": "any",
+      "message": "안녕",
+      "status_code": 201,
+      "matched_any": [
+        "안녕하세요",
+        "복약",
+        "건강"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "안녕하세요. 확인 가능한 기록을 참고해 복약과 건강 정보를 도와드릴게요. 부족한 정보가 있으면 일반적인 기준으로 먼저 설명드리겠습니다."
+    },
+    {
+      "id": "daily_002",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "daily_chat",
+      "data_state": "any",
+      "persona": "any",
+      "message": "너는 뭘 도와줘?",
+      "status_code": 201,
+      "matched_any": [
+        "복약",
+        "건강",
+        "병원 일정"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "저는 복약, 병원 일정, 건강 기록 등을 관리하고 도와드리는 챗봇입니다. 현재 기록이 부족하여 구체적인 정보를 제공하기 어려운 상황입니다. 추가로 궁금한 점이나 필요한 정보가 있다면 말씀해 주세요."
+    },
+    {
+      "id": "external_drug_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "게보린이 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "matched_all": [
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 게보린은 현재 복용 중인 약으로 기록되어 있지는 않습니다.\n\n일반적으로 보면\n- 약 정보명은 게보린정(수출명:돌로린정)입니다.\n- 일반적으로는 이 약은 두통, 치통, 발치(이를 뽑음)후 동통(통증), 인후(목구멍)통, 귀의 통증, 관절통, 신경통, 요(허리)통, 근육통, 견통(어깨통증), 타박통, 골절통, 염좌통(삔 통증), 월경통(생리통), 외상(상처)통의 진통과 오한(춥고 떨리는 증상), 발열시의 해열에 사용합니다.\n- 주의할 점으로는 이 약에 과민증 환자, 다른 해열진통제"
+    },
+    {
+      "id": "daily_003",
+      "stage": "core",
+      "priority": "high",
+      "category": "daily_chat",
+      "data_state": "any",
+      "persona": "any",
+      "message": "고마워",
+      "status_code": 201,
+      "matched_any": [
+        "도움",
+        "이어",
+        "말씀"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "도움이 되었다면 다행입니다. 필요한 내용이 있으면 이어서 말씀해 주세요."
+    },
+    {
+      "id": "external_drug_002",
+      "stage": "core",
+      "priority": "medium",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "탁센이 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 탁센은 현재 복용 중인 약으로 기록되어 있지는 않습니다.\n\n일반적으로 보면\n- 약 정보명은 탁센연질캡슐(나프록센)입니다.\n- 일반적으로는 이 약은 류마티양 관절염, 골관절염(퇴행성 관절질환), 강직성 척추염, 건염(힘줄염), 급성통풍, 월경곤란증과 활액(윤활)낭염, 골격근장애(염좌(삠), 좌상(타박상), 외상(상처), 요천통(허리통증), 수술 후 동통(통증), 편두통, 발치(이를 뽑음)후 동통(통증)에 사용합니다.\n- 주의할 점으로는 이 약에 과민증, 소화성궤양, 심한 혈액이상"
+    },
+    {
+      "id": "external_drug_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "게보린 주의사항 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "주의",
+        "현재 기록 기준",
+        "지금 확인할 포인트"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 게보린은 현재 복용 중인 약으로 기록되어 있지는 않습니다.\n\n일반적으로 보면\n- 약 정보명은 게보린정(수출명:돌로린정)입니다.\n- 일반적으로는 이 약은 두통, 치통, 발치(이를 뽑음)후 동통(통증), 인후(목구멍)통, 귀의 통증, 관절통, 신경통, 요(허리)통, 근육통, 견통(어깨통증), 타박통, 골절통, 염좌통(삔 통증), 월경통(생리통), 외상(상처)통의 진통과 오한(춥고 떨리는 증상), 발열시의 해열에 사용합니다.\n- 주의할 점으로는 이 약에 과민증 환자, 다른 해열진통제"
+    }
+  ]
+}

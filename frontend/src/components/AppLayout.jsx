@@ -398,10 +398,30 @@ function AppLayout({
   const sendChatMessage = async () => {
     if (!chatInput.trim() || chatState.sending) return;
 
-    setChatState((prev) => ({ ...prev, sending: true, error: null }));
+    const content = chatInput.trim();
+    const tempKey = Date.now();
+    const optimisticUserMessage = {
+      id: `temp-user-${tempKey}`,
+      role: "user",
+      content,
+      created_at: new Date().toISOString(),
+    };
+    const pendingAssistantMessage = {
+      id: `temp-assistant-${tempKey}`,
+      role: "assistant",
+      content: "",
+      created_at: new Date().toISOString(),
+      pending: true,
+    };
+
+    setChatState((prev) => ({
+      ...prev,
+      sending: true,
+      error: null,
+      messages: [...prev.messages, optimisticUserMessage, pendingAssistantMessage],
+    }));
     try {
       const sessionId = await ensureChatSession(selectedChatPatientId);
-      const content = chatInput.trim();
       setChatInput("");
       const res = await authFetch(`${API_PREFIX}/chat/sessions/${sessionId}/messages`, {
         method: "POST",
@@ -415,13 +435,22 @@ function AppLayout({
         ...prev,
         sending: false,
         sessionId,
-        messages: [...prev.messages, userMessage, assistantMessage].filter(Boolean),
+        messages: prev.messages.flatMap((message) => {
+          if (message.id === optimisticUserMessage.id) {
+            return [userMessage || message];
+          }
+          if (message.id === pendingAssistantMessage.id) {
+            return assistantMessage ? [assistantMessage] : [];
+          }
+          return [message];
+        }),
       }));
     } catch (error) {
       setChatState((prev) => ({
         ...prev,
         sending: false,
         error: error?.message || String(error),
+        messages: prev.messages.filter((message) => message.id !== pendingAssistantMessage.id),
       }));
     }
   };
@@ -717,7 +746,18 @@ function AppLayout({
                               fontSize: "0.94rem",
                             }}
                           >
-                            {message?.content || ""}
+                            {message?.pending ? (
+                              <div className="chat-typing-bubble" aria-live="polite" aria-label="AI가 응답을 준비하고 있습니다.">
+                                <span className="chat-typing-label">입력 중</span>
+                                <span className="chat-typing-dots" aria-hidden="true">
+                                  <span />
+                                  <span />
+                                  <span />
+                                </span>
+                              </div>
+                            ) : (
+                              message?.content || ""
+                            )}
                           </div>
                         );
                       })}
