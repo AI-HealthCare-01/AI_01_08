@@ -17,6 +17,7 @@ const API_PREFIX = "/api/v1";
 const DEVICE_ID_STORAGE_KEY = "device_id";
 const HOME_MEAL_ORDER = ["아침", "점심", "저녁", "취침"];
 const HOME_MEDICATION_GROUP_LIMIT = 5;
+const VALID_LOGIN_ROLES = new Set(["PATIENT", "CAREGIVER", "GUARDIAN", "ADMIN"]);
 
 
 
@@ -26,6 +27,34 @@ const safeJson = async (res) => {
   } catch {
     return null;
   }
+};
+
+const decodeJwtPayload = (token) => {
+  if (!token || typeof token !== "string") {
+    return null;
+  }
+  const parts = token.split(".");
+  if (parts.length < 2) {
+    return null;
+  }
+  const payloadSegment = parts[1];
+  const normalized = payloadSegment.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  try {
+    const decodeBase64 = typeof window !== "undefined" && typeof window.atob === "function" ? window.atob : atob;
+    return JSON.parse(decodeBase64(padded));
+  } catch {
+    return null;
+  }
+};
+
+const extractLoginRoleFromAccessToken = (token) => {
+  const payload = decodeJwtPayload(token);
+  const role = String(payload?.login_role || "").toUpperCase();
+  if (!VALID_LOGIN_ROLES.has(role)) {
+    return null;
+  }
+  return role;
 };
 
 const formatDateTime = (value) => {
@@ -403,6 +432,10 @@ function App() {
     const token = body?.access_token;
     if (token) {
       persistAccessToken(token);
+      const roleFromToken = extractLoginRoleFromAccessToken(token);
+      if (roleFromToken) {
+        persistLoginRole(roleFromToken);
+      }
     }
     return token || null;
   };
@@ -1225,6 +1258,7 @@ function App() {
       if (!authorizeUrl) {
         throw new Error("소셜 로그인 URL을 가져오지 못했습니다.");
       }
+      persistAccessToken(null);
       persistLoginRole(role || loginForm.role || "PATIENT");
       window.location.href = authorizeUrl;
     } catch (error) {
