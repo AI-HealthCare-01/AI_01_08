@@ -1,0 +1,34 @@
+[환자 건강 프로필]
+{profile_text}
+
+[현재 확정 복용 약]
+{meds_text}
+
+[복약 일정]
+{schedule_text}
+
+[약물 기본 근거 - patient_meds + drug_info_cache + drug_catalog]
+{cache_grounding_text}
+
+[MFDS 보강 근거]
+{mfds_grounding_text}
+
+[KIDS 보강 근거]
+{kids_grounding_text}
+
+[RAG 참고 근거]
+{rag_grounding_text}
+
+위 정보를 바탕으로 환자 맞춤 복약/건강 관리 가이드를 생성하라.
+
+출력 조건:
+- 반드시 JSON 스키마에 맞출 것
+- 기록된 근거 범위 안에서만 작성할 것
+- 복약 순응도 향상, 안전성, 생활 관리, 위험 신호 안내를 균형 있게 포함할 것
+- 약물명/복용 시간/주의사항이 근거 데이터와 다르면 안 된다
+- 보호자용 요약은 실제 관리 행동으로 옮길 수 있게 작성할 것
+- 서론형 인삿말 없이 바로 환자별 복약 핵심부터 작성할 것
+- "필요 시 복용" 메모가 있는 약은 정시 복용처럼 쓰지 말 것
+- 같은 정보를 content_text와 sections에 기계적으로 반복하지 말 것
+- content_text는 자연스럽게 읽히는 요약본, sections는 화면 표시용 핵심 정리로 구분할 것
+- 보호자용 요약은 "오늘 바로 확인할 행동" 위주로 짧고 선명하게 작성할 것

@@ -1,0 +1,815 @@
+{
+  "selected_case_count": 32,
+  "passed": 25,
+  "total": 32,
+  "pass_rate": 78.1,
+  "category_summary": [
+    {
+      "category": "condition_general",
+      "passed": 2,
+      "total": 2,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "current_meds",
+      "passed": 5,
+      "total": 5,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "daily_chat",
+      "passed": 3,
+      "total": 3,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "drug_interaction",
+      "passed": 1,
+      "total": 4,
+      "pass_rate": 25.0
+    },
+    {
+      "category": "external_drug",
+      "passed": 1,
+      "total": 3,
+      "pass_rate": 33.3
+    },
+    {
+      "category": "general_caution",
+      "passed": 1,
+      "total": 1,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "guidance",
+      "passed": 1,
+      "total": 3,
+      "pass_rate": 33.3
+    },
+    {
+      "category": "hospital_schedule",
+      "passed": 3,
+      "total": 3,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "med_schedule",
+      "passed": 3,
+      "total": 3,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "profile",
+      "passed": 5,
+      "total": 5,
+      "pass_rate": 100.0
+    }
+  ],
+  "stage_summary": [
+    {
+      "stage": "core",
+      "passed": 19,
+      "total": 25,
+      "pass_rate": 76.0
+    },
+    {
+      "stage": "smoke",
+      "passed": 6,
+      "total": 7,
+      "pass_rate": 85.7
+    }
+  ],
+  "data_state_summary": [
+    {
+      "data_state": "any",
+      "passed": 4,
+      "total": 6,
+      "pass_rate": 66.7
+    },
+    {
+      "data_state": "rich",
+      "passed": 21,
+      "total": 26,
+      "pass_rate": 80.8
+    }
+  ],
+  "persona_summary": [
+    {
+      "persona": "any",
+      "passed": 4,
+      "total": 6,
+      "pass_rate": 66.7
+    },
+    {
+      "persona": "patient",
+      "passed": 15,
+      "total": 20,
+      "pass_rate": 75.0
+    },
+    {
+      "persona": "unknown",
+      "passed": 6,
+      "total": 6,
+      "pass_rate": 100.0
+    }
+  ],
+  "consistency_summary": {
+    "repeat_count": 1,
+    "checked_cases": 0,
+    "consistent_cases": 0,
+    "results": []
+  },
+  "failures": [
+    {
+      "id": "interaction_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "drug_interaction",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "지금 먹는 약들끼리 같이 먹을 때 조심해야 할 조합 있어?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "어떤 특정한 조합에 대해 알고 싶으신가요?"
+    },
+    {
+      "id": "guidance_001",
+      "stage": "core",
+      "priority": "high",
+      "category": "guidance",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "요즘 잠이 부족한데 내 건강프로필 기준으로 먼저 봐야 할 게 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "수면"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "회원님 기록 기준 건강 프로필을 요약하면 다음과 같습니다.\n- 키 185.00cm, 몸무게 85.00kg, BMI 24.80(과체중 범위)\n- 생활 습관: 수면 8.0시간, 운동 40분, 흡연 중, 주간 흡연량 3.0갑, 주간 음주량 2.0병\n- 건강 상태: 당뇨, 비염\n- 알레르기: 오이, 복숭아\n- 입원 정보: 현재 입원 기록 없음"
+    },
+    {
+      "id": "guidance_002",
+      "stage": "core",
+      "priority": "high",
+      "category": "guidance",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "생활관리에서 지금 제일 중요한 점 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "일반적으로 보면"
+      ],
+      "matched_all": [
+        "현재 기록 기준"
+      ],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "현재 기록 기준\n- 현재 건강 상태로는 당뇨, 비염가 기록되어 있습니다.\n- 알레르기 정보는 오이, 복숭아입니다.\n- 수면은 하루 평균 8.0시간으로 기록되어 있습니다.\n\n일반적으로 보면\n- 푸마티펜정은 아침과 취침에 각각 1정을 복용합니다. 엘스테인캡슐은 아침, 점심, 저녁에 각각 1캡슐씩 복용합니다. 오나렌정과 삼남아세트아미노펜도 같은 방식으로 복용하며, 삼남아세트아미노펜은 필요 시 복용합니다.\n- 흡연과 음주를 줄이는 것이 건강에 좋습니다. 충분한 수면(하루 8시간)과 규칙적인 운동(주 40"
+    },
+    {
+      "id": "interaction_003",
+      "stage": "core",
+      "priority": "high",
+      "category": "drug_interaction",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "게보린이랑 지금 먹는 약 같이 먹어도 돼?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "어떤 약들끼리 조심해야 하는지 구체적으로 말씀해 주실 수 있나요?"
+    },
+    {
+      "id": "interaction_004",
+      "stage": "core",
+      "priority": "high",
+      "category": "drug_interaction",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "새 감기약 추가로 먹어도 괜찮아?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "어떤 감기약을 추가로 복용할 계획이신가요?"
+    },
+    {
+      "id": "external_drug_002",
+      "stage": "core",
+      "priority": "medium",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "탁센이 뭐야?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "탁센을 복용할 계획이신가요?"
+    },
+    {
+      "id": "external_drug_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "게보린 주의사항 알려줘",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "현재 복용 중인 약물 목록을 알려주실 수 있나요?"
+    }
+  ],
+  "results": [
+    {
+      "id": "daily_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "daily_chat",
+      "data_state": "any",
+      "persona": "any",
+      "message": "안녕",
+      "status_code": 201,
+      "matched_any": [
+        "안녕하세요",
+        "복약",
+        "건강"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "안녕하세요. 회원님 기록 기준 기록을 참고해서 복약과 건강 정보를 도와드릴게요. 약 정보, 복용 시간, 병원 일정, 건강프로필 중 궁금한 것을 편하게 물어보세요."
+    },
+    {
+      "id": "daily_002",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "daily_chat",
+      "data_state": "any",
+      "persona": "any",
+      "message": "너는 뭘 도와줘?",
+      "status_code": 201,
+      "matched_any": [
+        "복약",
+        "건강",
+        "병원 일정"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "저는 회원님의 복약, 병원 일정, 건강 기록을 관리하고 도와드리는 챗봇입니다. 복용 중인 약물에 대한 정보, 병원 예약 일정, 건강 상태에 대한 조언 등을 제공할 수 있습니다. 궁금한 점이 있으시면 언제든지 물어보세요."
+    },
+    {
+      "id": "hospital_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "hospital_schedule",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "다음 병원 예약이 언제인지 장소까지 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "병원",
+        "장소",
+        "일정"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "회원님 기록 기준 가장 가까운 병원 일정은 2026-03-22 자정의 호흡기 검사입니다.\n병원: 국제성모병원\n장소: 인천 연희동"
+    },
+    {
+      "id": "profile_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "profile",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "내 bmi랑 키 몸무게 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "BMI",
+        "키",
+        "몸무게"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "회원님 기록 기준 건강 프로필 수치는 다음과 같습니다.\n- 키는 185.00cm입니다.\n- 몸무게는 85.00kg입니다.\n- BMI는 24.80이며 과체중 범위입니다."
+    },
+    {
+      "id": "med_current_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "current_meds",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "현재 먹는 약들 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "복용 중인 약",
+        "기준",
+        "약"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "회원님 기록 기준으로 현재 복용 중인 약은 다음과 같습니다.\n- 푸마티펜정 1정씩 (용량:1정씩 / 횟수:2회 아침/취침 / 기간:5일분)\n- 엘스테인캡슐 1캡슐씩 (용량:1캡슐씩 / 횟수:3회 아침/점심/저녁 / 기간:5일분)\n- 오나렌정 1정씩 (용량:1정씩 / 횟수:3회 아침/점심/저녁 / 기간:5일분)\n- 삼남아세트아미노펜 1정씩 (용량:1정씩 / 횟수:3회 아침/점심/저녁 / 기간:5일분)"
+    },
+    {
+      "id": "interaction_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "drug_interaction",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "지금 먹는 약들끼리 같이 먹을 때 조심해야 할 조합 있어?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "어떤 특정한 조합에 대해 알고 싶으신가요?"
+    },
+    {
+      "id": "external_drug_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "게보린이 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "matched_all": [
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 게보린은 현재 복용 중인 약으로 기록되어 있지는 않습니다.\n- 현재 건강기록 기준으로는 알레르기: 오이, 복숭아 / 건강 상태: 당뇨, 비염를 함께 보는 것이 좋습니다.\n\n일반적으로 보면\n- 약 정보명은 게보린정(수출명:돌로린정)입니다.\n- 일반적으로는 이 약은 두통, 치통, 발치(이를 뽑음)후 동통(통증), 인후(목구멍)통, 귀의 통증, 관절통, 신경통, 요(허리)통, 근육통, 견통(어깨통증), 타박통, 골절통, 염좌통(삔 통증), 월경통(생리통), 외상(상처)통의 진통과 오"
+    },
+    {
+      "id": "daily_003",
+      "stage": "core",
+      "priority": "high",
+      "category": "daily_chat",
+      "data_state": "any",
+      "persona": "any",
+      "message": "고마워",
+      "status_code": 201,
+      "matched_any": [
+        "도움",
+        "이어",
+        "말씀"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "도움이 되었다면 다행입니다. 필요한 내용이 있으면 이어서 말씀해 주세요."
+    },
+    {
+      "id": "profile_002",
+      "stage": "core",
+      "priority": "high",
+      "category": "profile",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "건강프로필 기준으로 수면이랑 운동 기록 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "수면",
+        "운동"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "회원님 기록 기준 건강 프로필 수치는 다음과 같습니다.\n- 키는 185.00cm입니다.\n- 몸무게는 85.00kg입니다.\n- BMI는 24.80이며 과체중 범위입니다.\n\n하루 평균 8.0시간 정도 수면하는 것으로 기록되어 있습니다.\n\n하루 평균 40분 정도 운동하는 것으로 기록되어 있습니다."
+    },
+    {
+      "id": "profile_003",
+      "stage": "core",
+      "priority": "high",
+      "category": "profile",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "내 주간 흡연량이랑 음주량 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "음주"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 음주량은 현재 복용 중인 약으로 기록되어 있지는 않습니다.\n- 현재 건강기록 기준으로는 알레르기: 오이, 복숭아 / 건강 상태: 당뇨, 비염를 함께 볼 수 있습니다.\n\n지금 확인할 포인트\n- 제품명이나 성분명이 더 정확하면 안내 범위를 더 좁힐 수 있습니다."
+    },
+    {
+      "id": "profile_004",
+      "stage": "core",
+      "priority": "medium",
+      "category": "profile",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "내 알레르기랑 기저질환 뭐로 기록돼 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "알레르기",
+        "건강 상태",
+        "기록"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "회원님 기록 기준 건강 상태는 다음과 같이 기록되어 있습니다.\n- 당뇨\n- 비염\n\n회원님 기록 기준 알레르기 정보는 다음과 같습니다.\n- 오이\n- 복숭아"
+    },
+    {
+      "id": "profile_005",
+      "stage": "core",
+      "priority": "medium",
+      "category": "profile",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "입원이나 퇴원 관련 기록 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "입원",
+        "기록"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 입원 중은 아닌 것으로 기록되어 있습니다."
+    },
+    {
+      "id": "guidance_001",
+      "stage": "core",
+      "priority": "high",
+      "category": "guidance",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "요즘 잠이 부족한데 내 건강프로필 기준으로 먼저 봐야 할 게 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "수면"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "회원님 기록 기준 건강 프로필을 요약하면 다음과 같습니다.\n- 키 185.00cm, 몸무게 85.00kg, BMI 24.80(과체중 범위)\n- 생활 습관: 수면 8.0시간, 운동 40분, 흡연 중, 주간 흡연량 3.0갑, 주간 음주량 2.0병\n- 건강 상태: 당뇨, 비염\n- 알레르기: 오이, 복숭아\n- 입원 정보: 현재 입원 기록 없음"
+    },
+    {
+      "id": "guidance_002",
+      "stage": "core",
+      "priority": "high",
+      "category": "guidance",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "생활관리에서 지금 제일 중요한 점 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "일반적으로 보면"
+      ],
+      "matched_all": [
+        "현재 기록 기준"
+      ],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "현재 기록 기준\n- 현재 건강 상태로는 당뇨, 비염가 기록되어 있습니다.\n- 알레르기 정보는 오이, 복숭아입니다.\n- 수면은 하루 평균 8.0시간으로 기록되어 있습니다.\n\n일반적으로 보면\n- 푸마티펜정은 아침과 취침에 각각 1정을 복용합니다. 엘스테인캡슐은 아침, 점심, 저녁에 각각 1캡슐씩 복용합니다. 오나렌정과 삼남아세트아미노펜도 같은 방식으로 복용하며, 삼남아세트아미노펜은 필요 시 복용합니다.\n- 흡연과 음주를 줄이는 것이 건강에 좋습니다. 충분한 수면(하루 8시간)과 규칙적인 운동(주 40"
+    },
+    {
+      "id": "guidance_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "guidance",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "전반적으로 내 건강 상태를 요약해줘",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "복약",
+        "건강 상태"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 현재 건강 상태로는 당뇨, 비염가 기록되어 있습니다.\n- 알레르기 정보는 오이, 복숭아입니다.\n- 현재 복약 관리는 푸마티펜정, 엘스테인캡슐, 오나렌정, 삼남아세트아미노펜 중심입니다.\n\n일반적으로 보면\n- 기록된 건강 상태와 복약 일정, 최근 복약 흐름을 같이 보면서 관리 우선순위를 정리하는 것이 좋습니다.\n\n지금 확인할 포인트\n- 복약 기록이 충분하지 않다면 오늘 일정과 실제 복용 여부를 먼저 맞춰 보는 것이 좋습니다."
+    },
+    {
+      "id": "med_current_002",
+      "stage": "core",
+      "priority": "high",
+      "category": "current_meds",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "엘스테인캡슐은 어떤 약이야?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "matched_all": [
+        "현재 기록 기준",
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 엘스테인캡슐 용량은 1캡슐씩로 기록되어 있습니다.\n- 복용 메모에는 `용량:1캡슐씩 / 횟수:3회 아침/점심/저녁 / 기간:5일분`로 남아 있습니다.\n\n일반적으로 보면\n- 엘스테인캡슐은 보통 이 약은 급ㆍ만성 호흡기질환에서의 점액용해 및 거담에 사용합니다.\n- 주의사항으로는 이 약에 과민증 환자, 간경변, 시스타티오닌 합성효소 결핍, 소화성궤양, 중증 신장장애(크레아티닌청소율이.\n- 보관 방법은 실온에서 보관하십시오.어린이의 손이 닿지 않는 곳에 보관하십시오.\n\n지금 확인할 포"
+    },
+    {
+      "id": "med_current_003",
+      "stage": "core",
+      "priority": "high",
+      "category": "current_meds",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "엘스테인캡슐 주의할 점 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "주의"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "지금 특히 주의해서 볼 점은 다음과 같습니다.\n- 알레르기: 오이, 복숭아\n- 건강 상태: 당뇨, 비염\n- 수면은 하루 평균 8.0시간으로 기록되어 있어, 수면 리듬을 일정하게 유지하는 것이 좋습니다."
+    },
+    {
+      "id": "med_current_004",
+      "stage": "core",
+      "priority": "medium",
+      "category": "current_meds",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "오늘 저녁에 먹어야 하는 약만 정리해줘",
+      "status_code": 201,
+      "matched_any": [
+        "약"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "오늘 저녁에 복용할 약의 구체적인 목록을 알고 싶으신가요?"
+    },
+    {
+      "id": "med_current_005",
+      "stage": "core",
+      "priority": "medium",
+      "category": "current_meds",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "아침 약 순서대로 정리해줘",
+      "status_code": 201,
+      "matched_any": [
+        "아침",
+        "순서"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "아침 약 복용 순서를 알고 싶으신가요?"
+    },
+    {
+      "id": "interaction_002",
+      "stage": "core",
+      "priority": "high",
+      "category": "drug_interaction",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "오늘 약 중에서 특히 같이 먹을 때 조심해야 하는 조합 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "지금 확인할 포인트"
+      ],
+      "matched_all": [
+        "현재 기록 기준",
+        "지금 확인할 포인트"
+      ],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 현재 확인되는 복용약은 푸마티펜정, 엘스테인캡슐, 오나렌정, 삼남아세트아미노펜입니다.\n\n일반적으로 보면\n- 현재 약 이름만으로 중대한 상호작용을 단정하긴 어렵지만, 성분 중복 여부를 먼저 확인하는 것이 안전합니다.\n\n지금 확인할 포인트\n- 처방 외 진통제나 감기약을 추가할 때는 성분표와 현재 복용약 이름을 같이 확인해 주세요."
+    },
+    {
+      "id": "interaction_003",
+      "stage": "core",
+      "priority": "high",
+      "category": "drug_interaction",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "게보린이랑 지금 먹는 약 같이 먹어도 돼?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "어떤 약들끼리 조심해야 하는지 구체적으로 말씀해 주실 수 있나요?"
+    },
+    {
+      "id": "interaction_004",
+      "stage": "core",
+      "priority": "high",
+      "category": "drug_interaction",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "새 감기약 추가로 먹어도 괜찮아?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "어떤 감기약을 추가로 복용할 계획이신가요?"
+    },
+    {
+      "id": "external_drug_002",
+      "stage": "core",
+      "priority": "medium",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "탁센이 뭐야?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "탁센을 복용할 계획이신가요?"
+    },
+    {
+      "id": "external_drug_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "게보린 주의사항 알려줘",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "현재 복용 중인 약물 목록을 알려주실 수 있나요?"
+    },
+    {
+      "id": "schedule_001",
+      "stage": "core",
+      "priority": "high",
+      "category": "med_schedule",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "오늘 내가 먹어야 할 약 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "일정"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "어떤 약의 복용 일정을 알고 싶으신가요?"
+    },
+    {
+      "id": "schedule_002",
+      "stage": "core",
+      "priority": "medium",
+      "category": "med_schedule",
+      "data_state": "rich",
+      "persona": "patient",
+      "message": "그 약은 언제 먹어?",
+      "status_code": 201,
+      "matched_any": [
+        "복용"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "어떤 약의 복용 일정을 알고 싶으신가요?"
+    },
+    {
+      "id": "schedule_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "med_schedule",
+      "data_state": "rich",
+      "persona": null,
+      "message": "자주 놓치는 약 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 현재 확인되는 복용약은 푸마티펜정, 엘스테인캡슐, 오나렌정, 삼남아세트아미노펜입니다.\n\n일반적으로 보면\n- 현재 약 이름만으로 중대한 상호작용을 단정하긴 어렵지만, 성분 중복 여부를 먼저 확인하는 것이 안전합니다.\n\n지금 확인할 포인트\n- 처방 외 진통제나 감기약을 추가할 때는 성분표와 현재 복용약 이름을 같이 확인해 주세요."
+    },
+    {
+      "id": "hospital_002",
+      "stage": "core",
+      "priority": "high",
+      "category": "hospital_schedule",
+      "data_state": "rich",
+      "persona": null,
+      "message": "다음 외래 일정 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "병원",
+        "일정",
+        "기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "회원님 기록 기준 가장 가까운 병원 일정은 2026-03-20 자정의 내분비 외래입니다.\n병원: 국제성모병원\n장소: 인천연희동"
+    },
+    {
+      "id": "hospital_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "hospital_schedule",
+      "data_state": "rich",
+      "persona": null,
+      "message": "검사 예약 잡힌 거 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "검사",
+        "일정",
+        "기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "회원님 기록 기준 등록된 병원 일정은 다음과 같습니다.\n- 2026-03-20 자정: 내분비 외래 / 국제성모병원 / 인천연희동\n- 2026-03-22 자정: 호흡기 검사 / 국제성모병원 / 인천 연희동"
+    },
+    {
+      "id": "condition_001",
+      "stage": "core",
+      "priority": "medium",
+      "category": "condition_general",
+      "data_state": "rich",
+      "persona": null,
+      "message": "당뇨는 보통 어떻게 관리해?",
+      "status_code": 201,
+      "matched_any": [
+        "당뇨",
+        "현재 기록 기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 현재 건강 상태로는 당뇨, 비염가 기록되어 있습니다.\n- 알레르기 정보는 오이, 복숭아입니다.\n- 수면은 하루 평균 8.0시간으로 기록되어 있습니다.\n\n일반적으로 보면\n- 푸마티펜정은 아침과 취침에 각각 1정을 복용합니다. 엘스테인캡슐은 아침, 점심, 저녁에 각각 1캡슐씩 복용합니다. 오나렌정과 삼남아세트아미노펜도 같은 방식으로 복용하며, 삼남아세트아미노펜은 필요 시 복용합니다.\n- 흡연과 음주를 줄이는 것이 건강에 좋습니다. 충분한 수면(하루 8시간)과 규칙적인 운동(주 40"
+    },
+    {
+      "id": "condition_002",
+      "stage": "core",
+      "priority": "medium",
+      "category": "condition_general",
+      "data_state": "rich",
+      "persona": null,
+      "message": "고혈압이면 어떤 점을 같이 봐야 해?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 현재 건강 상태로는 당뇨, 비염가 기록되어 있습니다.\n- 알레르기 정보는 오이, 복숭아입니다.\n- 수면은 하루 평균 8.0시간으로 기록되어 있습니다.\n\n일반적으로 보면\n- 푸마티펜정은 아침과 취침에 각각 1정을 복용합니다. 엘스테인캡슐은 아침, 점심, 저녁에 각각 1캡슐씩 복용합니다. 오나렌정과 삼남아세트아미노펜도 같은 방식으로 복용하며, 삼남아세트아미노펜은 필요 시 복용합니다.\n- 흡연과 음주를 줄이는 것이 건강에 좋습니다. 충분한 수면(하루 8시간)과 규칙적인 운동(주 40"
+    },
+    {
+      "id": "safety_001",
+      "stage": "core",
+      "priority": "medium",
+      "category": "general_caution",
+      "data_state": "rich",
+      "persona": null,
+      "message": "전반적으로 지금 특히 조심해야 할 점 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "현재",
+        "기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 현재 건강 상태로는 당뇨, 비염가 기록되어 있습니다.\n- 알레르기 정보는 오이, 복숭아입니다.\n- 수면은 하루 평균 8.0시간으로 기록되어 있습니다.\n\n일반적으로 보면\n- 푸마티펜정은 아침과 취침에 각각 1정을 복용합니다. 엘스테인캡슐은 아침, 점심, 저녁에 각각 1캡슐씩 복용합니다. 오나렌정과 삼남아세트아미노펜도 같은 방식으로 복용하며, 삼남아세트아미노펜은 필요 시 복용합니다.\n- 흡연과 음주를 줄이는 것이 건강에 좋습니다. 충분한 수면(하루 8시간)과 규칙적인 운동(주 40"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 __pycache__/
 *.py[oc]
+.DS_Store
 build/
 dist/
 wheels/
@@ -7,8 +8,19 @@ wheels/
 .venv
 .*.env
 .env
+.env.*
+envs/*.env
+!envs/example.local.env
+!envs/example.prod.env
+frontend/.env
+frontend/.env.*
+node_modules/
+frontend/node_modules/
+app/ui/auth-demo/
 .idea/
 .vscode
 .coverage
 *.coverage
 .coverage.*
+site/
+frontend/.vite/

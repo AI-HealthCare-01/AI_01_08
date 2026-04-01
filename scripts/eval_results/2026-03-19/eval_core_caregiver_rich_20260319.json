@@ -1,0 +1,435 @@
+{
+  "selected_case_count": 16,
+  "passed": 14,
+  "total": 16,
+  "pass_rate": 87.5,
+  "category_summary": [
+    {
+      "category": "caregiver_chat",
+      "passed": 3,
+      "total": 4,
+      "pass_rate": 75.0
+    },
+    {
+      "category": "condition_general",
+      "passed": 2,
+      "total": 2,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "daily_chat",
+      "passed": 3,
+      "total": 3,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "external_drug",
+      "passed": 2,
+      "total": 3,
+      "pass_rate": 66.7
+    },
+    {
+      "category": "general_caution",
+      "passed": 1,
+      "total": 1,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "hospital_schedule",
+      "passed": 2,
+      "total": 2,
+      "pass_rate": 100.0
+    },
+    {
+      "category": "med_schedule",
+      "passed": 1,
+      "total": 1,
+      "pass_rate": 100.0
+    }
+  ],
+  "stage_summary": [
+    {
+      "stage": "core",
+      "passed": 10,
+      "total": 12,
+      "pass_rate": 83.3
+    },
+    {
+      "stage": "smoke",
+      "passed": 4,
+      "total": 4,
+      "pass_rate": 100.0
+    }
+  ],
+  "data_state_summary": [
+    {
+      "data_state": "any",
+      "passed": 5,
+      "total": 6,
+      "pass_rate": 83.3
+    },
+    {
+      "data_state": "rich",
+      "passed": 9,
+      "total": 10,
+      "pass_rate": 90.0
+    }
+  ],
+  "persona_summary": [
+    {
+      "persona": "any",
+      "passed": 5,
+      "total": 6,
+      "pass_rate": 83.3
+    },
+    {
+      "persona": "caregiver",
+      "passed": 3,
+      "total": 4,
+      "pass_rate": 75.0
+    },
+    {
+      "persona": "unknown",
+      "passed": 6,
+      "total": 6,
+      "pass_rate": 100.0
+    }
+  ],
+  "consistency_summary": {
+    "repeat_count": 1,
+    "checked_cases": 0,
+    "consistent_cases": 0,
+    "results": []
+  },
+  "failures": [
+    {
+      "id": "external_drug_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "게보린 주의사항 알려줘",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "현재 복용 중인 약물과의 상호작용을 확인하고 싶으신가요?"
+    },
+    {
+      "id": "caregiver_002",
+      "stage": "core",
+      "priority": "high",
+      "category": "caregiver_chat",
+      "data_state": "rich",
+      "persona": "caregiver",
+      "message": "복약자 기준으로 오늘 저녁에 챙겨야 할 약 뭐야?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "오늘 밤 챙겨야 할 약은 다음과 같습니다.\n- 푸마티펜정 1정씩 (오후 9시)\n- 슈다페드정슈도에페 1정씩 (오후 10시)\n- 최근 놓친 기록이 있는 약: 엘스테인캡슐"
+    }
+  ],
+  "results": [
+    {
+      "id": "daily_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "daily_chat",
+      "data_state": "any",
+      "persona": "any",
+      "message": "안녕",
+      "status_code": 201,
+      "matched_any": [
+        "안녕하세요",
+        "복약",
+        "건강"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "안녕하세요. 선택한 복약자 기준 기록을 참고해서 복약과 건강 정보를 도와드릴게요. 약 정보, 복용 시간, 병원 일정, 건강프로필 중 궁금한 것을 편하게 물어보세요."
+    },
+    {
+      "id": "daily_002",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "daily_chat",
+      "data_state": "any",
+      "persona": "any",
+      "message": "너는 뭘 도와줘?",
+      "status_code": 201,
+      "matched_any": [
+        "복약",
+        "건강",
+        "병원 일정"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "안녕하세요! 저는 복약, 병원 일정, 건강 기록을 관리하고 도와드리는 챗봇입니다. 현재 기록 기준으로 약물 복용, 병원 일정, 건강 상태에 대한 질문에 답변할 수 있습니다. 궁금한 점이 있으면 편하게 물어보세요."
+    },
+    {
+      "id": "external_drug_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "게보린이 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "matched_all": [
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 게보린은 현재 복용 중인 약으로 기록되어 있지는 않습니다.\n- 현재 건강기록 기준으로는 알레르기: 오이, 복숭아 / 건강 상태: 당뇨, 비염를 함께 보는 것이 좋습니다.\n\n일반적으로 보면\n- 약 정보명은 게보린정(수출명:돌로린정)입니다.\n- 일반적으로는 이 약은 두통, 치통, 발치(이를 뽑음)후 동통(통증), 인후(목구멍)통, 귀의 통증, 관절통, 신경통, 요(허리)통, 근육통, 견통(어깨통증), 타박통, 골절통, 염좌통(삔 통증), 월경통(생리통), 외상(상처)통의 진통과 오"
+    },
+    {
+      "id": "daily_003",
+      "stage": "core",
+      "priority": "high",
+      "category": "daily_chat",
+      "data_state": "any",
+      "persona": "any",
+      "message": "고마워",
+      "status_code": 201,
+      "matched_any": [
+        "도움",
+        "이어",
+        "말씀"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "도움이 되었다면 다행입니다. 필요한 내용이 있으면 이어서 말씀해 주세요."
+    },
+    {
+      "id": "external_drug_002",
+      "stage": "core",
+      "priority": "medium",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "탁센이 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "일반적으로 보면",
+        "지금 확인할 포인트"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 탁센은 현재 복용 중인 약으로 기록되어 있지는 않습니다.\n- 현재 건강기록 기준으로는 알레르기: 오이, 복숭아 / 건강 상태: 당뇨, 비염를 함께 보는 것이 좋습니다.\n\n일반적으로 보면\n- 약 정보명은 탁센연질캡슐(나프록센)입니다.\n- 일반적으로는 이 약은 류마티양 관절염, 골관절염(퇴행성 관절질환), 강직성 척추염, 건염(힘줄염), 급성통풍, 월경곤란증과 활액(윤활)낭염, 골격근장애(염좌(삠), 좌상(타박상), 외상(상처), 요천통(허리통증), 수술 후 동통(통증), 편두통,"
+    },
+    {
+      "id": "external_drug_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "external_drug",
+      "data_state": "any",
+      "persona": "any",
+      "message": "게보린 주의사항 알려줘",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "현재 복용 중인 약물과의 상호작용을 확인하고 싶으신가요?"
+    },
+    {
+      "id": "schedule_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "med_schedule",
+      "data_state": "rich",
+      "persona": null,
+      "message": "자주 놓치는 약 뭐야?",
+      "status_code": 201,
+      "matched_any": [
+        "놓친",
+        "복약",
+        "기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "선택한 복약자 기준 최근 복약 기록에서 자주 놓친 약으로는 엘스테인캡슐이 보입니다.\n복용 우선순위를 임의로 바꾸기보다, 최근 놓친 약이 오늘 일정에도 있는지 먼저 확인해 빠뜨리지 않는 것이 좋습니다."
+    },
+    {
+      "id": "hospital_002",
+      "stage": "core",
+      "priority": "high",
+      "category": "hospital_schedule",
+      "data_state": "rich",
+      "persona": null,
+      "message": "다음 외래 일정 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "병원",
+        "일정",
+        "기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "선택한 복약자 기준 가장 가까운 병원 일정은 2026-03-20 자정의 내분비 외래입니다.\n병원: 국제성모병원\n장소: 인천연희동"
+    },
+    {
+      "id": "hospital_003",
+      "stage": "core",
+      "priority": "medium",
+      "category": "hospital_schedule",
+      "data_state": "rich",
+      "persona": null,
+      "message": "검사 예약 잡힌 거 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "검사",
+        "일정",
+        "기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "선택한 복약자 기준 등록된 병원 일정은 다음과 같습니다.\n- 2026-03-20 자정: 내분비 외래 / 국제성모병원 / 인천연희동\n- 2026-03-22 자정: 호흡기 검사 / 국제성모병원 / 인천 연희동"
+    },
+    {
+      "id": "condition_001",
+      "stage": "core",
+      "priority": "medium",
+      "category": "condition_general",
+      "data_state": "rich",
+      "persona": null,
+      "message": "당뇨는 보통 어떻게 관리해?",
+      "status_code": 201,
+      "matched_any": [
+        "당뇨",
+        "현재 기록 기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 현재 건강 상태로는 당뇨, 비염가 기록되어 있습니다.\n- 알레르기 정보는 오이, 복숭아입니다.\n- 수면은 하루 평균 8.0시간으로 기록되어 있습니다.\n\n일반적으로 보면\n- 진양에페리손정은 하루 3회 아침, 점심, 저녁에 복용합니다. 엘스테인캡슐과 푸마티펜정케토티펜도 같은 일정으로 복용하며, 삼남아세트아미노펜은 필요 시 복용합니다. 슈다페드정슈도에페는 점심과 취침 전에 복용하세요.\n- 흡연과 음주를 줄이고, 규칙적인 운동을 유지하세요. 평균 8시간의 수면을 취하는 것이 좋습니다."
+    },
+    {
+      "id": "condition_002",
+      "stage": "core",
+      "priority": "medium",
+      "category": "condition_general",
+      "data_state": "rich",
+      "persona": null,
+      "message": "고혈압이면 어떤 점을 같이 봐야 해?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "선택한 복약자 기준 건강 상태는 다음과 같이 기록되어 있습니다.\n- 당뇨\n- 비염\n\n현재 기록 기준\n- 현재 건강 상태로는 당뇨, 비염가 기록되어 있습니다.\n- 알레르기 정보는 오이, 복숭아입니다.\n- 수면은 하루 평균 8.0시간으로 기록되어 있습니다.\n\n일반적으로 보면\n- 진양에페리손정은 하루 3회 아침, 점심, 저녁에 복용합니다. 엘스테인캡슐과 푸마티펜정케토티펜도 같은 일정으로 복용하며, 삼남아세트아미노펜은 필요 시 복용합니다. 슈다페드정슈도에페는 점심과 취침 전에 복용하세요.\n- 흡연과 음주"
+    },
+    {
+      "id": "safety_001",
+      "stage": "core",
+      "priority": "medium",
+      "category": "general_caution",
+      "data_state": "rich",
+      "persona": null,
+      "message": "전반적으로 지금 특히 조심해야 할 점 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "현재",
+        "기준"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "선택한 복약자 기준 건강 상태는 다음과 같이 기록되어 있습니다.\n- 당뇨\n- 비염\n\n현재 기록 기준\n- 현재 건강 상태로는 당뇨, 비염가 기록되어 있습니다.\n- 알레르기 정보는 오이, 복숭아입니다.\n- 수면은 하루 평균 8.0시간으로 기록되어 있습니다.\n\n일반적으로 보면\n- 진양에페리손정은 하루 3회 아침, 점심, 저녁에 복용합니다. 엘스테인캡슐과 푸마티펜정케토티펜도 같은 일정으로 복용하며, 삼남아세트아미노펜은 필요 시 복용합니다. 슈다페드정슈도에페는 점심과 취침 전에 복용하세요.\n- 흡연과 음주"
+    },
+    {
+      "id": "caregiver_001",
+      "stage": "smoke",
+      "priority": "core",
+      "category": "caregiver_chat",
+      "data_state": "rich",
+      "persona": "caregiver",
+      "message": "복약자 기준으로 다음 병원 일정 알려줘",
+      "status_code": 201,
+      "matched_any": [
+        "병원",
+        "일정",
+        "복약자"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "선택한 복약자 기준 가장 가까운 병원 일정은 2026-03-22 자정의 호흡기 검사입니다.\n병원: 국제성모병원\n장소: 인천 연희동"
+    },
+    {
+      "id": "caregiver_002",
+      "stage": "core",
+      "priority": "high",
+      "category": "caregiver_chat",
+      "data_state": "rich",
+      "persona": "caregiver",
+      "message": "복약자 기준으로 오늘 저녁에 챙겨야 할 약 뭐야?",
+      "status_code": 201,
+      "matched_any": [],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": false,
+      "answer_preview": "오늘 밤 챙겨야 할 약은 다음과 같습니다.\n- 푸마티펜정 1정씩 (오후 9시)\n- 슈다페드정슈도에페 1정씩 (오후 10시)\n- 최근 놓친 기록이 있는 약: 엘스테인캡슐"
+    },
+    {
+      "id": "caregiver_003",
+      "stage": "core",
+      "priority": "high",
+      "category": "caregiver_chat",
+      "data_state": "rich",
+      "persona": "caregiver",
+      "message": "복약자 기록 기준으로 지금 먹는 약들끼리 조심해야 할 조합 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "현재 기록 기준",
+        "지금 확인할 포인트"
+      ],
+      "matched_all": [
+        "현재 기록 기준",
+        "지금 확인할 포인트"
+      ],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "현재 기록 기준\n- 현재 확인되는 복용약은 푸마티펜정, 엘스테인캡슐, 오나렌정, 삼남아세트아미노펜입니다.\n- 최근 놓친 기록이 있는 약은 엘스테인캡슐입니다.\n\n일반적으로 보면\n- 현재 약 이름만으로 중대한 상호작용을 단정하긴 어렵지만, 성분 중복 여부를 먼저 확인하는 것이 안전합니다.\n\n지금 확인할 포인트\n- 처방 외 진통제나 감기약을 추가할 때는 성분표와 현재 복용약 이름을 같이 확인해 주세요.\n- 상호작용 확인과 함께 복약 누락이 반복되지 않는지도 같이 보는 것이 좋습니다."
+    },
+    {
+      "id": "caregiver_004",
+      "stage": "core",
+      "priority": "medium",
+      "category": "caregiver_chat",
+      "data_state": "rich",
+      "persona": "caregiver",
+      "message": "복약자가 최근 놓친 약이 있어?",
+      "status_code": 201,
+      "matched_any": [
+        "복약자",
+        "놓친",
+        "복약"
+      ],
+      "matched_all": [],
+      "rejected_hits": [],
+      "passed": true,
+      "answer_preview": "선택한 복약자 기준 최근 복약 기록에서 자주 놓친 약으로는 엘스테인캡슐이 보입니다.\n복용 우선순위를 임의로 바꾸기보다, 최근 놓친 약이 오늘 일정에도 있는지 먼저 확인해 빠뜨리지 않는 것이 좋습니다."
+    }
+  ]
+}

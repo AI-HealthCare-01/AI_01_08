@@ -1,0 +1,8 @@
+site_name: AI Health Docs
+site_url: http://localhost/api/project-docs/
+nav:
+  - Home: index.md
+  - Feature Overview: feature-overview.md
+  - API Spec: api-spec.md
+  - Deployment: deployment.md
+  - Requirements Traceability: requirements-traceability.md

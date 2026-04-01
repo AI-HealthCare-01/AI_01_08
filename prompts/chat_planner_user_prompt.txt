@@ -1,0 +1,36 @@
+[현재 질문]
+{user_message}
+
+[현재 복용 약]
+{meds_text}
+
+[복약 일정]
+{schedule_text}
+
+[병원 일정]
+{hospital_schedule_text}
+
+[건강 프로필]
+{profile_text}
+
+[최근 대화]
+{history_text}
+
+[구조화 메모리]
+{session_memory_text}
+
+판단 지침:
+- BMI, 키, 몸무게, 수면, 운동, 건강프로필 요약은 profile 로 분류한다.
+- 기저질환, 알레르기, 흡연, 음주, 입원/퇴원 정보도 profile 로 분류한다.
+- 병원 예약/검사/외래 일정은 hospital_schedule 로 분류한다.
+- "현재 먹는 약들끼리" 같은 표현은 drug_interaction 으로 본다.
+- 현재 복용약 목록을 알려달라는 질문은 current_meds 로 분류한다.
+- "게보린이 뭐야?"처럼 기록 외 약 정보는 external_drug 로 분류한다.
+- 약 이름이 전혀 없고 상호작용만 물으면 clarification_question으로 비교 범위를 되묻는다.
+- `먼저 뭐 봐야 해`, `전반적으로`, `건강프로필 기준으로 조언해줘` 같은 표현은 answer_style을 guidance로 두고 requested_fields에 guidance 또는 lifestyle/risk를 포함한다.
+- `무슨 약`, `어떤 약`, `약 설명`처럼 약 자체 설명을 묻는 질문은 guide가 아니라 current_meds 또는 external_drug 쪽으로 분류한다.
+- 외부 약 이름이 있어도 `같이 먹어도 돼`, `추가로 먹어도 돼`, `함께 복용`, `괜찮아` 같은 표현이면 drug_interaction 을 우선한다.
+- `안녕`, `반가워`, `너는 뭘 도와줘?` 같은 질문은 general 로 분류하고 clarification 을 만들지 않는다.
+- requested_fields 예시는 bmi, height, weight, sleep, exercise, smoking, alcohol, conditions, allergies, hospitalization, summary, guidance 이다.
+- referenced_drug_name은 질문에 나온 약 이름만 넣는다. 없으면 null.
+- 구조화 메모리에 최근 약이나 대기 중 명확화가 있으면, `그 약`, `현재 복용약끼리` 같은 후속 질문 해석에 우선 활용한다.

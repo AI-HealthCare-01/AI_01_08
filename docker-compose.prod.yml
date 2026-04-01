@@ -46,14 +46,31 @@ services:
   # 3. API Server (FastAPI)
   fastapi:
     container_name: fastapi
-    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}  # APP_VERSION은 빌드된 이미지의 버전관리를 위함입니다. v1.0.0 형식으로 사용합니다.
+    # APP_VERSION은 빌드된 이미지의 버전관리를 위함입니다. v1.0.0 형식으로 사용합니다.
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
+    command: sh -c "uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 3"
     env_file: .env
     volumes:
-      - static_volume:/app/templates
-      - media_volume:/app/media
+      - uploads_data:/app/uploads
     restart: always
     ports:
       - "8000:8000"
+    networks:
+      - ws
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  app-worker:
+    container_name: app-worker
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:app-${APP_VERSION}
+    env_file: .env
+    volumes:
+      - uploads_data:/app/uploads
+    command: sh -c "uv run python -u -m app_worker.main"
+    restart: unless-stopped
     networks:
       - ws
     depends_on:
@@ -80,11 +97,9 @@ services:
   # 5. Nginx (웹 서버 - 요청 리버스 프록시로 전달)
   nginx:
     container_name: nginx
-    image: nginx:latest
+    image: ${DOCKER_USER}/${DOCKER_REPOSITORY}:nginx
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
-      - static_volume:/vol/web/static
-      - media_volume:/vol/web/media
       - certbot-conf:/etc/letsencrypt
       - certbot-www:/var/www/certbot
     ports:
@@ -109,10 +124,8 @@ services:
 volumes:
   mysql_data:
     name: mysql_data
-  static_volume:
-    name: static_volume
-  media_volume:
-    name: media_volume
+  uploads_data:
+    name: uploads_data
   certbot-conf:
     name: certbot-conf
   certbot-www:
